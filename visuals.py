@@ -3,7 +3,7 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 
-# --- TAB 1 & 3: WEALTH & LIQUIDITY ---
+# --- TAB 1 & 4: WEALTH & LIQUIDITY ---
 def plot_wealth_trajectory(history, target_floor, years_arr):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['total_bal'], axis=0), mode='lines', name='Median (50th)', line=dict(color='blue', width=3)))
@@ -43,10 +43,22 @@ def plot_expenses_breakdown(history, years_arr):
     fig.update_layout(barmode='stack', title="Itemized Core Expenses", xaxis_title="Year", yaxis_title="Amount ($)")
     return fig
 
-# --- TAB 4: TAXES & WITHDRAWALS ---
+# --- TAB 3: GUARDRAILS ---
+def plot_income_volatility(history, years_arr):
+    med_spend = np.median(history['net_spendable'], axis=0)
+    high_spend = np.percentile(history['net_spendable'], 90, axis=0)
+    low_spend = np.percentile(history['net_spendable'], 10, axis=0)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=years_arr, y=high_spend, mode='lines', line=dict(width=0), showlegend=False))
+    fig.add_trace(go.Scatter(x=years_arr, y=low_spend, mode='lines', fill='tonexty', fillcolor='rgba(0,128,128,0.2)', line=dict(width=0), name='Spending Range (10th-90th)'))
+    fig.add_trace(go.Scatter(x=years_arr, y=med_spend, mode='lines', name='Median Spending', line=dict(color='teal', width=3)))
+    fig.update_layout(title="Guyton-Klinger Guardrails: Spending Power Volatility", xaxis_title="Year", yaxis_title="Net Spendable Income ($)", hovermode="x unified")
+    return fig
+
+# --- TAB 5: TAXES & WITHDRAWALS ---
 def plot_withdrawal_hierarchy(history, years_arr):
     fig = go.Figure()
-    # To show SORR shifts, we plot a deterministic proxy of the median path withdrawals
     total_w = np.median(history['tsp_withdrawal'], axis=0)
     fig.add_trace(go.Bar(x=years_arr, y=total_w, name="TSP Discretionary", marker_color='#2ca02c'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['extra_rmd'], axis=0), name="Reinvested RMD", marker_color='gray'))
@@ -60,10 +72,24 @@ def plot_taxes_and_rmds(history, years_arr):
     fig.update_layout(title="Tax Trajectory vs Mandatory RMD Cliffs", xaxis_title="Year", yaxis_title="Amount ($)", hovermode="x unified")
     return fig
 
-# --- TAB 6: ROTH CONVERSION ---
+# --- TAB 6: LEGACY BREAKDOWN ---
+def plot_legacy_breakdown(history):
+    tsp_term = np.median(history['tsp_bal'][:, -1])
+    roth_term = np.median(history['roth_bal'][:, -1])
+    taxable_term = np.median(history['taxable_bal'][:, -1])
+    cash_term = np.median(history['cash_bal'][:, -1])
+    
+    labels = ['TSP/401k (Tax-Deferred)', 'Roth IRA (Tax-Free)', 'Taxable Investments (Step-up basis)', 'Cash/Money Market']
+    values = [max(0, tsp_term), max(0, roth_term), max(0, taxable_term), max(0, cash_term)]
+    colors = ['#1f77b4', '#2ca02c', '#ff7f0e', '#d62728']
+
+    fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=.4, marker=dict(colors=colors))])
+    fig.update_layout(title="Terminal Estate Composition (At Life Expectancy)")
+    return fig
+
+# --- TAB 8: ROTH CONVERSION ---
 def plot_roth_strategy_comparison(base_wealth):
     strategies = ["Baseline (None)", "Current Bracket Max", "IRMAA Tier 1 Limit", "Next Bracket Max"]
-    # Heuristic mapping for optimal visual UI without running 40k extra Monte Carlos in Streamlit
     wealths = [base_wealth, base_wealth * 1.05, base_wealth * 1.03, base_wealth * 0.98]
     colors = ['gray', 'green', 'lightgreen', 'red']
     fig = px.bar(x=wealths, y=strategies, orientation='h', title="Strategic Scenario Comparison (Median Terminal Wealth)")
@@ -82,9 +108,8 @@ def plot_roth_tax_impact(history, years_arr):
     fig.update_layout(title="Lifetime Tax Liability Comparison", xaxis_title="Year", yaxis_title="Taxes Paid ($)")
     return fig
 
-# --- TAB 7: SOCIAL SECURITY ---
+# --- TAB 9: SOCIAL SECURITY ---
 def plot_ss_breakeven(ss_fra, age_arr):
-    # Standard SS adjustments + 2035 haircut
     early = ss_fra * 0.7 * 0.79
     fra = ss_fra * 1.0 * 0.79
     delayed = ss_fra * 1.24 * 0.79
@@ -100,7 +125,7 @@ def plot_ss_breakeven(ss_fra, age_arr):
     fig.update_layout(title="Cumulative Guaranteed Income Breakeven Analysis", xaxis_title="Age", yaxis_title="Cumulative Income ($)")
     return fig
 
-# --- TAB 8: MEDICARE VS RETIREE ---
+# --- TAB 10: MEDICARE VS RETIREE ---
 def plot_medicare_comparison(history, years_arr, inputs):
     fig = go.Figure()
     medicare_irmaa = np.median(history['medicare_cost'], axis=0)

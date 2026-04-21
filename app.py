@@ -2,14 +2,15 @@ import streamlit as st
 import numpy as np
 import datetime
 
-# Import custom modules
+# Import all custom modules cleanly
 from engine import StochasticRetirementEngine
-from visuals import (
-    plot_wealth_trajectory, plot_net_spendable, plot_liquidity_timeline, 
-    plot_taxes_and_rmds, plot_social_security_analysis, 
-    plot_income_volatility, plot_legacy_breakdown
-)
 from exports import build_csv_dataframe
+from visuals import (
+    plot_wealth_trajectory, plot_liquidity_timeline, plot_cash_flow_sources,
+    plot_expenses_breakdown, plot_withdrawal_hierarchy, plot_taxes_and_rmds,
+    plot_roth_strategy_comparison, plot_roth_tax_impact, plot_ss_breakeven,
+    plot_medicare_comparison, plot_income_volatility, plot_legacy_breakdown
+)
 
 st.set_page_config(page_title="Advanced Retirement Simulator", layout="wide")
 
@@ -90,10 +91,10 @@ if submit:
     median_paths = np.median(history['total_bal'], axis=0)
     prob_success = np.mean(history['total_bal'][:, -1] >= inputs['target_floor']) * 100
 
-    # Ensure all required tabs + new advanced actuarial tabs are available
+    # UI Routing to all 11 Tabs
     t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11 = st.tabs([
         "📊 Projections", "💵 Cash Flow", "📉 Guardrails", "📈 Net Worth", "🏛️ Taxes", 
-        "🏛️ Legacy/Estate", "💡 Coach Alerts", "🔄 Roth Optimizer", "🦅 Social Sec", "🏥 Medicare", "💾 Exports"
+        "🏛️ Legacy", "💡 Coach Alerts", "🔄 Roth Opt.", "🦅 Social Sec", "🏥 Medicare", "💾 Exports"
     ])
 
     with t1:
@@ -113,12 +114,12 @@ if submit:
             st.plotly_chart(plot_expenses_breakdown(history, years_arr), use_container_width=True)
 
     with t3:
-        st.subheader("Income Volatility & Dynamic Guardrails") # (Keep your existing code for this)
-        from visuals import plot_income_volatility
+        st.subheader("Income Volatility & Dynamic Guardrails")
+        st.write("This chart illustrates the impact of Guyton-Klinger rules. In severe market downturns, your scheduled spending may be reduced by up to 10% to protect portfolio longevity.")
         st.plotly_chart(plot_income_volatility(history, years_arr), use_container_width=True)
 
     with t4:
-        st.subheader("Asset Liquidity Timeline")
+        st.subheader("Net Worth Forecast & Asset Liquidity")
         st.plotly_chart(plot_liquidity_timeline(history, years_arr), use_container_width=True)
 
     with t5:
@@ -129,7 +130,39 @@ if submit:
         with col2:
             st.plotly_chart(plot_taxes_and_rmds(history, years_arr), use_container_width=True)
 
-    # ... (Keep t6 & t7 identical to before) ...
+    with t6:
+        st.subheader("After-Tax Legacy & Estate Breakdown")
+        st.plotly_chart(plot_legacy_breakdown(history), use_container_width=True)
+        
+        med_tsp = np.median(history['tsp_bal'][:, -1])
+        med_roth = np.median(history['roth_bal'][:, -1])
+        med_taxable = np.median(history['taxable_bal'][:, -1]) + np.median(history['cash_bal'][:, -1])
+        
+        net_to_heirs = (med_tsp * 0.76) + med_taxable + med_roth
+        st.metric("Estimated Net After-Tax Value to Heirs", f"${net_to_heirs:,.0f}", delta=f"Lost to IRD Taxes: -${med_tsp * 0.24:,.0f}", delta_color="inverse")
+
+    with t7:
+        st.subheader("PlannerPlus Coach Alerts & Actionable To-Do List")
+        med_taxes = np.median(history['taxes_fed'], axis=0)
+        
+        if med_taxes[-1] > med_taxes[0] * 2.5:
+            st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Strongly consider Roth Conversions.")
+        
+        medicare_costs = np.median(history['medicare_cost'], axis=0)
+        if np.any(medicare_costs > 2100):  
+            st.warning("⚠️ **Medicare IRMAA Alert**: Your simulated MAGI breaches IRMAA cliffs, triggering thousands in projected surcharges.")
+            
+        cash_depletion = np.where(np.percentile(history['cash_bal'], 10, axis=0) <= 0)[0]
+        if len(cash_depletion) > 0:
+            st.error(f"⚠️ **SORR Buffer Alert**: In severe market downturns, your Money Market buffer is projected to fully deplete at Age {age_arr[cash_depletion[0]]}.")
+            
+        if prob_success >= 85:
+            st.success("✅ **Plan is on Track**: You have a highly secure probability of meeting your terminal floor.")
+
+        st.markdown("### Actionable To-Do List")
+        st.markdown(f"- [ ] **Setup Auto-Withdrawals**: Configure Year 1 baseline withdrawal at exactly {opt_iwr*100:.2f}%.")
+        st.markdown("- [ ] **Solidify Downturn Buffer**: Ensure Taxable and Money Market accounts are cleanly separated for Sequence of Return Risk.")
+        st.markdown("- [ ] **Estate Planning**: Review beneficiaries to align with Target Estate Floor goals.")
 
     with t8:
         st.subheader("Roth Conversion Optimizer")
@@ -149,7 +182,6 @@ if submit:
         st.plotly_chart(plot_ss_breakeven(inputs['ss_fra'], age_arr), use_container_width=True)
         st.markdown("### Optimal Filing Decision")
         st.success("**Verdict: Delay Claiming until Age 70**")
-        st.write("Why: By delaying, you maximize the inflation-adjusted guaranteed income stream, strictly reducing the withdrawal pressure placed on the TSP early in retirement.")
 
     with t10:
         st.subheader("Medicare Part B & IRMAA vs. Retiree Coverage")
@@ -161,10 +193,8 @@ if submit:
         
         if "FEHB" in inputs['health_plan'] or "TRICARE" in inputs['health_plan']:
             st.success("Verdict: **Waive Part B & Rely on Retiree Coverage**")
-            st.write("Actuarial Decision: Absorbing the catastrophic risk of self-insuring Part B via FEHB is mathematically superior to paying thousands in projected IRMAA MAGI penalties.")
         else:
             st.warning("Verdict: **Enroll in Medicare Part B**")
-            st.write("Actuarial Decision: Without a Federal Retiree Plan backing you, self-insuring poses a catastrophic sequence risk to your retirement portfolio. Part B is strictly required.")
 
     with t11:
         st.subheader("Strict-Format CSV Data Exports")
