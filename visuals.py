@@ -48,3 +48,34 @@ def plot_social_security_analysis(prob_success):
                  title="Impact of SS Claiming Age on Terminal Portfolio Longevity")
     fig.update_yaxes(range=[0, 100])
     return fig
+
+def plot_income_volatility(history, years_arr):
+    med_spend = np.median(history['net_spendable'], axis=0)
+    high_spend = np.percentile(history['net_spendable'], 90, axis=0)
+    low_spend = np.percentile(history['net_spendable'], 10, axis=0)
+
+    fig = go.Figure()
+    # Shaded area for range of possible spending (Guardrails in action)
+    fig.add_trace(go.Scatter(x=years_arr, y=high_spend, mode='lines', line=dict(width=0), showlegend=False))
+    fig.add_trace(go.Scatter(x=years_arr, y=low_spend, mode='lines', fill='tonexty', fillcolor='rgba(0,128,128,0.2)', line=dict(width=0), name='Spending Range (10th-90th)'))
+    
+    # Median Spending Line
+    fig.add_trace(go.Scatter(x=years_arr, y=med_spend, mode='lines', name='Median Spending', line=dict(color='teal', width=3)))
+    
+    fig.update_layout(title="Guyton-Klinger Guardrails: Spending Power Volatility", xaxis_title="Year", yaxis_title="Net Spendable Income ($)", hovermode="x unified")
+    return fig
+
+def plot_legacy_breakdown(history):
+    # Get median terminal balances for each account
+    tsp_term = np.median(history['tsp_bal'][:, -1])
+    roth_term = np.median(history['roth_bal'][:, -1])
+    taxable_term = np.median(history['taxable_bal'][:, -1])
+    cash_term = np.median(history['cash_bal'][:, -1])
+    
+    labels = ['TSP/401k (Tax-Deferred)', 'Roth IRA (Tax-Free)', 'Taxable Investments (Step-up basis)', 'Cash/Money Market']
+    values = [max(0, tsp_term), max(0, roth_term), max(0, taxable_term), max(0, cash_term)]
+    colors = ['#1f77b4', '#2ca02c', '#ff7f0e', '#d62728']
+
+    fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=.4, marker=dict(colors=colors))])
+    fig.update_layout(title="Terminal Estate Composition (At Life Expectancy)")
+    return fig
