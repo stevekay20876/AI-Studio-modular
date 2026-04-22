@@ -100,7 +100,6 @@ class StochasticRetirementEngine:
         age = self.inputs['current_age']
         current_year = datetime.datetime.now().year
         
-        # Safely grab inputs to prevent KeyErrors during Brent optimization
         base_health_premium = self.inputs.get('health_cost', 0.0)
         base_oop_cost = self.inputs.get('oop_cost', 0.0)
         mortgage_pmt = self.inputs.get('mortgage_pmt', 0.0)
@@ -193,42 +192,68 @@ class StochasticRetirementEngine:
             history['tsp_withdrawal'][:, yr] = w_tsp + w_tsp_fallback
             taxable += excess_rmd
             
-            taxable_income = rmds + w_tsp + w_tsp_fallback + pension + (ss * 0.85)
-            agi = np.maximum(0, taxable_income - deduction)
+            # --- TAX & MAGI DEFINITIONS ---
+            gross_income = rmds + w_tsp + w_tsp_fallback + pension + (ss * 0.85)
+            magi = gross_income.copy() # MAGI does NOT include the standard deduction
+            taxable_income = np.maximum(0, gross_income - deduction) # Taxable Income subtracts it
+            
             base_tax_fed = np.zeros(self.iterations)
             for i in range(len(brackets)):
                 prev_limit = brackets[i-1][0] if i > 0 else 0
                 limit, rate = brackets[i]
-                base_tax_fed += np.clip(agi - prev_limit, 0, limit - prev_limit) * rate
+                base_tax_fed += np.clip(taxable_income - prev_limit, 0, limit - prev_limit) * rate
                 
-            tax_state = agi * state_tax_rate
+            tax_state = taxable_income * state_tax_rate
             history['taxes_state'][:, yr] = tax_state
             
+            # --- TRUE OPTIMIZED ROTH CONVERSION LOGIC ---
             total_tax_fed = base_tax_fed.copy()
             conv_amt = np.zeros(self.iterations)
             
             if roth_strategy > 0 and age < 75:
                 space = np.zeros(self.iterations)
-                if roth_strategy == 1: 
-                    for limit, rate in brackets:
-                        mask = (agi < limit) & (space == 0)
-                        space[mask] = limit - agi[mask] - 1
-                elif roth_strategy == 2: 
-                    irmaa_limit = irmaa_brackets[0][0]
-                    space = np.maximum(0, irmaa_limit - agi - 1)
                 
+                if roth_strategy == 1: 
+                    # 1. Fill Current Bracket (Safely)
+                    for limit, rate in brackets:
+                        mask = (taxable_income < limit) & (space == 0)
+                        space[mask] = limit - taxable_income[mask] - 1
+                    space = np.where(space > 1e6, 0, space) # Prevent infinite conversions if in top bracket
+                    
+                    # 2. Dynamic IRMAA Brake (Halt if this conversion pushes MAGI over an IRMAA cliff)
+                    for irmaa_limit, surcharge in irmaa_brackets:
+                        crosses_cliff = (magi < irmaa_limit) & ((magi + space) >= irmaa_limit)
+                        space = np.where(crosses_cliff, irmaa_limit - magi - 1, space)
+                        
+                elif roth_strategy == 2: 
+                    # Target exactly up to IRMAA Tier 1 Threshold
+                    irmaa_tier_1 = irmaa_brackets[0][0]
+                    space = np.maximum(0, irmaa_tier_1 - magi - 1)
+                    
+                elif roth_strategy == 3:
+                    # Target exactly up to IRMAA Tier 2 Threshold
+                    irmaa_tier_2 = irmaa_brackets[1][0]
+                    space = np.maximum(0, irmaa_tier_2 - magi - 1)
+                
+                # Cap the allowable conversion by available TSP funds
                 conv_amt = np.minimum(space, tsp)
-                new_agi = agi + conv_amt
+                
+                new_taxable_income = taxable_income + conv_amt
+                new_magi = magi + conv_amt
+                
                 new_tax_fed = np.zeros(self.iterations)
                 for i in range(len(brackets)):
                     prev_limit = brackets[i-1][0] if i > 0 else 0
                     limit, rate = brackets[i]
-                    new_tax_fed += np.clip(new_agi - prev_limit, 0, limit - prev_limit) * rate
+                    new_tax_fed += np.clip(new_taxable_income - prev_limit, 0, limit - prev_limit) * rate
                 
                 extra_tax = new_tax_fed - base_tax_fed
+                
+                # Pay conversion tax from outside assets first
                 w_tax_cash = np.minimum(cash, extra_tax)
                 cash -= w_tax_cash
                 rem_tax = extra_tax - w_tax_cash
+                
                 w_tax_taxable = np.minimum(taxable, rem_tax)
                 taxable -= w_tax_taxable
                 rem_tax -= w_tax_taxable
@@ -237,6 +262,9 @@ class StochasticRetirementEngine:
                 tsp -= conv_amt
                 roth += net_to_roth
                 total_tax_fed = new_tax_fed
+                
+                # Update MAGI so Medicare calculates correctly below
+                magi = new_magi
             
             history['roth_conversion'][:, yr] = conv_amt
             history['taxes_fed'][:, yr] = total_tax_fed
@@ -250,17 +278,16 @@ class StochasticRetirementEngine:
                 medicare_cost += MEDICARE_PART_B_BASE
                 for i in range(len(irmaa_brackets)):
                     limit, surcharge = irmaa_brackets[i]
-                    medicare_cost = np.where(new_agi if roth_strategy > 0 else agi > (irmaa_brackets[i-1][0] if i>0 else 0), MEDICARE_PART_B_BASE + surcharge, medicare_cost)
+                    # Medicare IRMAA correctly evaluated against MAGI, not taxable income
+                    medicare_cost = np.where(magi > (irmaa_brackets[i-1][0] if i>0 else 0), MEDICARE_PART_B_BASE + surcharge, medicare_cost)
             history['medicare_cost'][:, yr] = medicare_cost
 
-            # Deduct OOP medical costs from HSA first
             w_hsa = np.minimum(hsa, inflated_oop)
             hsa -= w_hsa
             oop_remainder = inflated_oop - w_hsa
             
             history['health_cost'][:, yr] = base_health_premium + oop_remainder
             
-            # Mortgage falls off when yr >= mortgage_yrs
             current_mortgage = np.full(self.iterations, mortgage_pmt if yr < mortgage_yrs else 0.0)
             history['mortgage_cost'][:, yr] = current_mortgage
             
@@ -291,11 +318,13 @@ class StochasticRetirementEngine:
     def analyze_roth_strategies(self, opt_iwr):
         hist_base = self.run_mc(opt_iwr, seed=42, roth_strategy=0)
         hist_bracket = self.run_mc(opt_iwr, seed=42, roth_strategy=1)
-        hist_irmaa = self.run_mc(opt_iwr, seed=42, roth_strategy=2)
+        hist_irmaa1 = self.run_mc(opt_iwr, seed=42, roth_strategy=2)
+        hist_irmaa2 = self.run_mc(opt_iwr, seed=42, roth_strategy=3)
         
         results = {
-            'Baseline': {'wealth': np.median(hist_base['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_base['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_base['rmds'], axis=0)), 'hist': hist_base},
-            'Current Bracket': {'wealth': np.median(hist_bracket['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_bracket['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_bracket['rmds'], axis=0)), 'hist': hist_bracket},
-            'IRMAA Tier 1': {'wealth': np.median(hist_irmaa['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa['rmds'], axis=0)), 'hist': hist_irmaa}
+            'Baseline (None)': {'wealth': np.median(hist_base['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_base['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_base['rmds'], axis=0)), 'hist': hist_base},
+            'Current Bracket (IRMAA Protected)': {'wealth': np.median(hist_bracket['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_bracket['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_bracket['rmds'], axis=0)), 'hist': hist_bracket},
+            'Target IRMAA Tier 1 Max': {'wealth': np.median(hist_irmaa1['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa1['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa1['rmds'], axis=0)), 'hist': hist_irmaa1},
+            'Target IRMAA Tier 2 Max': {'wealth': np.median(hist_irmaa2['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa2['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa2['rmds'], axis=0)), 'hist': hist_irmaa2}
         }
         return results
