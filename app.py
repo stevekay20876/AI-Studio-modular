@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import datetime
 
-# Import custom modules cleanly
 from engine import StochasticRetirementEngine
 from exports import build_csv_dataframe
 from visuals import (
@@ -26,8 +25,10 @@ with st.sidebar.form("input_form"):
     ret_age = c2.number_input("Retirement Age", min_value=18, max_value=100, value=None)
     life_exp = st.number_input("Life Expectancy Age", min_value=50, max_value=120, value=None)
     
+    c3, c4 = st.columns(2)
+    state = c3.text_input("State of Residence")
+    county = c4.text_input("County of Residence")
     filing_status = st.selectbox("Tax Filing Status", ["Single", "MFJ"])
-    state = st.text_input("State of Residence")
     
     st.subheader("Federal Details & Income")
     pension_est = st.number_input("Annual Pension Estimate ($)", min_value=0, value=None)
@@ -37,7 +38,6 @@ with st.sidebar.form("input_form"):
     mortgage_pmt = st.number_input("Annual Mortgage Payment ($)", min_value=0, value=0)
     mortgage_yrs = st.number_input("Mortgage Years Remaining", min_value=0, value=0)
     
-    # Fully expanded list exactly as requested
     health_options = [
         "FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", 
         "GEHA High", "GEHA Standard", "Aetna Open Access", 
@@ -77,11 +77,11 @@ if submit:
         st.error("SYSTEM HALTED: All core numerical parameters must be explicitly provided.")
         st.stop()
 
-    # Dictionary perfectly matched to engine
     inputs = {
         'current_age': int(cur_age), 'ret_age': int(ret_age), 'life_expectancy': int(life_exp),
-        'filing_status': filing_status, 'state': state, 'pension_est': float(pension_est or 0),
-        'ss_fra': float(ss_fra or 0), 'health_plan': health_plan, 'health_cost': float(health_cost or 0),
+        'filing_status': filing_status, 'state': state, 'county': county, 
+        'pension_est': float(pension_est or 0), 'ss_fra': float(ss_fra or 0), 
+        'health_plan': health_plan, 'health_cost': float(health_cost or 0),
         'oop_cost': float(oop_cost or 0), 'mortgage_pmt': float(mortgage_pmt), 'mortgage_yrs': int(mortgage_yrs),
         'target_floor': float(target_floor),
         'tsp_bal': float(tsp_b), 'tsp_ret': float(tsp_r)/100, 'tsp_vol': float(tsp_v)/100,
@@ -96,24 +96,19 @@ if submit:
         opt_iwr = engine.optimize_iwr()
         roth_results = engine.analyze_roth_strategies(opt_iwr)
         
-        # Determine winning strategy and extract its simulation history array
         winner = max(roth_results, key=lambda key: roth_results[key]['wealth'])
         history = roth_results[winner]['hist']
     
     st.success(f"Simulation Complete. Optimized Initial Withdrawal Rate: **{opt_iwr*100:.2f}%**")
 
-    # Shared Arrays
     years_arr = np.arange(datetime.datetime.now().year, datetime.datetime.now().year + engine.years)
     age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine.years)
     
-    # Core Metrics
     median_paths = np.median(history['total_bal'], axis=0)
     prob_success = np.mean(history['total_bal'][:, -1] >= inputs['target_floor']) * 100
 
-    # Build DataFrame for UI Table and Export
     df_median = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
 
-    # Output Tabs
     t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11 = st.tabs([
         "📊 Projections", "💵 Cash Flow", "📉 Guardrails", "📈 Net Worth", "🏛️ Taxes", 
         "🏛️ Legacy", "💡 Coach Alerts", "🔄 Roth Opt.", "🦅 Social Sec", "🏥 Medicare", "💾 Exports"
@@ -140,13 +135,11 @@ if submit:
             st.markdown("*^ Income Gap Mapping: Visualizes the shortfall between your Guaranteed Income (Social Security & Pension) and your Total Expenses. The gap is strictly funded by portfolio distributions.*")
             
         st.markdown("### Integrated Year-by-Year Cash Flow Projections")
-        st.write("Dynamic outflows interact with fluctuating portfolio values. Includes baseline spending + taxes + healthcare costs.")
         display_cols = ['Calendar Year', 'Age', 'Total Income', 'Total Expenses', 'Net Spendable Annual', 'Annual 401(k)/TSP Withdrawal', 'Social Security', 'Pension', 'HSA Balance']
         st.dataframe(df_median[display_cols].style.format({"Total Income": "${:,.0f}", "Total Expenses": "${:,.0f}", "Net Spendable Annual": "${:,.0f}", "Annual 401(k)/TSP Withdrawal": "${:,.0f}", "Social Security": "${:,.0f}", "Pension": "${:,.0f}", "HSA Balance": "${:,.0f}"}), use_container_width=True)
 
     with t3:
         st.subheader("Variable Spending Rules & Adaptive Guardrails")
-        st.write("This chart illustrates the impact of Guyton-Klinger rules. In severe market downturns, your scheduled spending automatically decreases to preserve capital.")
         st.plotly_chart(plot_income_volatility(history, years_arr), use_container_width=True)
 
     with t4:
@@ -188,11 +181,6 @@ if submit:
         if prob_success >= 85:
             st.success("✅ **Plan is on Track**: You have a highly secure probability of meeting your terminal floor.")
 
-        st.markdown("### Actionable To-Do List")
-        st.markdown(f"- [ ] **Setup Auto-Withdrawals**: Configure Year 1 baseline withdrawal at exactly {opt_iwr*100:.2f}%.")
-        st.markdown("- [ ] **Solidify Downturn Buffer**: Ensure Taxable and Money Market accounts are cleanly separated for Sequence Risk.")
-        st.markdown("- [ ] **Estate Planning**: Review beneficiaries to align with Target Legacy Floor goals.")
-
     with t8:
         st.subheader("Roth Conversion Optimizer")
         col1, col2 = st.columns(2)
@@ -201,14 +189,13 @@ if submit:
         with col2:
             st.plotly_chart(plot_roth_tax_impact(roth_results, years_arr), use_container_width=True)
             
-        tax_savings = roth_results['Baseline']['taxes'] - roth_results[winner]['taxes']
-        rmd_reduction = roth_results['Baseline']['rmds'] - roth_results[winner]['rmds']
-        wealth_increase = roth_results[winner]['wealth'] - roth_results['Baseline']['wealth']
+        tax_savings = roth_results['Baseline (None)']['taxes'] - roth_results[winner]['taxes']
+        rmd_reduction = roth_results['Baseline (None)']['rmds'] - roth_results[winner]['rmds']
+        wealth_increase = roth_results[winner]['wealth'] - roth_results['Baseline (None)']['wealth']
         
         st.markdown("### Recommended Action Plan")
-        if winner == "Baseline":
+        if "Baseline" in winner:
             st.warning("**Verdict: No Conversions Recommended.**")
-            st.write("Analysis: Paying taxes out of pocket now does not mathematically overcome the loss of compound growth for your specific asset mix.")
         else:
             st.success(f"Verdict: **Execute the '{winner}' Strategy**")
             st.write(f"- **Real Lifetime Tax Savings:** ${max(0, tax_savings):,.0f}")
@@ -216,7 +203,6 @@ if submit:
             st.write(f"- **Net Increase to Legacy:** ${wealth_increase:,.0f}")
             
             st.markdown("#### Step-by-Step Conversion Schedule")
-            st.write("Below are the median target conversion amounts calculated dynamically to perfectly fill your recommended tax bracket constraints prior to RMD age.")
             roth_amts = np.median(roth_results[winner]['hist']['roth_conversion'], axis=0)
             conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_amts})
             st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}"}))
@@ -243,10 +229,7 @@ if submit:
 
     with t11:
         st.subheader("Strict-Format CSV Data Exports")
-        st.markdown("Download the precise simulation results populated across all strict required fields. Data exported reflects the fully optimized mathematically superior Roth conversion path.")
-        
         df_pess = build_csv_dataframe(history, years_arr, age_arr, percentile=10)
-
         colA, colB = st.columns(2)
         colA.download_button("📄 Download Median (50th) CSV", df_median.to_csv(index=False), "Retirement_Median.csv", "text/csv")
         colB.download_button("📄 Download Pessimistic (10th) CSV", df_pess.to_csv(index=False), "Retirement_Pess.csv", "text/csv")

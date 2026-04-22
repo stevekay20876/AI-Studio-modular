@@ -13,7 +13,6 @@ def plot_wealth_trajectory(history, target_floor, years_arr):
     return fig
 
 def plot_fan_chart(history, years_arr):
-    # Fan / Hurricane chart to display Sequence of Return Risk (SORR)
     p10 = np.percentile(history['total_bal'], 10, axis=0)
     p25 = np.percentile(history['total_bal'], 25, axis=0)
     p50 = np.median(history['total_bal'], axis=0)
@@ -125,7 +124,8 @@ def plot_roth_strategy_comparison(roth_results):
 
 def plot_roth_tax_impact(roth_results, years_arr):
     fig = go.Figure()
-    base_tax = np.median(roth_results['Baseline']['hist']['taxes_fed'], axis=0)
+    # FIXED: The key must exactly match engine.py
+    base_tax = np.median(roth_results['Baseline (None)']['hist']['taxes_fed'], axis=0)
     winner = max(roth_results, key=lambda key: roth_results[key]['wealth'])
     opt_tax = np.median(roth_results[winner]['hist']['taxes_fed'], axis=0)
     

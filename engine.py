@@ -106,10 +106,28 @@ class StochasticRetirementEngine:
         mortgage_yrs = self.inputs.get('mortgage_yrs', 0)
         health_plan = self.inputs.get('health_plan', "None/Self-Insure")
         
-        state_tax_rate = 0.045 if self.inputs['state'].strip() != "" else 0.0
         deduction = STD_DED_MFJ if self.inputs['filing_status'] == 'MFJ' else STD_DED_SINGLE
         brackets = TAX_BRACKETS_MFJ if self.inputs['filing_status'] == 'MFJ' else TAX_BRACKETS_SINGLE
         irmaa_brackets = IRMAA_BRACKETS_MFJ if self.inputs['filing_status'] == 'MFJ' else IRMAA_BRACKETS_SINGLE
+
+        # State & County Tax Proxy Logic
+        state_str = self.inputs.get('state', '').strip().upper()
+        county_str = self.inputs.get('county', '').strip().upper()
+        
+        tax_free_states = ["TX", "FL", "NV", "WA", "SD", "WY", "AK", "TN", "NH"]
+        if state_str in tax_free_states:
+            state_tax_rate = 0.0
+        else:
+            state_tax_rate = 0.045 if state_str != "" else 0.0
+            
+        if county_str != "" and state_str in ["MD", "IN", "PA", "OH", "NY", "MARYLAND", "INDIANA", "PENNSYLVANIA", "OHIO", "NEW YORK"]:
+            local_tax_rate = 0.025 # Heuristic for high local/county tax states
+        elif county_str != "":
+            local_tax_rate = 0.010 # General proxy
+        else:
+            local_tax_rate = 0.0
+            
+        combined_state_local_rate = state_tax_rate + local_tax_rate
 
         for yr in range(self.years):
             age += 1
@@ -192,10 +210,9 @@ class StochasticRetirementEngine:
             history['tsp_withdrawal'][:, yr] = w_tsp + w_tsp_fallback
             taxable += excess_rmd
             
-            # --- TAX & MAGI DEFINITIONS ---
             gross_income = rmds + w_tsp + w_tsp_fallback + pension + (ss * 0.85)
-            magi = gross_income.copy() # MAGI does NOT include the standard deduction
-            taxable_income = np.maximum(0, gross_income - deduction) # Taxable Income subtracts it
+            magi = gross_income.copy() 
+            taxable_income = np.maximum(0, gross_income - deduction) 
             
             base_tax_fed = np.zeros(self.iterations)
             for i in range(len(brackets)):
@@ -203,10 +220,10 @@ class StochasticRetirementEngine:
                 limit, rate = brackets[i]
                 base_tax_fed += np.clip(taxable_income - prev_limit, 0, limit - prev_limit) * rate
                 
-            tax_state = taxable_income * state_tax_rate
-            history['taxes_state'][:, yr] = tax_state
+            # Applied combined State + Local (County) Tax
+            tax_state_local = taxable_income * combined_state_local_rate
+            history['taxes_state'][:, yr] = tax_state_local
             
-            # --- TRUE OPTIMIZED ROTH CONVERSION LOGIC ---
             total_tax_fed = base_tax_fed.copy()
             conv_amt = np.zeros(self.iterations)
             
@@ -214,30 +231,23 @@ class StochasticRetirementEngine:
                 space = np.zeros(self.iterations)
                 
                 if roth_strategy == 1: 
-                    # 1. Fill Current Bracket (Safely)
                     for limit, rate in brackets:
                         mask = (taxable_income < limit) & (space == 0)
                         space[mask] = limit - taxable_income[mask] - 1
-                    space = np.where(space > 1e6, 0, space) # Prevent infinite conversions if in top bracket
-                    
-                    # 2. Dynamic IRMAA Brake (Halt if this conversion pushes MAGI over an IRMAA cliff)
+                    space = np.where(space > 1e6, 0, space)
                     for irmaa_limit, surcharge in irmaa_brackets:
                         crosses_cliff = (magi < irmaa_limit) & ((magi + space) >= irmaa_limit)
                         space = np.where(crosses_cliff, irmaa_limit - magi - 1, space)
                         
                 elif roth_strategy == 2: 
-                    # Target exactly up to IRMAA Tier 1 Threshold
                     irmaa_tier_1 = irmaa_brackets[0][0]
                     space = np.maximum(0, irmaa_tier_1 - magi - 1)
                     
                 elif roth_strategy == 3:
-                    # Target exactly up to IRMAA Tier 2 Threshold
                     irmaa_tier_2 = irmaa_brackets[1][0]
                     space = np.maximum(0, irmaa_tier_2 - magi - 1)
                 
-                # Cap the allowable conversion by available TSP funds
                 conv_amt = np.minimum(space, tsp)
-                
                 new_taxable_income = taxable_income + conv_amt
                 new_magi = magi + conv_amt
                 
@@ -248,12 +258,9 @@ class StochasticRetirementEngine:
                     new_tax_fed += np.clip(new_taxable_income - prev_limit, 0, limit - prev_limit) * rate
                 
                 extra_tax = new_tax_fed - base_tax_fed
-                
-                # Pay conversion tax from outside assets first
                 w_tax_cash = np.minimum(cash, extra_tax)
                 cash -= w_tax_cash
                 rem_tax = extra_tax - w_tax_cash
-                
                 w_tax_taxable = np.minimum(taxable, rem_tax)
                 taxable -= w_tax_taxable
                 rem_tax -= w_tax_taxable
@@ -262,14 +269,11 @@ class StochasticRetirementEngine:
                 tsp -= conv_amt
                 roth += net_to_roth
                 total_tax_fed = new_tax_fed
-                
-                # Update MAGI so Medicare calculates correctly below
                 magi = new_magi
             
             history['roth_conversion'][:, yr] = conv_amt
             history['taxes_fed'][:, yr] = total_tax_fed
             
-            # --- HSA & HEALTHCARE LOGIC ---
             base_health_premium *= (1 + inf_paths[:, yr])
             inflated_oop = base_oop_cost * (1 + inf_paths[:, yr])
             
@@ -278,7 +282,6 @@ class StochasticRetirementEngine:
                 medicare_cost += MEDICARE_PART_B_BASE
                 for i in range(len(irmaa_brackets)):
                     limit, surcharge = irmaa_brackets[i]
-                    # Medicare IRMAA correctly evaluated against MAGI, not taxable income
                     medicare_cost = np.where(magi > (irmaa_brackets[i-1][0] if i>0 else 0), MEDICARE_PART_B_BASE + surcharge, medicare_cost)
             history['medicare_cost'][:, yr] = medicare_cost
 
@@ -299,7 +302,7 @@ class StochasticRetirementEngine:
             history['hsa_bal'][:, yr] = hsa
             
             history['net_spendable'][:, yr] = (scheduled_withdrawal + pension + ss 
-                                               - base_tax_fed - tax_state 
+                                               - base_tax_fed - tax_state_local 
                                                - medicare_cost - history['health_cost'][:, yr] 
                                                - current_mortgage)
             
