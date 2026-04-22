@@ -3,14 +3,31 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 
-# --- TAB 1 & 4: WEALTH & LIQUIDITY ---
 def plot_wealth_trajectory(history, target_floor, years_arr):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['total_bal'], axis=0), mode='lines', name='Median (50th)', line=dict(color='blue', width=3)))
     fig.add_trace(go.Scatter(x=years_arr, y=np.percentile(history['total_bal'], 90, axis=0), mode='lines', name='Optimistic (90th)', line=dict(color='green', dash='dash')))
     fig.add_trace(go.Scatter(x=years_arr, y=np.percentile(history['total_bal'], 10, axis=0), mode='lines', name='Pessimistic (10th)', line=dict(color='red', dash='dash')))
-    fig.add_hline(y=target_floor, line_dash="dot", line_color="black", annotation_text="Target Estate Floor")
+    fig.add_hline(y=target_floor, line_dash="dot", line_color="black", annotation_text="Target Legacy Floor")
     fig.update_layout(title="Stochastic Portfolio Projections", xaxis_title="Year", yaxis_title="Balance ($)", hovermode="x unified")
+    return fig
+
+def plot_fan_chart(history, years_arr):
+    # Fan / Hurricane chart to display Sequence of Return Risk (SORR)
+    p10 = np.percentile(history['total_bal'], 10, axis=0)
+    p25 = np.percentile(history['total_bal'], 25, axis=0)
+    p50 = np.median(history['total_bal'], axis=0)
+    p75 = np.percentile(history['total_bal'], 75, axis=0)
+    p90 = np.percentile(history['total_bal'], 90, axis=0)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=years_arr, y=p90, mode='lines', line=dict(width=0), showlegend=False))
+    fig.add_trace(go.Scatter(x=years_arr, y=p10, mode='lines', fill='tonexty', fillcolor='rgba(173, 216, 230, 0.2)', line=dict(width=0), name='10th-90th Percentile Range'))
+    fig.add_trace(go.Scatter(x=years_arr, y=p75, mode='lines', line=dict(width=0), showlegend=False))
+    fig.add_trace(go.Scatter(x=years_arr, y=p25, mode='lines', fill='tonexty', fillcolor='rgba(70, 130, 180, 0.4)', line=dict(width=0), name='25th-75th Percentile Range'))
+    fig.add_trace(go.Scatter(x=years_arr, y=p50, mode='lines', name='Median Path (50th)', line=dict(color='darkblue', width=3)))
+    
+    fig.update_layout(title="Sequence of Return Risk (Hurricane/Fan Chart)", xaxis_title="Year", yaxis_title="Portfolio Wealth ($)", hovermode="x unified")
     return fig
 
 def plot_liquidity_timeline(history, years_arr):
@@ -22,29 +39,37 @@ def plot_liquidity_timeline(history, years_arr):
     fig.update_layout(title="Asset Liquidity Timeline", xaxis_title="Year", yaxis_title="Balance ($)", hovermode="x unified")
     return fig
 
-# --- TAB 2: CASH FLOW FORECAST ---
 def plot_cash_flow_sources(history, years_arr):
     fig = go.Figure()
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['ss_income'], axis=0), name="Social Security", marker_color='#1f77b4'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['pension_income'], axis=0), name="Pension", marker_color='#ff7f0e'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['tsp_withdrawal'], axis=0), name="Portfolio Withdrawal", marker_color='#2ca02c'))
     
-    total_need = np.median(history['net_spendable'] + history['taxes_fed'] + history['health_cost'] + history['medicare_cost'], axis=0)
+    total_need = np.median(history['net_spendable'] + history['taxes_fed'] + history['health_cost'] + history['medicare_cost'] + history['mortgage_cost'], axis=0)
     fig.add_trace(go.Scatter(x=years_arr, y=total_need, mode='lines', name='Total Spending Need', line=dict(color='black', width=2)))
     fig.update_layout(barmode='stack', title="Income Sources vs Total Spending Need", xaxis_title="Year", yaxis_title="Amount ($)")
+    return fig
+
+def plot_income_gap(history, years_arr):
+    guaranteed_income = np.median(history['ss_income'] + history['pension_income'], axis=0)
+    total_expenses = np.median(history['taxes_fed'] + history['health_cost'] + history['medicare_cost'] + history['mortgage_cost'] + history['net_spendable'], axis=0)
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=years_arr, y=total_expenses, mode='lines', name='Total Expenses / Lifestyle', line=dict(color='red', width=2)))
+    fig.add_trace(go.Scatter(x=years_arr, y=guaranteed_income, mode='lines', fill='tozeroy', name='Guaranteed Base (SS+Pension)', line=dict(color='blue')))
+    fig.update_layout(title="Income Gap Mapping (Shortfall Funded by Portfolio)", xaxis_title="Year", yaxis_title="Amount ($)")
     return fig
 
 def plot_expenses_breakdown(history, years_arr):
     fig = go.Figure()
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['taxes_fed'], axis=0), name="Federal/State Taxes", marker_color='crimson'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['medicare_cost'], axis=0), name="Medicare + IRMAA", marker_color='orange'))
-    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['health_cost'], axis=0), name="Health Insurance", marker_color='purple'))
-    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['mortgage_cost'], axis=0), name="Mortgage Payment", marker_color='brown')) # <-- ADDED
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['health_cost'], axis=0), name="Health / OOP", marker_color='purple'))
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['mortgage_cost'], axis=0), name="Mortgage Payment", marker_color='brown'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['net_spendable'], axis=0), name="Discretionary Lifestyle", marker_color='teal'))
-    fig.update_layout(barmode='stack', title="Itemized Core Expenses (Fixed vs Discretionary)", xaxis_title="Year", yaxis_title="Amount ($)")
+    fig.update_layout(barmode='stack', title="Itemized Core Expenses", xaxis_title="Year", yaxis_title="Amount ($)")
     return fig
 
-# --- TAB 3: GUARDRAILS ---
 def plot_income_volatility(history, years_arr):
     med_spend = np.median(history['net_spendable'], axis=0)
     high_spend = np.percentile(history['net_spendable'], 90, axis=0)
@@ -54,10 +79,9 @@ def plot_income_volatility(history, years_arr):
     fig.add_trace(go.Scatter(x=years_arr, y=high_spend, mode='lines', line=dict(width=0), showlegend=False))
     fig.add_trace(go.Scatter(x=years_arr, y=low_spend, mode='lines', fill='tonexty', fillcolor='rgba(0,128,128,0.2)', line=dict(width=0), name='Spending Range (10th-90th)'))
     fig.add_trace(go.Scatter(x=years_arr, y=med_spend, mode='lines', name='Median Spending', line=dict(color='teal', width=3)))
-    fig.update_layout(title="Guyton-Klinger Guardrails: Spending Power Volatility", xaxis_title="Year", yaxis_title="Net Spendable Income ($)", hovermode="x unified")
+    fig.update_layout(title="Variable Spending: Guardrail Adaptive Cash Flows", xaxis_title="Year", yaxis_title="Net Spendable Income ($)", hovermode="x unified")
     return fig
 
-# --- TAB 5: TAXES & WITHDRAWALS ---
 def plot_withdrawal_hierarchy(history, years_arr):
     fig = go.Figure()
     total_w = np.median(history['tsp_withdrawal'], axis=0)
@@ -73,7 +97,6 @@ def plot_taxes_and_rmds(history, years_arr):
     fig.update_layout(title="Tax Trajectory vs Mandatory RMD Cliffs", xaxis_title="Year", yaxis_title="Amount ($)", hovermode="x unified")
     return fig
 
-# --- TAB 6: LEGACY BREAKDOWN ---
 def plot_legacy_breakdown(history):
     tsp_term = np.median(history['tsp_bal'][:, -1])
     roth_term = np.median(history['roth_bal'][:, -1])
@@ -88,12 +111,9 @@ def plot_legacy_breakdown(history):
     fig.update_layout(title="Terminal Estate Composition (At Life Expectancy)")
     return fig
 
-# --- TAB 8: ROTH CONVERSION ---
 def plot_roth_strategy_comparison(roth_results):
     strategies = list(roth_results.keys())
     wealths = [roth_results[s]['wealth'] for s in strategies]
-    
-    # Highlight the winner
     winner_idx = np.argmax(wealths)
     colors = ['gray'] * len(strategies)
     colors[winner_idx] = 'green'
@@ -106,8 +126,6 @@ def plot_roth_strategy_comparison(roth_results):
 def plot_roth_tax_impact(roth_results, years_arr):
     fig = go.Figure()
     base_tax = np.median(roth_results['Baseline']['hist']['taxes_fed'], axis=0)
-    
-    # Find the winning strategy name and its history
     winner = max(roth_results, key=lambda key: roth_results[key]['wealth'])
     opt_tax = np.median(roth_results[winner]['hist']['taxes_fed'], axis=0)
     
@@ -116,7 +134,6 @@ def plot_roth_tax_impact(roth_results, years_arr):
     fig.update_layout(title="Lifetime Tax Liability Comparison", xaxis_title="Year", yaxis_title="Taxes Paid ($)")
     return fig
 
-# --- TAB 9: SOCIAL SECURITY ---
 def plot_ss_breakeven(ss_fra, age_arr):
     early = ss_fra * 0.7 * 0.79
     fra = ss_fra * 1.0 * 0.79
@@ -133,13 +150,12 @@ def plot_ss_breakeven(ss_fra, age_arr):
     fig.update_layout(title="Cumulative Guaranteed Income Breakeven Analysis", xaxis_title="Age", yaxis_title="Cumulative Income ($)")
     return fig
 
-# --- TAB 10: MEDICARE VS RETIREE ---
 def plot_medicare_comparison(history, years_arr, inputs):
     fig = go.Figure()
     medicare_irmaa = np.median(history['medicare_cost'], axis=0)
     health_prem = np.median(history['health_cost'], axis=0)
     
-    fig.add_trace(go.Scatter(x=years_arr, y=health_prem, mode='lines', stackgroup='one', name=f"{inputs['health_plan']} Premium"))
+    fig.add_trace(go.Scatter(x=years_arr, y=health_prem, mode='lines', stackgroup='one', name=f"{inputs['health_plan']} Premium + OOP"))
     fig.add_trace(go.Scatter(x=years_arr, y=medicare_irmaa, mode='lines', stackgroup='one', name="Medicare Part B + IRMAA"))
-    fig.update_layout(title="Lifetime Healthcare Cost Comparison", xaxis_title="Year", yaxis_title="Annual Premium Cost ($)")
+    fig.update_layout(title="Lifetime Healthcare Cost Comparison", xaxis_title="Year", yaxis_title="Annual Cost ($)")
     return fig
