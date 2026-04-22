@@ -79,6 +79,10 @@ class StochasticRetirementEngine:
         hsa = np.full(self.iterations, self.inputs['hsa_bal'])
         cash = np.full(self.iterations, self.inputs['cash_bal'])
         
+        # Income Bases Init (To track compounding COLAs)
+        base_pension = np.full(self.iterations, self.inputs['pension_est'])
+        base_ss = np.full(self.iterations, self.inputs['ss_fra'])
+        
         base_withdrawal = (tsp[0] + roth[0] + taxable[0] + cash[0]) * iwr
         scheduled_withdrawal = np.full(self.iterations, base_withdrawal)
         
@@ -115,7 +119,7 @@ class StochasticRetirementEngine:
             age += 1
             current_year += 1
             
-            # Returns applied
+            # Apply Returns
             prev_total_port = tsp + roth + taxable + cash
             tsp *= (1 + returns[:, yr, 1])
             roth *= (1 + returns[:, yr, 2])
@@ -127,14 +131,33 @@ class StochasticRetirementEngine:
             history['port_return'][:, yr] = (current_total_port - prev_total_port) / np.maximum(prev_total_port, 1)
             history['real_return'][:, yr] = history['port_return'][:, yr] - inf_paths[:, yr]
             
-            # Income
-            pension = np.where(age >= self.inputs['ret_age'], self.inputs['pension_est'], 0)
+            # --- COLA MATH APPLIED HERE ---
+            if yr > 0:
+                # CPI cannot be negative for federal COLAs
+                cpi = np.maximum(0, inf_paths[:, yr]) 
+                
+                # 1. Social Security gets Full CPI
+                base_ss *= (1 + cpi)
+                
+                # 2. FERS Diet COLA Logic
+                # If CPI <= 2%, get full CPI. If 2-3%, get 2%. If >3%, get CPI - 1%.
+                fers_cola = np.where(cpi <= 0.02, cpi, 
+                                     np.where(cpi <= 0.03, 0.02, cpi - 0.01))
+                
+                # FERS COLA statutorily begins at Age 62
+                fers_cola = np.where(age >= 62, fers_cola, 0.0) 
+                
+                base_pension *= (1 + fers_cola)
+
+            # Generate Year's Actual Income Streams
+            pension = np.where(age >= self.inputs['ret_age'], base_pension, 0)
             ss_haircut = 0.79 if current_year >= 2035 else 1.0
-            ss = np.where(age >= 67, self.inputs['ss_fra'] * ss_haircut, 0)
+            ss = np.where(age >= 67, base_ss * ss_haircut, 0)
+            
             history['pension_income'][:, yr] = pension
             history['ss_income'][:, yr] = ss
             
-            # Guardrails
+            # Guardrails (Guyton-Klinger & SORR)
             constraint_flag = np.zeros(self.iterations)
             if yr > 0:
                 port_ret = history['port_return'][:, yr-1]
