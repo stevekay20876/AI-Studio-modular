@@ -10,11 +10,10 @@ class StochasticRetirementEngine:
         self.inputs = inputs
         self.iterations = 10000
         self.years = max(1, inputs['life_expectancy'] - inputs['current_age'])
-        self.n_assets = 5 # Inflation, TSP, Roth, Taxable, HSA
+        self.n_assets = 5 
         self.setup_covariance_matrix()
         
     def setup_covariance_matrix(self):
-        # Base correlation matrix
         corr = np.array([
             [1.00, -0.15, -0.15, -0.15, -0.15],
             [-0.15, 1.00,  0.85,  0.85,  0.85],
@@ -22,14 +21,7 @@ class StochasticRetirementEngine:
             [-0.15, 0.85,  0.85,  1.00,  0.85],
             [-0.15, 0.85,  0.85,  0.85,  1.00]
         ])
-        # Volatilities (Inflation heavily calibrated to 1.2% historical volatility)
-        vols = np.array([
-            0.012, 
-            self.inputs['tsp_vol'], 
-            self.inputs['roth_vol'], 
-            self.inputs['taxable_vol'], 
-            self.inputs['hsa_vol']
-        ])
+        vols = np.array([0.012, self.inputs['tsp_vol'], self.inputs['roth_vol'], self.inputs['taxable_vol'], self.inputs['hsa_vol']])
         cov = np.outer(vols, vols) * corr
         self.L = np.linalg.cholesky(cov)
 
@@ -37,11 +29,9 @@ class StochasticRetirementEngine:
         if seed is not None:
             np.random.seed(seed)
             
-        # Heavy-tailed Student's t-shocks
         shocks = t.rvs(df=5, size=(self.iterations, self.years, self.n_assets))
         correlated_shocks = np.einsum('ij,kyj->kyi', self.L, shocks)
         
-        # Drift calculation (Geometric Mean adjustment)
         drifts = np.array([
             0.03,
             self.inputs['tsp_ret'] - (self.inputs['tsp_vol']**2)/2,
@@ -51,24 +41,17 @@ class StochasticRetirementEngine:
         ])
         
         returns = np.exp(drifts + correlated_shocks) - 1
-        
-        # Ornstein-Uhlenbeck Inflation with Historically Calibrated Jump-Diffusion
         inf_paths = np.zeros((self.iterations, self.years))
-        inf_base = 0.025   # Base inflation target of 2.5%
-        kappa = 0.5        # Faster mean-reversion (simulating Fed intervention)
-        jump_prob = 0.05   # 5% chance of a severe inflation shock (e.g., 1970s, 2022)
+        inf_base = 0.025   
+        kappa = 0.5        
+        jump_prob = 0.05   
         current_inf = np.full(self.iterations, inf_base)
         
         for yr in range(self.years):
             dW = correlated_shocks[:, yr, 0]
-            # 5% chance of an inflation spike averaging 4%
             jumps = np.where(np.random.rand(self.iterations) < jump_prob, np.random.normal(0.04, 0.01, self.iterations), 0)
-            
-            # Calculate new inflation
             current_inf = current_inf + kappa * (inf_base - current_inf) + dW + jumps
-            inf_paths[:, yr] = np.clip(current_inf, -0.01, 0.12) # Bounded between -1% and 12%
-            
-            # Stagflation impact: if jump occurs, apply shock to equity returns
+            inf_paths[:, yr] = np.clip(current_inf, -0.01, 0.12) 
             stagflation_shock = np.where(jumps > 0, -0.10, 0)
             returns[:, yr, 1:] += stagflation_shock[:, None]
             
@@ -78,17 +61,14 @@ class StochasticRetirementEngine:
         returns, inf_paths = self.generate_stochastic_paths(seed=seed)
         cash_ret = self.inputs['cash_ret']
         
-        # Balance Init
         tsp = np.full(self.iterations, self.inputs['tsp_bal'])
         roth = np.full(self.iterations, self.inputs['roth_bal'])
         taxable = np.full(self.iterations, self.inputs['taxable_bal'])
         hsa = np.full(self.iterations, self.inputs['hsa_bal'])
         cash = np.full(self.iterations, self.inputs['cash_bal'])
         
-        # Income Bases Init (To track compounding COLAs over time)
         base_pension = np.full(self.iterations, self.inputs['pension_est'])
         base_ss = np.full(self.iterations, self.inputs['ss_fra'])
-        
         base_withdrawal = (tsp[0] + roth[0] + taxable[0] + cash[0]) * iwr
         scheduled_withdrawal = np.full(self.iterations, base_withdrawal)
         
@@ -119,7 +99,8 @@ class StochasticRetirementEngine:
 
         age = self.inputs['current_age']
         current_year = datetime.datetime.now().year
-        health_premium = self.inputs['health_cost']
+        base_health_premium = self.inputs['health_cost']
+        base_oop_cost = self.inputs['oop_cost']
         state_tax_rate = 0.045 if self.inputs['state'].strip() != "" else 0.0
         
         deduction = STD_DED_MFJ if self.inputs['filing_status'] == 'MFJ' else STD_DED_SINGLE
@@ -130,7 +111,6 @@ class StochasticRetirementEngine:
             age += 1
             current_year += 1
             
-            # 1. Apply Returns
             prev_total_port = tsp + roth + taxable + cash
             tsp *= (1 + returns[:, yr, 1])
             roth *= (1 + returns[:, yr, 2])
@@ -142,16 +122,11 @@ class StochasticRetirementEngine:
             history['port_return'][:, yr] = (current_total_port - prev_total_port) / np.maximum(prev_total_port, 1)
             history['real_return'][:, yr] = history['port_return'][:, yr] - inf_paths[:, yr]
             
-            # 2. COLA MATH
             if yr > 0:
-                cpi = np.maximum(0, inf_paths[:, yr]) # CPI cannot be negative for federal COLAs
-                
-                # Social Security full CPI
+                cpi = np.maximum(0, inf_paths[:, yr]) 
                 base_ss *= (1 + cpi)
-                
-                # FERS Diet COLA Logic (Full if <=2%, 2% if 2-3%, CPI-1% if >3%)
                 fers_cola = np.where(cpi <= 0.02, cpi, np.where(cpi <= 0.03, 0.02, cpi - 0.01))
-                fers_cola = np.where(age >= 62, fers_cola, 0.0) # Begins at 62
+                fers_cola = np.where(age >= 62, fers_cola, 0.0) 
                 base_pension *= (1 + fers_cola)
 
             pension = np.where(age >= self.inputs['ret_age'], base_pension, 0)
@@ -160,7 +135,6 @@ class StochasticRetirementEngine:
             history['pension_income'][:, yr] = pension
             history['ss_income'][:, yr] = ss
             
-            # 3. Guardrails (Guyton-Klinger & SORR)
             constraint_flag = np.zeros(self.iterations)
             if yr > 0:
                 port_ret = history['port_return'][:, yr-1]
@@ -181,7 +155,6 @@ class StochasticRetirementEngine:
             history['constraint_active'][:, yr] = constraint_flag
             w_needed = scheduled_withdrawal.copy()
             
-            # 4. RMDs
             rmd_rate = 0.036 if age >= 75 else 0.0
             rmds = tsp * rmd_rate
             history['rmds'][:, yr] = rmds
@@ -191,7 +164,6 @@ class StochasticRetirementEngine:
             excess_rmd = np.maximum(0, rmds - w_needed)
             history['extra_rmd'][:, yr] = excess_rmd
             
-            # 5. Withdrawals & Liquidation Hierarchy (SORR)
             tsp_prior_ret = returns[:, yr-1, 1] if yr > 0 else np.zeros(self.iterations)
             downturn = tsp_prior_ret <= -0.10
             
@@ -214,10 +186,8 @@ class StochasticRetirementEngine:
             w_tsp_fallback = np.where(downturn & (w_remaining > 0), np.minimum(tsp, w_remaining), 0)
             tsp -= w_tsp_fallback
             history['tsp_withdrawal'][:, yr] = w_tsp + w_tsp_fallback
-            
             taxable += excess_rmd
             
-            # 6. Base Taxes
             taxable_income = rmds + w_tsp + w_tsp_fallback + pension + (ss * 0.85)
             agi = np.maximum(0, taxable_income - deduction)
             base_tax_fed = np.zeros(self.iterations)
@@ -229,23 +199,20 @@ class StochasticRetirementEngine:
             tax_state = agi * state_tax_rate
             history['taxes_state'][:, yr] = tax_state
             
-            # 7. REAL ROTH CONVERSION LOGIC
             total_tax_fed = base_tax_fed.copy()
             conv_amt = np.zeros(self.iterations)
             
             if roth_strategy > 0 and age < 75:
                 space = np.zeros(self.iterations)
-                if roth_strategy == 1: # Fill Current Bracket
+                if roth_strategy == 1: 
                     for limit, rate in brackets:
                         mask = (agi < limit) & (space == 0)
                         space[mask] = limit - agi[mask] - 1
-                elif roth_strategy == 2: # Fill to IRMAA Tier 1
+                elif roth_strategy == 2: 
                     irmaa_limit = irmaa_brackets[0][0]
                     space = np.maximum(0, irmaa_limit - agi - 1)
                 
                 conv_amt = np.minimum(space, tsp)
-                
-                # Calculate Extra Tax
                 new_agi = agi + conv_amt
                 new_tax_fed = np.zeros(self.iterations)
                 for i in range(len(brackets)):
@@ -254,18 +221,14 @@ class StochasticRetirementEngine:
                     new_tax_fed += np.clip(new_agi - prev_limit, 0, limit - prev_limit) * rate
                 
                 extra_tax = new_tax_fed - base_tax_fed
-                
-                # Pay conversion tax from outside assets first to maximize tax-free growth
                 w_tax_cash = np.minimum(cash, extra_tax)
                 cash -= w_tax_cash
                 rem_tax = extra_tax - w_tax_cash
-                
                 w_tax_taxable = np.minimum(taxable, rem_tax)
                 taxable -= w_tax_taxable
                 rem_tax -= w_tax_taxable
                 
-                # Move funds
-                net_to_roth = conv_amt - rem_tax # Tax withheld if cash/taxable run out
+                net_to_roth = conv_amt - rem_tax 
                 tsp -= conv_amt
                 roth += net_to_roth
                 total_tax_fed = new_tax_fed
@@ -273,9 +236,10 @@ class StochasticRetirementEngine:
             history['roth_conversion'][:, yr] = conv_amt
             history['taxes_fed'][:, yr] = total_tax_fed
             
-            # 8. Medicare & Health Costs
-            health_premium *= (1 + inf_paths[:, yr])
-            history['health_cost'][:, yr] = health_premium
+            # --- HSA & HEALTHCARE LOGIC ---
+            base_health_premium *= (1 + inf_paths[:, yr])
+            inflated_oop = base_oop_cost * (1 + inf_paths[:, yr])
+            
             medicare_cost = np.zeros(self.iterations)
             if age >= 65 and "FEHB" not in self.inputs['health_plan'] and "TRICARE" not in self.inputs['health_plan']:
                 medicare_cost += MEDICARE_PART_B_BASE
@@ -283,12 +247,18 @@ class StochasticRetirementEngine:
                     limit, surcharge = irmaa_brackets[i]
                     medicare_cost = np.where(new_agi if roth_strategy > 0 else agi > (irmaa_brackets[i-1][0] if i>0 else 0), MEDICARE_PART_B_BASE + surcharge, medicare_cost)
             history['medicare_cost'][:, yr] = medicare_cost
+
+            # Deduct OOP medical costs from HSA first
+            w_hsa = np.minimum(hsa, inflated_oop)
+            hsa -= w_hsa
+            oop_remainder = inflated_oop - w_hsa
             
-            # 9. Mortgage Logic
+            # Record total out of pocket cash flow required (premiums + uncovered OOP)
+            history['health_cost'][:, yr] = base_health_premium + oop_remainder
+            
             current_mortgage = np.full(self.iterations, self.inputs['mortgage_pmt'] if yr < self.inputs['mortgage_yrs'] else 0.0)
             history['mortgage_cost'][:, yr] = current_mortgage
             
-            # Record Ending Balances
             history['total_bal'][:, yr] = tsp + roth + taxable + cash
             history['tsp_bal'][:, yr] = tsp
             history['roth_bal'][:, yr] = roth
@@ -296,17 +266,14 @@ class StochasticRetirementEngine:
             history['cash_bal'][:, yr] = cash
             history['hsa_bal'][:, yr] = hsa
             
-            # 10. Net Spendable (Discretionary Lifestyle)
-            # Uses base_tax_fed so lifestyle doesn't drop just to pay discretionary conversion taxes
             history['net_spendable'][:, yr] = (scheduled_withdrawal + pension + ss 
                                                - base_tax_fed - tax_state 
-                                               - medicare_cost - health_premium 
+                                               - medicare_cost - history['health_cost'][:, yr] 
                                                - current_mortgage)
             
         return history
 
     def objective_function(self, iwr_test):
-        # Deterministic solver runs on strict seed, baseline strategy
         history = self.run_mc(iwr_test, seed=42, roth_strategy=0)
         return np.median(history['total_bal'][:, -1]) - self.inputs['target_floor']
 
@@ -317,7 +284,6 @@ class StochasticRetirementEngine:
             return 0.04
             
     def analyze_roth_strategies(self, opt_iwr):
-        # Runs the MC engine iteratively strictly on the same seed to ensure fair exact comparison
         hist_base = self.run_mc(opt_iwr, seed=42, roth_strategy=0)
         hist_bracket = self.run_mc(opt_iwr, seed=42, roth_strategy=1)
         hist_irmaa = self.run_mc(opt_iwr, seed=42, roth_strategy=2)
