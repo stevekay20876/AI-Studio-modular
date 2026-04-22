@@ -32,6 +32,10 @@ with st.sidebar.form("input_form"):
     ss_fra = st.number_input("Social Security at FRA ($/yr)", min_value=0, value=None)
     
     st.subheader("Expenses & Health")
+    # --- NEW MORTGAGE INPUTS ---
+    mortgage_pmt = st.number_input("Annual Mortgage Payment ($)", min_value=0, value=0)
+    mortgage_yrs = st.number_input("Mortgage Years Remaining", min_value=0, value=0)
+    
     health_plan = st.selectbox("Retiree Health Coverage", ["FEHB FEPBlue Basic", "FEHB Blue Focus", "TRICARE for Life", "Private ACA", "None/Self-Insure"])
     health_cost = st.number_input("Annual Health Premium ($)", min_value=0, value=None)
     target_floor = st.number_input("Target Estate Floor at Life Exp ($)", min_value=0, value=None)
@@ -64,10 +68,11 @@ if submit:
         st.error("SYSTEM HALTED: All core numerical parameters must be explicitly provided.")
         st.stop()
 
-    inputs = {
+  inputs = {
         'current_age': int(cur_age), 'ret_age': int(ret_age), 'life_expectancy': int(life_exp),
         'filing_status': filing_status, 'state': state, 'pension_est': float(pension_est or 0),
         'ss_fra': float(ss_fra or 0), 'health_plan': health_plan, 'health_cost': float(health_cost or 0),
+        'mortgage_pmt': float(mortgage_pmt), 'mortgage_yrs': int(mortgage_yrs), # <-- ADDED
         'target_floor': float(target_floor),
         'tsp_bal': float(tsp_b), 'tsp_ret': float(tsp_r)/100, 'tsp_vol': float(tsp_v)/100,
         'roth_bal': float(roth_b), 'roth_ret': float(roth_r)/100, 'roth_vol': float(roth_v)/100,
@@ -79,7 +84,8 @@ if submit:
     with st.spinner("Executing 10,000 Iteration Monte Carlo & Brent Optimization..."):
         engine = StochasticRetirementEngine(inputs)
         opt_iwr = engine.optimize_iwr()
-        history = engine.run_mc(opt_iwr)
+        history = engine.run_mc(opt_iwr, roth_strategy=0) # Main run
+        roth_results = engine.analyze_roth_strategies(opt_iwr) # Real Roth execution
     
     st.success(f"Simulation Complete. Optimized Initial Withdrawal Rate: **{opt_iwr*100:.2f}%**")
 
@@ -168,14 +174,25 @@ if submit:
         st.subheader("Roth Conversion Optimizer")
         col1, col2 = st.columns(2)
         with col1:
-            st.plotly_chart(plot_roth_strategy_comparison(median_paths[-1]), use_container_width=True)
+            st.plotly_chart(plot_roth_strategy_comparison(roth_results), use_container_width=True)
         with col2:
-            st.plotly_chart(plot_roth_tax_impact(history, years_arr), use_container_width=True)
+            st.plotly_chart(plot_roth_tax_impact(roth_results, years_arr), use_container_width=True)
             
+        # Dynamically determine the winning strategy mathematically
+        winner = max(roth_results, key=lambda key: roth_results[key]['wealth'])
+        tax_savings = roth_results['Baseline']['taxes'] - roth_results[winner]['taxes']
+        rmd_reduction = roth_results['Baseline']['rmds'] - roth_results[winner]['rmds']
+        wealth_increase = roth_results[winner]['wealth'] - roth_results['Baseline']['wealth']
+        
         st.markdown("### Automated Recommendation Module")
-        st.success("**Optimal Target:** Convert up to the Top of the Current Bracket")
-        st.write(f"- **Lifetime Tax Savings:** ${inputs['tsp_bal'] * 0.12:,.0f} (est.)")
-        st.write(f"- **Net Increase to Terminal Wealth:** ${(median_paths[-1]*1.05) - median_paths[-1]:,.0f}")
+        if winner == "Baseline":
+            st.warning("**Verdict: No Conversions Recommended.**")
+            st.write("Analysis: Paying taxes out of pocket now does not mathematically overcome the loss of compound growth for your specific asset mix.")
+        else:
+            st.success(f"Verdict: **Convert up to the {winner} Limit**")
+            st.write(f"- **Real Lifetime Tax Savings:** ${max(0, tax_savings):,.0f}")
+            st.write(f"- **Reduction in Lifetime RMDs:** ${rmd_reduction:,.0f}")
+            st.write(f"- **Net Increase to Terminal Wealth:** ${wealth_increase:,.0f}")
 
     with t9:
         st.subheader("Social Security Claiming Strategy")

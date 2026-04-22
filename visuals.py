@@ -39,8 +39,9 @@ def plot_expenses_breakdown(history, years_arr):
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['taxes_fed'], axis=0), name="Federal/State Taxes", marker_color='crimson'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['medicare_cost'], axis=0), name="Medicare + IRMAA", marker_color='orange'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['health_cost'], axis=0), name="Health Insurance", marker_color='purple'))
-    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['net_spendable'], axis=0), name="Lifestyle Spendable", marker_color='teal'))
-    fig.update_layout(barmode='stack', title="Itemized Core Expenses", xaxis_title="Year", yaxis_title="Amount ($)")
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['mortgage_cost'], axis=0), name="Mortgage Payment", marker_color='brown')) # <-- ADDED
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['net_spendable'], axis=0), name="Discretionary Lifestyle", marker_color='teal'))
+    fig.update_layout(barmode='stack', title="Itemized Core Expenses (Fixed vs Discretionary)", xaxis_title="Year", yaxis_title="Amount ($)")
     return fig
 
 # --- TAB 3: GUARDRAILS ---
@@ -88,23 +89,30 @@ def plot_legacy_breakdown(history):
     return fig
 
 # --- TAB 8: ROTH CONVERSION ---
-def plot_roth_strategy_comparison(base_wealth):
-    strategies = ["Baseline (None)", "Current Bracket Max", "IRMAA Tier 1 Limit", "Next Bracket Max"]
-    wealths = [base_wealth, base_wealth * 1.05, base_wealth * 1.03, base_wealth * 0.98]
-    colors = ['gray', 'green', 'lightgreen', 'red']
+def plot_roth_strategy_comparison(roth_results):
+    strategies = list(roth_results.keys())
+    wealths = [roth_results[s]['wealth'] for s in strategies]
+    
+    # Highlight the winner
+    winner_idx = np.argmax(wealths)
+    colors = ['gray'] * len(strategies)
+    colors[winner_idx] = 'green'
+    
     fig = px.bar(x=wealths, y=strategies, orientation='h', title="Strategic Scenario Comparison (Median Terminal Wealth)")
     fig.update_traces(marker_color=colors)
+    fig.update_layout(xaxis_title="Median Terminal Wealth ($)", yaxis_title="")
     return fig
 
-def plot_roth_tax_impact(history, years_arr):
+def plot_roth_tax_impact(roth_results, years_arr):
     fig = go.Figure()
-    base_tax = np.median(history['taxes_fed'], axis=0)
-    opt_tax = base_tax.copy()
-    opt_tax[:10] += 15000  # Front-loaded tax heuristic
-    opt_tax[15:] = opt_tax[15:] * 0.4  # Long-term reduction
+    base_tax = np.median(roth_results['Baseline']['hist']['taxes_fed'], axis=0)
+    
+    # Find the winning strategy name and its history
+    winner = max(roth_results, key=lambda key: roth_results[key]['wealth'])
+    opt_tax = np.median(roth_results[winner]['hist']['taxes_fed'], axis=0)
     
     fig.add_trace(go.Scatter(x=years_arr, y=base_tax, mode='lines', fill='tozeroy', name='Baseline Lifetime Taxes', line=dict(color='crimson')))
-    fig.add_trace(go.Scatter(x=years_arr, y=opt_tax, mode='lines', fill='tozeroy', name='Optimal Roth Strategy Taxes', line=dict(color='green')))
+    fig.add_trace(go.Scatter(x=years_arr, y=opt_tax, mode='lines', fill='tozeroy', name=f'Optimal ({winner}) Taxes', line=dict(color='green')))
     fig.update_layout(title="Lifetime Tax Liability Comparison", xaxis_title="Year", yaxis_title="Taxes Paid ($)")
     return fig
 
