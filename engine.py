@@ -99,10 +99,15 @@ class StochasticRetirementEngine:
 
         age = self.inputs['current_age']
         current_year = datetime.datetime.now().year
-        base_health_premium = self.inputs['health_cost']
-        base_oop_cost = self.inputs['oop_cost']
-        state_tax_rate = 0.045 if self.inputs['state'].strip() != "" else 0.0
         
+        # Safely grab inputs to prevent KeyErrors during Brent optimization
+        base_health_premium = self.inputs.get('health_cost', 0.0)
+        base_oop_cost = self.inputs.get('oop_cost', 0.0)
+        mortgage_pmt = self.inputs.get('mortgage_pmt', 0.0)
+        mortgage_yrs = self.inputs.get('mortgage_yrs', 0)
+        health_plan = self.inputs.get('health_plan', "None/Self-Insure")
+        
+        state_tax_rate = 0.045 if self.inputs['state'].strip() != "" else 0.0
         deduction = STD_DED_MFJ if self.inputs['filing_status'] == 'MFJ' else STD_DED_SINGLE
         brackets = TAX_BRACKETS_MFJ if self.inputs['filing_status'] == 'MFJ' else TAX_BRACKETS_SINGLE
         irmaa_brackets = IRMAA_BRACKETS_MFJ if self.inputs['filing_status'] == 'MFJ' else IRMAA_BRACKETS_SINGLE
@@ -241,7 +246,7 @@ class StochasticRetirementEngine:
             inflated_oop = base_oop_cost * (1 + inf_paths[:, yr])
             
             medicare_cost = np.zeros(self.iterations)
-            if age >= 65 and "FEHB" not in self.inputs['health_plan'] and "TRICARE" not in self.inputs['health_plan']:
+            if age >= 65 and "FEHB" not in health_plan and "TRICARE" not in health_plan:
                 medicare_cost += MEDICARE_PART_B_BASE
                 for i in range(len(irmaa_brackets)):
                     limit, surcharge = irmaa_brackets[i]
@@ -253,10 +258,10 @@ class StochasticRetirementEngine:
             hsa -= w_hsa
             oop_remainder = inflated_oop - w_hsa
             
-            # Record total out of pocket cash flow required (premiums + uncovered OOP)
             history['health_cost'][:, yr] = base_health_premium + oop_remainder
             
-            current_mortgage = np.full(self.iterations, self.inputs['mortgage_pmt'] if yr < self.inputs['mortgage_yrs'] else 0.0)
+            # Mortgage falls off when yr >= mortgage_yrs
+            current_mortgage = np.full(self.iterations, mortgage_pmt if yr < mortgage_yrs else 0.0)
             history['mortgage_cost'][:, yr] = current_mortgage
             
             history['total_bal'][:, yr] = tsp + roth + taxable + cash
@@ -275,7 +280,7 @@ class StochasticRetirementEngine:
 
     def objective_function(self, iwr_test):
         history = self.run_mc(iwr_test, seed=42, roth_strategy=0)
-        return np.median(history['total_bal'][:, -1]) - self.inputs['target_floor']
+        return np.median(history['total_bal'][:, -1]) - self.inputs.get('target_floor', 0.0)
 
     def optimize_iwr(self):
         try:

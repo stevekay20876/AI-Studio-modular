@@ -1,15 +1,17 @@
 import streamlit as st
 import numpy as np
+import pandas as pd
 import datetime
 
-# Import all custom modules cleanly
+# Import custom modules cleanly
 from engine import StochasticRetirementEngine
 from exports import build_csv_dataframe
 from visuals import (
     plot_wealth_trajectory, plot_liquidity_timeline, plot_cash_flow_sources,
     plot_expenses_breakdown, plot_withdrawal_hierarchy, plot_taxes_and_rmds,
     plot_roth_strategy_comparison, plot_roth_tax_impact, plot_ss_breakeven,
-    plot_medicare_comparison, plot_income_volatility, plot_legacy_breakdown
+    plot_medicare_comparison, plot_income_volatility, plot_legacy_breakdown,
+    plot_fan_chart, plot_income_gap
 )
 
 st.set_page_config(page_title="Advanced Retirement Simulator", layout="wide")
@@ -34,9 +36,18 @@ with st.sidebar.form("input_form"):
     st.subheader("Expenses & Health")
     mortgage_pmt = st.number_input("Annual Mortgage Payment ($)", min_value=0, value=0)
     mortgage_yrs = st.number_input("Mortgage Years Remaining", min_value=0, value=0)
-    health_plan = st.selectbox("Retiree Health Coverage", ["FEHB FEPBlue Basic", "FEHB Blue Focus", "TRICARE for Life", "Private ACA", "None/Self-Insure"])
+    
+    # Fully expanded list exactly as requested
+    health_options = [
+        "FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", 
+        "GEHA High", "GEHA Standard", "Aetna Open Access", 
+        "Aetna Direct", "Aetna Advantage", "Cigna", "None/Self-Insure"
+    ]
+    health_plan = st.selectbox("Retiree Health Coverage", health_options)
     health_cost = st.number_input("Annual Health Premium ($)", min_value=0, value=None)
-    target_floor = st.number_input("Target Estate Floor at Life Exp ($)", min_value=0, value=None)
+    oop_cost = st.number_input("Est. Annual Out-of-Pocket Medical ($)", min_value=0, value=0)
+    
+    target_floor = st.number_input("Target Legacy (Floor) at Life Exp ($)", min_value=0, value=None)
     
     st.subheader("Current Portfolios (Balance / Expected Return % / Volatility %)")
     tsp_b = st.number_input("TSP / 401(k) Balance", min_value=0, value=None)
@@ -66,11 +77,12 @@ if submit:
         st.error("SYSTEM HALTED: All core numerical parameters must be explicitly provided.")
         st.stop()
 
+    # Dictionary perfectly matched to engine
     inputs = {
         'current_age': int(cur_age), 'ret_age': int(ret_age), 'life_expectancy': int(life_exp),
         'filing_status': filing_status, 'state': state, 'pension_est': float(pension_est or 0),
         'ss_fra': float(ss_fra or 0), 'health_plan': health_plan, 'health_cost': float(health_cost or 0),
-        'mortgage_pmt': float(mortgage_pmt), 'mortgage_yrs': int(mortgage_yrs),
+        'oop_cost': float(oop_cost or 0), 'mortgage_pmt': float(mortgage_pmt), 'mortgage_yrs': int(mortgage_yrs),
         'target_floor': float(target_floor),
         'tsp_bal': float(tsp_b), 'tsp_ret': float(tsp_r)/100, 'tsp_vol': float(tsp_v)/100,
         'roth_bal': float(roth_b), 'roth_ret': float(roth_r)/100, 'roth_vol': float(roth_v)/100,
@@ -82,12 +94,15 @@ if submit:
     with st.spinner("Executing 10,000 Iteration Monte Carlo & Brent Optimization..."):
         engine = StochasticRetirementEngine(inputs)
         opt_iwr = engine.optimize_iwr()
-        history = engine.run_mc(opt_iwr, roth_strategy=0) # Main Run
-        roth_results = engine.analyze_roth_strategies(opt_iwr) # Roth Scenarios Analysis
+        roth_results = engine.analyze_roth_strategies(opt_iwr)
+        
+        # Determine winning strategy and extract its simulation history array
+        winner = max(roth_results, key=lambda key: roth_results[key]['wealth'])
+        history = roth_results[winner]['hist']
     
     st.success(f"Simulation Complete. Optimized Initial Withdrawal Rate: **{opt_iwr*100:.2f}%**")
 
-    # Shared Array Setup
+    # Shared Arrays
     years_arr = np.arange(datetime.datetime.now().year, datetime.datetime.now().year + engine.years)
     age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine.years)
     
@@ -95,7 +110,10 @@ if submit:
     median_paths = np.median(history['total_bal'], axis=0)
     prob_success = np.mean(history['total_bal'][:, -1] >= inputs['target_floor']) * 100
 
-    # UI Routing to all 11 Tabs
+    # Build DataFrame for UI Table and Export
+    df_median = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
+
+    # Output Tabs
     t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11 = st.tabs([
         "📊 Projections", "💵 Cash Flow", "📉 Guardrails", "📈 Net Worth", "🏛️ Taxes", 
         "🏛️ Legacy", "💡 Coach Alerts", "🔄 Roth Opt.", "🦅 Social Sec", "🏥 Medicare", "💾 Exports"
@@ -110,16 +128,25 @@ if submit:
         st.plotly_chart(plot_wealth_trajectory(history, inputs['target_floor'], years_arr), use_container_width=True)
 
     with t2:
-        st.subheader("Cash Flow Forecast & Income Analysis")
+        st.subheader("Integrated Cash Flow & Simulation Execution")
+        st.info(f"**How the Model Reaches the Target Legacy:** The mathematical engine utilizes a 1-Dimensional Root-Finding Algorithm (Brent's Method). It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) up and down until it successfully forces the Median (50th Percentile) Terminal Wealth to land exactly at your declared Target Legacy Floor of **${inputs['target_floor']:,.0f}** at Life Expectancy.")
+        
         col1, col2 = st.columns(2)
         with col1:
-            st.plotly_chart(plot_cash_flow_sources(history, years_arr), use_container_width=True)
+            st.plotly_chart(plot_fan_chart(history, years_arr), use_container_width=True)
+            st.markdown("*^ Sequence of Return Risk (SORR): The fan chart demonstrates plan vulnerability. If market losses hit early in retirement, your portfolio will follow the lower bands, triggering variable spending cuts.*")
         with col2:
-            st.plotly_chart(plot_expenses_breakdown(history, years_arr), use_container_width=True)
+            st.plotly_chart(plot_income_gap(history, years_arr), use_container_width=True)
+            st.markdown("*^ Income Gap Mapping: Visualizes the shortfall between your Guaranteed Income (Social Security & Pension) and your Total Expenses. The gap is strictly funded by portfolio distributions.*")
+            
+        st.markdown("### Integrated Year-by-Year Cash Flow Projections")
+        st.write("Dynamic outflows interact with fluctuating portfolio values. Includes baseline spending + taxes + healthcare costs.")
+        display_cols = ['Calendar Year', 'Age', 'Total Income', 'Total Expenses', 'Net Spendable Annual', 'Annual 401(k)/TSP Withdrawal', 'Social Security', 'Pension', 'HSA Balance']
+        st.dataframe(df_median[display_cols].style.format({"Total Income": "${:,.0f}", "Total Expenses": "${:,.0f}", "Net Spendable Annual": "${:,.0f}", "Annual 401(k)/TSP Withdrawal": "${:,.0f}", "Social Security": "${:,.0f}", "Pension": "${:,.0f}", "HSA Balance": "${:,.0f}"}), use_container_width=True)
 
     with t3:
-        st.subheader("Income Volatility & Dynamic Guardrails")
-        st.write("This chart illustrates the impact of Guyton-Klinger rules. In severe market downturns, your scheduled spending may be reduced by up to 10% to protect portfolio longevity.")
+        st.subheader("Variable Spending Rules & Adaptive Guardrails")
+        st.write("This chart illustrates the impact of Guyton-Klinger rules. In severe market downturns, your scheduled spending automatically decreases to preserve capital.")
         st.plotly_chart(plot_income_volatility(history, years_arr), use_container_width=True)
 
     with t4:
@@ -137,11 +164,9 @@ if submit:
     with t6:
         st.subheader("After-Tax Legacy & Estate Breakdown")
         st.plotly_chart(plot_legacy_breakdown(history), use_container_width=True)
-        
         med_tsp = np.median(history['tsp_bal'][:, -1])
         med_roth = np.median(history['roth_bal'][:, -1])
         med_taxable = np.median(history['taxable_bal'][:, -1]) + np.median(history['cash_bal'][:, -1])
-        
         net_to_heirs = (med_tsp * 0.76) + med_taxable + med_roth
         st.metric("Estimated Net After-Tax Value to Heirs", f"${net_to_heirs:,.0f}", delta=f"Lost to IRD Taxes: -${med_tsp * 0.24:,.0f}", delta_color="inverse")
 
@@ -150,7 +175,7 @@ if submit:
         med_taxes = np.median(history['taxes_fed'], axis=0)
         
         if med_taxes[-1] > med_taxes[0] * 2.5:
-            st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Strongly consider Roth Conversions.")
+            st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Execute Roth Conversions.")
         
         medicare_costs = np.median(history['medicare_cost'], axis=0)
         if np.any(medicare_costs > 2100):  
@@ -158,15 +183,15 @@ if submit:
             
         cash_depletion = np.where(np.percentile(history['cash_bal'], 10, axis=0) <= 0)[0]
         if len(cash_depletion) > 0:
-            st.error(f"⚠️ **SORR Buffer Alert**: In severe market downturns, your Money Market buffer is projected to fully deplete at Age {age_arr[cash_depletion[0]]}.")
+            st.error(f"⚠️ **SORR Buffer Alert**: In severe downturns, your Money Market buffer is projected to fully deplete at Age {age_arr[cash_depletion[0]]}.")
             
         if prob_success >= 85:
             st.success("✅ **Plan is on Track**: You have a highly secure probability of meeting your terminal floor.")
 
         st.markdown("### Actionable To-Do List")
         st.markdown(f"- [ ] **Setup Auto-Withdrawals**: Configure Year 1 baseline withdrawal at exactly {opt_iwr*100:.2f}%.")
-        st.markdown("- [ ] **Solidify Downturn Buffer**: Ensure Taxable and Money Market accounts are cleanly separated for Sequence of Return Risk.")
-        st.markdown("- [ ] **Estate Planning**: Review beneficiaries to align with Target Estate Floor goals.")
+        st.markdown("- [ ] **Solidify Downturn Buffer**: Ensure Taxable and Money Market accounts are cleanly separated for Sequence Risk.")
+        st.markdown("- [ ] **Estate Planning**: Review beneficiaries to align with Target Legacy Floor goals.")
 
     with t8:
         st.subheader("Roth Conversion Optimizer")
@@ -176,20 +201,25 @@ if submit:
         with col2:
             st.plotly_chart(plot_roth_tax_impact(roth_results, years_arr), use_container_width=True)
             
-        winner = max(roth_results, key=lambda key: roth_results[key]['wealth'])
         tax_savings = roth_results['Baseline']['taxes'] - roth_results[winner]['taxes']
         rmd_reduction = roth_results['Baseline']['rmds'] - roth_results[winner]['rmds']
         wealth_increase = roth_results[winner]['wealth'] - roth_results['Baseline']['wealth']
         
-        st.markdown("### Automated Recommendation Module")
+        st.markdown("### Recommended Action Plan")
         if winner == "Baseline":
             st.warning("**Verdict: No Conversions Recommended.**")
             st.write("Analysis: Paying taxes out of pocket now does not mathematically overcome the loss of compound growth for your specific asset mix.")
         else:
-            st.success(f"Verdict: **Convert up to the {winner} Limit**")
+            st.success(f"Verdict: **Execute the '{winner}' Strategy**")
             st.write(f"- **Real Lifetime Tax Savings:** ${max(0, tax_savings):,.0f}")
             st.write(f"- **Reduction in Lifetime RMDs:** ${rmd_reduction:,.0f}")
-            st.write(f"- **Net Increase to Terminal Wealth:** ${wealth_increase:,.0f}")
+            st.write(f"- **Net Increase to Legacy:** ${wealth_increase:,.0f}")
+            
+            st.markdown("#### Step-by-Step Conversion Schedule")
+            st.write("Below are the median target conversion amounts calculated dynamically to perfectly fill your recommended tax bracket constraints prior to RMD age.")
+            roth_amts = np.median(roth_results[winner]['hist']['roth_conversion'], axis=0)
+            conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_amts})
+            st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}"}))
 
     with t9:
         st.subheader("Social Security Claiming Strategy")
@@ -205,16 +235,16 @@ if submit:
         total_medicare_cost = np.sum(np.median(history['medicare_cost'], axis=0))
         st.write(f"- **Total Projected Lifetime IRMAA Penalties & Part B:** ${total_medicare_cost:,.0f}")
         
-        if "FEHB" in inputs['health_plan'] or "TRICARE" in inputs['health_plan']:
+        fed_plans = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard"]
+        if inputs['health_plan'] in fed_plans or "TRICARE" in inputs['health_plan']:
             st.success("Verdict: **Waive Part B & Rely on Retiree Coverage**")
         else:
             st.warning("Verdict: **Enroll in Medicare Part B**")
 
     with t11:
         st.subheader("Strict-Format CSV Data Exports")
-        st.markdown("Download the precise simulation results populated across all strict required fields.")
+        st.markdown("Download the precise simulation results populated across all strict required fields. Data exported reflects the fully optimized mathematically superior Roth conversion path.")
         
-        df_median = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
         df_pess = build_csv_dataframe(history, years_arr, age_arr, percentile=10)
 
         colA, colB = st.columns(2)
