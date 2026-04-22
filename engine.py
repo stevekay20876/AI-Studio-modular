@@ -21,7 +21,13 @@ class StochasticRetirementEngine:
             [-0.15, 0.85,  0.85,  1.00,  0.85],
             [-0.15, 0.85,  0.85,  0.85,  1.00]
         ])
-        vols = np.array([0.02, self.inputs['tsp_vol'], self.inputs['roth_vol'], self.inputs['taxable_vol'], self.inputs['hsa_vol']])
+        vols = np.array([
+            0.012, # <-- CHANGED from 0.02 to match historical inflation volatility
+            self.inputs['tsp_vol'], 
+            self.inputs['roth_vol'], 
+            self.inputs['taxable_vol'], 
+            self.inputs['hsa_vol']
+        ])
         cov = np.outer(vols, vols) * corr
         self.L = np.linalg.cholesky(cov)
 
@@ -40,17 +46,23 @@ class StochasticRetirementEngine:
         ])
         
         returns = np.exp(drifts + correlated_shocks) - 1
+# Ornstein-Uhlenbeck Inflation with Historically Calibrated Jump-Diffusion
         inf_paths = np.zeros((self.iterations, self.years))
-        inf_base = 0.03
-        kappa = 0.3
-        jump_prob = 0.1
+        inf_base = 0.025   # Base inflation target of 2.5%
+        kappa = 0.5        # Faster mean-reversion (simulating Fed intervention)
+        jump_prob = 0.05   # 5% chance of a severe inflation shock (e.g., 1970s, 2022)
         current_inf = np.full(self.iterations, inf_base)
         
         for yr in range(self.years):
             dW = correlated_shocks[:, yr, 0]
-            jumps = np.where(np.random.rand(self.iterations) < jump_prob, np.random.normal(0.05, 0.02, self.iterations), 0)
+            # 5% chance of an inflation spike averaging 4%
+            jumps = np.where(np.random.rand(self.iterations) < jump_prob, np.random.normal(0.04, 0.01, self.iterations), 0)
+            
+            # Calculate new inflation
             current_inf = current_inf + kappa * (inf_base - current_inf) + dW + jumps
-            inf_paths[:, yr] = np.clip(current_inf, -0.02, 0.15)
+            inf_paths[:, yr] = np.clip(current_inf, -0.01, 0.12) # Bounded between -1% and 12%
+            
+            # Stagflation impact: if jump occurs, apply shock to equity returns
             stagflation_shock = np.where(jumps > 0, -0.10, 0)
             returns[:, yr, 1:] += stagflation_shock[:, None]
             
