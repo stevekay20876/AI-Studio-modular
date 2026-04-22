@@ -32,10 +32,8 @@ with st.sidebar.form("input_form"):
     ss_fra = st.number_input("Social Security at FRA ($/yr)", min_value=0, value=None)
     
     st.subheader("Expenses & Health")
-    # --- NEW MORTGAGE INPUTS ---
     mortgage_pmt = st.number_input("Annual Mortgage Payment ($)", min_value=0, value=0)
     mortgage_yrs = st.number_input("Mortgage Years Remaining", min_value=0, value=0)
-    
     health_plan = st.selectbox("Retiree Health Coverage", ["FEHB FEPBlue Basic", "FEHB Blue Focus", "TRICARE for Life", "Private ACA", "None/Self-Insure"])
     health_cost = st.number_input("Annual Health Premium ($)", min_value=0, value=None)
     target_floor = st.number_input("Target Estate Floor at Life Exp ($)", min_value=0, value=None)
@@ -68,11 +66,11 @@ if submit:
         st.error("SYSTEM HALTED: All core numerical parameters must be explicitly provided.")
         st.stop()
 
-  inputs = {
+    inputs = {
         'current_age': int(cur_age), 'ret_age': int(ret_age), 'life_expectancy': int(life_exp),
         'filing_status': filing_status, 'state': state, 'pension_est': float(pension_est or 0),
         'ss_fra': float(ss_fra or 0), 'health_plan': health_plan, 'health_cost': float(health_cost or 0),
-        'mortgage_pmt': float(mortgage_pmt), 'mortgage_yrs': int(mortgage_yrs), # <-- ADDED
+        'mortgage_pmt': float(mortgage_pmt), 'mortgage_yrs': int(mortgage_yrs),
         'target_floor': float(target_floor),
         'tsp_bal': float(tsp_b), 'tsp_ret': float(tsp_r)/100, 'tsp_vol': float(tsp_v)/100,
         'roth_bal': float(roth_b), 'roth_ret': float(roth_r)/100, 'roth_vol': float(roth_v)/100,
@@ -84,8 +82,8 @@ if submit:
     with st.spinner("Executing 10,000 Iteration Monte Carlo & Brent Optimization..."):
         engine = StochasticRetirementEngine(inputs)
         opt_iwr = engine.optimize_iwr()
-        history = engine.run_mc(opt_iwr, roth_strategy=0) # Main run
-        roth_results = engine.analyze_roth_strategies(opt_iwr) # Real Roth execution
+        history = engine.run_mc(opt_iwr, roth_strategy=0) # Main Run
+        roth_results = engine.analyze_roth_strategies(opt_iwr) # Roth Scenarios Analysis
     
     st.success(f"Simulation Complete. Optimized Initial Withdrawal Rate: **{opt_iwr*100:.2f}%**")
 
@@ -178,7 +176,6 @@ if submit:
         with col2:
             st.plotly_chart(plot_roth_tax_impact(roth_results, years_arr), use_container_width=True)
             
-        # Dynamically determine the winning strategy mathematically
         winner = max(roth_results, key=lambda key: roth_results[key]['wealth'])
         tax_savings = roth_results['Baseline']['taxes'] - roth_results[winner]['taxes']
         rmd_reduction = roth_results['Baseline']['rmds'] - roth_results[winner]['rmds']
