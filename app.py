@@ -72,23 +72,15 @@ with st.sidebar.form("input_form"):
     submit = st.form_submit_button("Run Optimization Engine")
 
 if submit:
-    # 1. Check ONLY the critical life variables
-    vital_checks = {
-        "Current Age": cur_age, 
-        "Retirement Age": ret_age, 
-        "Life Expectancy": life_exp, 
-        "Target Legacy Floor": target_floor
-    }
+    vital_checks = {"Current Age": cur_age, "Retirement Age": ret_age, "Life Expectancy": life_exp, "Target Legacy Floor": target_floor}
     missing_vitals = [name for name, val in vital_checks.items() if val is None]
     
     if missing_vitals:
         st.error(f"SYSTEM HALTED: You must explicitly provide values for: {', '.join(missing_vitals)}")
         st.stop()
 
-    # 2. Safe parsing function to handle blank fields gracefully
     def safe_float(val, is_vol=False):
         v = float(val or 0.0)
-        # Prevent Cholesky Covariance Matrix from crashing if volatility is left blank
         if is_vol and v == 0.0:
             return 0.0001 
         return v
@@ -119,10 +111,8 @@ if submit:
 
     years_arr = np.arange(datetime.datetime.now().year, datetime.datetime.now().year + engine.years)
     age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine.years)
-    
     median_paths = np.median(history['total_bal'], axis=0)
     prob_success = np.mean(history['total_bal'][:, -1] >= inputs['target_floor']) * 100
-
     df_median = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
 
     t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11 = st.tabs([
@@ -141,14 +131,11 @@ if submit:
     with t2:
         st.subheader("Integrated Cash Flow & Simulation Execution")
         st.info(f"**How the Model Reaches the Target Legacy:** The mathematical engine utilizes a 1-Dimensional Root-Finding Algorithm (Brent's Method). It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) up and down until it successfully forces the Median (50th Percentile) Terminal Wealth to land exactly at your declared Target Legacy Floor of **${inputs['target_floor']:,.0f}** at Life Expectancy.")
-        
         col1, col2 = st.columns(2)
         with col1:
             st.plotly_chart(plot_fan_chart(history, years_arr), use_container_width=True)
-            st.markdown("*^ Sequence of Return Risk (SORR): The fan chart demonstrates plan vulnerability. If market losses hit early in retirement, your portfolio will follow the lower bands, triggering variable spending cuts.*")
         with col2:
             st.plotly_chart(plot_income_gap(history, years_arr), use_container_width=True)
-            st.markdown("*^ Income Gap Mapping: Visualizes the shortfall between your Guaranteed Income (Social Security & Pension) and your Total Expenses. The gap is strictly funded by portfolio distributions.*")
             
         st.markdown("### Integrated Year-by-Year Cash Flow Projections")
         display_cols = ['Calendar Year', 'Age', 'Total Income', 'Total Expenses', 'Net Spendable Annual', 'Annual 401(k)/TSP Withdrawal', 'Social Security', 'Pension', 'HSA Balance']
@@ -182,23 +169,28 @@ if submit:
     with t7:
         st.subheader("PlannerPlus Coach Alerts & Actionable To-Do List")
         med_taxes = np.median(history['taxes_fed'], axis=0)
-        
         if med_taxes[-1] > med_taxes[0] * 2.5:
             st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Execute Roth Conversions.")
-        
         medicare_costs = np.median(history['medicare_cost'], axis=0)
         if np.any(medicare_costs > 2100):  
             st.warning("⚠️ **Medicare IRMAA Alert**: Your simulated MAGI breaches IRMAA cliffs, triggering thousands in projected surcharges.")
-            
         cash_depletion = np.where(np.percentile(history['cash_bal'], 10, axis=0) <= 0)[0]
         if len(cash_depletion) > 0:
             st.error(f"⚠️ **SORR Buffer Alert**: In severe downturns, your Money Market buffer is projected to fully deplete at Age {age_arr[cash_depletion[0]]}.")
-            
         if prob_success >= 85:
             st.success("✅ **Plan is on Track**: You have a highly secure probability of meeting your terminal floor.")
 
     with t8:
         st.subheader("Roth Conversion Optimizer")
+        
+        # --- NEW 24% TAX BRACKET ANALYSIS ---
+        st.info("""
+        **Actuarial Analysis: The Value of Converting in Higher Brackets (Capped at 24%)**  
+        It is mathematically highly efficient to voluntarily pay 22% or 24% taxes *today* to avoid paying 32% or 35% *tomorrow*. Decades of tax-deferred compounding in your TSP will force massive Required Minimum Distributions (RMDs) at age 75, easily pushing you into the highest marginal brackets later in life while simultaneously subjecting your heirs to severe tax burdens due to the SECURE Act's 10-Year rule.
+        
+        However, the jump from the 24% bracket to the 32% bracket represents a massive 8% "Tax Cliff." **Therefore, this model is strictly hard-coded with a 24% Marginal Ceiling.** No scenario tested below will ever execute a conversion that pushes your taxable income into the 32% bracket, protecting your compound growth.
+        """)
+        
         col1, col2 = st.columns(2)
         with col1:
             st.plotly_chart(plot_roth_strategy_comparison(roth_results), use_container_width=True)
@@ -212,6 +204,7 @@ if submit:
         st.markdown("### Recommended Action Plan")
         if "Baseline" in winner:
             st.warning("**Verdict: No Conversions Recommended.**")
+            st.write("Analysis: Paying taxes out of pocket now does not mathematically overcome the loss of compound growth for your specific asset mix.")
         else:
             st.success(f"Verdict: **Execute the '{winner}' Strategy**")
             st.write(f"- **Real Lifetime Tax Savings:** ${max(0, tax_savings):,.0f}")

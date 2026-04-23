@@ -80,9 +80,9 @@ class StochasticRetirementEngine:
             'cash_bal': np.zeros((self.iterations, self.years)),
             'hsa_bal': np.zeros((self.iterations, self.years)),
             'tsp_withdrawal': np.zeros((self.iterations, self.years)),
-            'roth_withdrawal': np.zeros((self.iterations, self.years)),    # ADDED
-            'taxable_withdrawal': np.zeros((self.iterations, self.years)), # ADDED
-            'cash_withdrawal': np.zeros((self.iterations, self.years)),    # ADDED
+            'roth_withdrawal': np.zeros((self.iterations, self.years)),    
+            'taxable_withdrawal': np.zeros((self.iterations, self.years)), 
+            'cash_withdrawal': np.zeros((self.iterations, self.years)),    
             'rmds': np.zeros((self.iterations, self.years)),
             'extra_rmd': np.zeros((self.iterations, self.years)),
             'taxes_fed': np.zeros((self.iterations, self.years)),
@@ -196,7 +196,6 @@ class StochasticRetirementEngine:
             w_taxable = np.zeros(self.iterations)
             w_roth = np.zeros(self.iterations)
             
-            # Primary Hierarchy
             w_tsp_norm = np.where(~downturn, np.minimum(tsp, w_remaining), 0)
             tsp -= w_tsp_norm
             w_remaining -= w_tsp_norm
@@ -213,7 +212,6 @@ class StochasticRetirementEngine:
             roth -= w_roth_down
             w_remaining -= w_roth_down
             
-            # Universal Depletion Fallback
             w_tax_fb = np.minimum(taxable, w_remaining)
             taxable -= w_tax_fb
             w_remaining -= w_tax_fb
@@ -237,7 +235,6 @@ class StochasticRetirementEngine:
             
             actual_portfolio_withdrawal = w_tsp + w_cash + w_taxable + w_roth + rmds - excess_rmd
             
-            # Record Exact Sources
             history['tsp_withdrawal'][:, yr] = w_tsp
             history['roth_withdrawal'][:, yr] = w_roth
             history['taxable_withdrawal'][:, yr] = w_taxable
@@ -280,6 +277,14 @@ class StochasticRetirementEngine:
                 elif roth_strategy == 3:
                     irmaa_tier_2 = irmaa_brackets[1][0]
                     space = np.maximum(0, irmaa_tier_2 - magi - 1)
+                
+                # --- STRICT 24% BRACKET CEILING CAP ---
+                # Brackets Array Index 3 is the top of the 24% bracket for both Single and MFJ
+                limit_24_pct = brackets[3][0] 
+                max_allowable_space = np.maximum(0, limit_24_pct - taxable_income - 1)
+                
+                # Enforce rule: No strategy can ever convert dollars into the 32% marginal bracket
+                space = np.minimum(space, max_allowable_space)
                 
                 conv_amt = np.minimum(space, tsp)
                 new_taxable_income = taxable_income + conv_amt
