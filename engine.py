@@ -261,14 +261,18 @@ class StochasticRetirementEngine:
             if roth_strategy > 0 and age < 75:
                 space = np.zeros(self.iterations)
                 
-                if roth_strategy == 1: 
+                # Strategies 1 to 4 Analysis
+                if roth_strategy in [1, 4]: 
                     for limit, rate in brackets:
                         mask = (taxable_income < limit) & (space == 0)
                         space[mask] = limit - taxable_income[mask] - 1
                     space = np.where(space > 1e6, 0, space)
-                    for irmaa_limit, surcharge in irmaa_brackets:
-                        crosses_cliff = (magi < irmaa_limit) & ((magi + space) >= irmaa_limit)
-                        space = np.where(crosses_cliff, irmaa_limit - magi - 1, space)
+                    
+                    if roth_strategy == 1:
+                        # Dynamic IRMAA Protection ONLY for conservative strategies
+                        for irmaa_limit, surcharge in irmaa_brackets:
+                            crosses_cliff = (magi < irmaa_limit) & ((magi + space) >= irmaa_limit)
+                            space = np.where(crosses_cliff, irmaa_limit - magi - 1, space)
                         
                 elif roth_strategy == 2: 
                     irmaa_tier_1 = irmaa_brackets[0][0]
@@ -278,13 +282,17 @@ class StochasticRetirementEngine:
                     irmaa_tier_2 = irmaa_brackets[1][0]
                     space = np.maximum(0, irmaa_tier_2 - magi - 1)
                 
-                # --- STRICT 24% BRACKET CEILING CAP ---
-                # Brackets Array Index 3 is the top of the 24% bracket for both Single and MFJ
-                limit_24_pct = brackets[3][0] 
-                max_allowable_space = np.maximum(0, limit_24_pct - taxable_income - 1)
-                
-                # Enforce rule: No strategy can ever convert dollars into the 32% marginal bracket
-                space = np.minimum(space, max_allowable_space)
+                # --- CAPPING LOGIC FOR EVALUATION ---
+                if roth_strategy in [1, 2, 3]:
+                    # Strict 24% Ceiling 
+                    limit_24_pct = brackets[3][0] 
+                    max_allowable_space = np.maximum(0, limit_24_pct - taxable_income - 1)
+                    space = np.minimum(space, max_allowable_space)
+                elif roth_strategy == 4:
+                    # Aggressive 32% Ceiling (Evaluates if breaking the 24% rule is mathematically better)
+                    limit_32_pct = brackets[4][0] 
+                    max_allowable_space = np.maximum(0, limit_32_pct - taxable_income - 1)
+                    space = np.minimum(space, max_allowable_space)
                 
                 conv_amt = np.minimum(space, tsp)
                 new_taxable_income = taxable_income + conv_amt
@@ -362,11 +370,13 @@ class StochasticRetirementEngine:
         hist_bracket = self.run_mc(opt_iwr, seed=42, roth_strategy=1)
         hist_irmaa1 = self.run_mc(opt_iwr, seed=42, roth_strategy=2)
         hist_irmaa2 = self.run_mc(opt_iwr, seed=42, roth_strategy=3)
+        hist_aggressive = self.run_mc(opt_iwr, seed=42, roth_strategy=4) # The 32% Test
         
         results = {
             'Baseline (None)': {'wealth': np.median(hist_base['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_base['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_base['rmds'], axis=0)), 'hist': hist_base},
-            'Current Bracket (IRMAA Protected)': {'wealth': np.median(hist_bracket['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_bracket['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_bracket['rmds'], axis=0)), 'hist': hist_bracket},
-            'Target IRMAA Tier 1 Max': {'wealth': np.median(hist_irmaa1['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa1['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa1['rmds'], axis=0)), 'hist': hist_irmaa1},
-            'Target IRMAA Tier 2 Max': {'wealth': np.median(hist_irmaa2['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa2['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa2['rmds'], axis=0)), 'hist': hist_irmaa2}
+            'Current Bracket (Capped at 24%)': {'wealth': np.median(hist_bracket['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_bracket['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_bracket['rmds'], axis=0)), 'hist': hist_bracket},
+            'Target IRMAA Tier 1 (Capped at 24%)': {'wealth': np.median(hist_irmaa1['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa1['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa1['rmds'], axis=0)), 'hist': hist_irmaa1},
+            'Target IRMAA Tier 2 (Capped at 24%)': {'wealth': np.median(hist_irmaa2['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa2['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa2['rmds'], axis=0)), 'hist': hist_irmaa2},
+            'Aggressive 32% Bracket Fill': {'wealth': np.median(hist_aggressive['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_aggressive['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_aggressive['rmds'], axis=0)), 'hist': hist_aggressive}
         }
         return results
