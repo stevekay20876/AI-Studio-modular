@@ -27,6 +27,8 @@ def build_csv_dataframe(history, years_arr, age_arr, percentile=50):
         "Medicare Cost": np.percentile(history['medicare_cost'], percentile, axis=0),
         "Health Insurance Cost": np.percentile(history['health_cost'], percentile, axis=0),
         "Total Income": np.percentile(history['net_spendable'] + history['taxes_fed'] + history['taxes_state'] + history['medicare_cost'] + history['health_cost'] + history['mortgage_cost'], percentile, axis=0),
+        "IRS Taxable Income": np.percentile(history['tsp_withdrawal'] + history['pension_income'] + (history['ss_income'] * 0.85) + history['roth_conversion'] +             history['rmds'] - (29200),  # Subtracts MFJ Standard Deduction
+            percentile, axis=0),
         "Total Expenses": np.percentile(history['taxes_fed'] + history['taxes_state'] + history['medicare_cost'] + history['health_cost'] + history['mortgage_cost'], percentile, axis=0),
         "Net Spendable Annual": np.percentile(history['net_spendable'], percentile, axis=0),
         "Net Monthly": np.percentile(history['net_spendable'], percentile, axis=0) / 12,
