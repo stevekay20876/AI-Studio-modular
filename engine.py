@@ -80,6 +80,9 @@ class StochasticRetirementEngine:
             'cash_bal': np.zeros((self.iterations, self.years)),
             'hsa_bal': np.zeros((self.iterations, self.years)),
             'tsp_withdrawal': np.zeros((self.iterations, self.years)),
+            'roth_withdrawal': np.zeros((self.iterations, self.years)),    # ADDED
+            'taxable_withdrawal': np.zeros((self.iterations, self.years)), # ADDED
+            'cash_withdrawal': np.zeros((self.iterations, self.years)),    # ADDED
             'rmds': np.zeros((self.iterations, self.years)),
             'extra_rmd': np.zeros((self.iterations, self.years)),
             'taxes_fed': np.zeros((self.iterations, self.years)),
@@ -210,10 +213,7 @@ class StochasticRetirementEngine:
             roth -= w_roth_down
             w_remaining -= w_roth_down
             
-            # --- THE FIX: UNIVERSAL DEPLETION FALLBACK ---
-            # If w_remaining > 0 here, it means the primary account was empty. 
-            # We MUST cascade to the other accounts to fund retirement, regardless of downturn status.
-            
+            # Universal Depletion Fallback
             w_tax_fb = np.minimum(taxable, w_remaining)
             taxable -= w_tax_fb
             w_remaining -= w_tax_fb
@@ -235,10 +235,14 @@ class StochasticRetirementEngine:
             w_taxable += (w_tax_down + w_tax_fb)
             w_roth += (w_roth_down + w_roth_fb)
             
-            # ACTUAL Dollars withdrawn from portfolio
             actual_portfolio_withdrawal = w_tsp + w_cash + w_taxable + w_roth + rmds - excess_rmd
             
+            # Record Exact Sources
             history['tsp_withdrawal'][:, yr] = w_tsp
+            history['roth_withdrawal'][:, yr] = w_roth
+            history['taxable_withdrawal'][:, yr] = w_taxable
+            history['cash_withdrawal'][:, yr] = w_cash
+            
             taxable += excess_rmd
             
             gross_income = rmds + w_tsp + pension + (ss * 0.85)
@@ -331,7 +335,6 @@ class StochasticRetirementEngine:
             history['cash_bal'][:, yr] = cash
             history['hsa_bal'][:, yr] = hsa
             
-            # --- THE FIX: NET SPENDABLE CALCULATES ACTUAL WITHDRAWN DOLLARS ---
             history['net_spendable'][:, yr] = (actual_portfolio_withdrawal + pension + ss 
                                                - base_tax_fed - tax_state_local 
                                                - medicare_cost - history['health_cost'][:, yr] 

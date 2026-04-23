@@ -42,9 +42,12 @@ def plot_cash_flow_sources(history, years_arr):
     fig = go.Figure()
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['ss_income'], axis=0), name="Social Security", marker_color='#1f77b4'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['pension_income'], axis=0), name="Pension", marker_color='#ff7f0e'))
-    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['tsp_withdrawal'], axis=0), name="Portfolio Withdrawal", marker_color='#2ca02c'))
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['tsp_withdrawal'], axis=0), name="TSP Withdrawal", marker_color='#2ca02c'))
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['roth_withdrawal'], axis=0), name="Roth Withdrawal", marker_color='green'))
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['taxable_withdrawal'], axis=0), name="Taxable Withdrawal", marker_color='orange'))
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['cash_withdrawal'], axis=0), name="Cash Withdrawal", marker_color='gray'))
     
-    total_need = np.median(history['net_spendable'] + history['taxes_fed'] + history['health_cost'] + history['medicare_cost'] + history['mortgage_cost'], axis=0)
+    total_need = np.median(history['net_spendable'] + history['taxes_fed'] + history['taxes_state'] + history['health_cost'] + history['medicare_cost'] + history['mortgage_cost'], axis=0)
     fig.add_trace(go.Scatter(x=years_arr, y=total_need, mode='lines', name='Total Spending Need', line=dict(color='black', width=2)))
     fig.update_layout(barmode='stack', title="Income Sources vs Total Spending Need", xaxis_title="Year", yaxis_title="Amount ($)")
     return fig
@@ -83,9 +86,11 @@ def plot_income_volatility(history, years_arr):
 
 def plot_withdrawal_hierarchy(history, years_arr):
     fig = go.Figure()
-    total_w = np.median(history['tsp_withdrawal'], axis=0)
-    fig.add_trace(go.Bar(x=years_arr, y=total_w, name="TSP Discretionary", marker_color='#2ca02c'))
-    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['extra_rmd'], axis=0), name="Reinvested RMD", marker_color='gray'))
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['tsp_withdrawal'], axis=0), name="TSP Withdrawal", marker_color='#2ca02c'))
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['roth_withdrawal'], axis=0), name="Roth Withdrawal", marker_color='green'))
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['taxable_withdrawal'], axis=0), name="Taxable Withdrawal", marker_color='orange'))
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['cash_withdrawal'], axis=0), name="Cash Withdrawal", marker_color='gray'))
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['extra_rmd'], axis=0), name="Reinvested RMD", marker_color='darkgray'))
     fig.update_layout(barmode='stack', title="Dynamic Account Liquidation Hierarchy", xaxis_title="Year", yaxis_title="Amount ($)")
     return fig
 
@@ -124,7 +129,6 @@ def plot_roth_strategy_comparison(roth_results):
 
 def plot_roth_tax_impact(roth_results, years_arr):
     fig = go.Figure()
-    # FIXED: The key must exactly match engine.py
     base_tax = np.median(roth_results['Baseline (None)']['hist']['taxes_fed'], axis=0)
     winner = max(roth_results, key=lambda key: roth_results[key]['wealth'])
     opt_tax = np.median(roth_results[winner]['hist']['taxes_fed'], axis=0)

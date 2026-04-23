@@ -35,8 +35,8 @@ with st.sidebar.form("input_form"):
     ss_fra = st.number_input("Social Security at FRA ($/yr)", min_value=0, value=None)
     
     st.subheader("Expenses & Health")
-    mortgage_pmt = st.number_input("Annual Mortgage Payment ($)", min_value=0, value=0)
-    mortgage_yrs = st.number_input("Mortgage Years Remaining", min_value=0, value=0)
+    mortgage_pmt = st.number_input("Annual Mortgage Payment ($)", min_value=0, value=None)
+    mortgage_yrs = st.number_input("Mortgage Years Remaining", min_value=0, value=None)
     
     health_options = [
         "FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", 
@@ -45,7 +45,7 @@ with st.sidebar.form("input_form"):
     ]
     health_plan = st.selectbox("Retiree Health Coverage", health_options)
     health_cost = st.number_input("Annual Health Premium ($)", min_value=0, value=None)
-    oop_cost = st.number_input("Est. Annual Out-of-Pocket Medical ($)", min_value=0, value=0)
+    oop_cost = st.number_input("Est. Annual Out-of-Pocket Medical ($)", min_value=0, value=None)
     
     target_floor = st.number_input("Target Legacy (Floor) at Life Exp ($)", min_value=0, value=None)
     
@@ -65,30 +65,46 @@ with st.sidebar.form("input_form"):
     cash_b = st.number_input("Money Market Balance", min_value=0, value=None)
     cash_r = st.number_input("Money Market Yield %", value=None)
     
-    hsa_b = st.number_input("HSA Balance (Optional)", min_value=0, value=0)
-    hsa_r = st.number_input("HSA Return % (Optional)", value=0.0)
-    hsa_v = st.number_input("HSA Volatility % (Optional)", value=0.0)
+    hsa_b = st.number_input("HSA Balance (Optional)", min_value=0, value=None)
+    hsa_r = st.number_input("HSA Return % (Optional)", value=None)
+    hsa_v = st.number_input("HSA Volatility % (Optional)", value=None)
     
     submit = st.form_submit_button("Run Optimization Engine")
 
 if submit:
-    inputs_check = [cur_age, ret_age, life_exp, target_floor, tsp_b, tsp_r, tsp_v, roth_b, roth_r, roth_v, tax_b, tax_r, tax_v, cash_b, cash_r]
-    if any(i is None for i in inputs_check):
-        st.error("SYSTEM HALTED: All core numerical parameters must be explicitly provided.")
+    # 1. Check ONLY the critical life variables
+    vital_checks = {
+        "Current Age": cur_age, 
+        "Retirement Age": ret_age, 
+        "Life Expectancy": life_exp, 
+        "Target Legacy Floor": target_floor
+    }
+    missing_vitals = [name for name, val in vital_checks.items() if val is None]
+    
+    if missing_vitals:
+        st.error(f"SYSTEM HALTED: You must explicitly provide values for: {', '.join(missing_vitals)}")
         st.stop()
+
+    # 2. Safe parsing function to handle blank fields gracefully
+    def safe_float(val, is_vol=False):
+        v = float(val or 0.0)
+        # Prevent Cholesky Covariance Matrix from crashing if volatility is left blank
+        if is_vol and v == 0.0:
+            return 0.0001 
+        return v
 
     inputs = {
         'current_age': int(cur_age), 'ret_age': int(ret_age), 'life_expectancy': int(life_exp),
         'filing_status': filing_status, 'state': state, 'county': county, 
-        'pension_est': float(pension_est or 0), 'ss_fra': float(ss_fra or 0), 
-        'health_plan': health_plan, 'health_cost': float(health_cost or 0),
-        'oop_cost': float(oop_cost or 0), 'mortgage_pmt': float(mortgage_pmt), 'mortgage_yrs': int(mortgage_yrs),
-        'target_floor': float(target_floor),
-        'tsp_bal': float(tsp_b), 'tsp_ret': float(tsp_r)/100, 'tsp_vol': float(tsp_v)/100,
-        'roth_bal': float(roth_b), 'roth_ret': float(roth_r)/100, 'roth_vol': float(roth_v)/100,
-        'taxable_bal': float(tax_b), 'taxable_ret': float(tax_r)/100, 'taxable_vol': float(tax_v)/100,
-        'hsa_bal': float(hsa_b), 'hsa_ret': float(hsa_r)/100, 'hsa_vol': float(hsa_v)/100,
-        'cash_bal': float(cash_b), 'cash_ret': float(cash_r)/100
+        'pension_est': safe_float(pension_est), 'ss_fra': safe_float(ss_fra), 
+        'health_plan': health_plan, 'health_cost': safe_float(health_cost),
+        'oop_cost': safe_float(oop_cost), 'mortgage_pmt': safe_float(mortgage_pmt), 'mortgage_yrs': int(mortgage_yrs or 0),
+        'target_floor': safe_float(target_floor),
+        'tsp_bal': safe_float(tsp_b), 'tsp_ret': safe_float(tsp_r)/100, 'tsp_vol': safe_float(tsp_v, True)/100,
+        'roth_bal': safe_float(roth_b), 'roth_ret': safe_float(roth_r)/100, 'roth_vol': safe_float(roth_v, True)/100,
+        'taxable_bal': safe_float(tax_b), 'taxable_ret': safe_float(tax_r)/100, 'taxable_vol': safe_float(tax_v, True)/100,
+        'hsa_bal': safe_float(hsa_b), 'hsa_ret': safe_float(hsa_r)/100, 'hsa_vol': safe_float(hsa_v, True)/100,
+        'cash_bal': safe_float(cash_b), 'cash_ret': safe_float(cash_r)/100
     }
 
     with st.spinner("Executing 10,000 Iteration Monte Carlo & Brent Optimization..."):
@@ -210,8 +226,6 @@ if submit:
     with t9:
         st.subheader("Social Security Claiming Strategy")
         st.plotly_chart(plot_ss_breakeven(inputs['ss_fra'], age_arr), use_container_width=True)
-        st.markdown("### Optimal Filing Decision")
-        st.success("**Verdict: Delay Claiming until Age 70**")
 
     with t10:
         st.subheader("Medicare Part B & IRMAA vs. Retiree Coverage")
