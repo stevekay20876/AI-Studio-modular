@@ -110,7 +110,6 @@ class StochasticRetirementEngine:
         brackets = TAX_BRACKETS_MFJ if self.inputs['filing_status'] == 'MFJ' else TAX_BRACKETS_SINGLE
         irmaa_brackets = IRMAA_BRACKETS_MFJ if self.inputs['filing_status'] == 'MFJ' else IRMAA_BRACKETS_SINGLE
 
-        # State & County Tax Proxy Logic
         state_str = self.inputs.get('state', '').strip().upper()
         county_str = self.inputs.get('county', '').strip().upper()
         
@@ -121,9 +120,9 @@ class StochasticRetirementEngine:
             state_tax_rate = 0.045 if state_str != "" else 0.0
             
         if county_str != "" and state_str in ["MD", "IN", "PA", "OH", "NY", "MARYLAND", "INDIANA", "PENNSYLVANIA", "OHIO", "NEW YORK"]:
-            local_tax_rate = 0.025 # Heuristic for high local/county tax states
+            local_tax_rate = 0.025 
         elif county_str != "":
-            local_tax_rate = 0.010 # General proxy
+            local_tax_rate = 0.010 
         else:
             local_tax_rate = 0.0
             
@@ -189,28 +188,60 @@ class StochasticRetirementEngine:
             tsp_prior_ret = returns[:, yr-1, 1] if yr > 0 else np.zeros(self.iterations)
             downturn = tsp_prior_ret <= -0.10
             
-            w_tsp = np.where(~downturn, np.minimum(tsp, w_remaining), 0)
-            tsp -= w_tsp
-            w_remaining -= w_tsp
+            w_tsp = np.zeros(self.iterations)
+            w_cash = np.zeros(self.iterations)
+            w_taxable = np.zeros(self.iterations)
+            w_roth = np.zeros(self.iterations)
             
-            w_cash = np.where(downturn, np.minimum(cash, w_remaining), 0)
-            cash -= w_cash
-            w_remaining -= w_cash
+            # Primary Hierarchy
+            w_tsp_norm = np.where(~downturn, np.minimum(tsp, w_remaining), 0)
+            tsp -= w_tsp_norm
+            w_remaining -= w_tsp_norm
             
-            w_taxable = np.where(downturn, np.minimum(taxable, w_remaining), 0)
-            taxable -= w_taxable
-            w_remaining -= w_taxable
+            w_cash_down = np.where(downturn, np.minimum(cash, w_remaining), 0)
+            cash -= w_cash_down
+            w_remaining -= w_cash_down
             
-            w_roth = np.where(downturn, np.minimum(roth, w_remaining), 0)
-            roth -= w_roth
-            w_remaining -= w_roth
+            w_tax_down = np.where(downturn, np.minimum(taxable, w_remaining), 0)
+            taxable -= w_tax_down
+            w_remaining -= w_tax_down
             
-            w_tsp_fallback = np.where(downturn & (w_remaining > 0), np.minimum(tsp, w_remaining), 0)
-            tsp -= w_tsp_fallback
-            history['tsp_withdrawal'][:, yr] = w_tsp + w_tsp_fallback
+            w_roth_down = np.where(downturn, np.minimum(roth, w_remaining), 0)
+            roth -= w_roth_down
+            w_remaining -= w_roth_down
+            
+            # --- THE FIX: UNIVERSAL DEPLETION FALLBACK ---
+            # If w_remaining > 0 here, it means the primary account was empty. 
+            # We MUST cascade to the other accounts to fund retirement, regardless of downturn status.
+            
+            w_tax_fb = np.minimum(taxable, w_remaining)
+            taxable -= w_tax_fb
+            w_remaining -= w_tax_fb
+            
+            w_cash_fb = np.minimum(cash, w_remaining)
+            cash -= w_cash_fb
+            w_remaining -= w_cash_fb
+            
+            w_roth_fb = np.minimum(roth, w_remaining)
+            roth -= w_roth_fb
+            w_remaining -= w_roth_fb
+            
+            w_tsp_fb = np.minimum(tsp, w_remaining)
+            tsp -= w_tsp_fb
+            w_remaining -= w_tsp_fb
+            
+            w_tsp += (w_tsp_norm + w_tsp_fb)
+            w_cash += (w_cash_down + w_cash_fb)
+            w_taxable += (w_tax_down + w_tax_fb)
+            w_roth += (w_roth_down + w_roth_fb)
+            
+            # ACTUAL Dollars withdrawn from portfolio
+            actual_portfolio_withdrawal = w_tsp + w_cash + w_taxable + w_roth + rmds - excess_rmd
+            
+            history['tsp_withdrawal'][:, yr] = w_tsp
             taxable += excess_rmd
             
-            gross_income = rmds + w_tsp + w_tsp_fallback + pension + (ss * 0.85)
+            gross_income = rmds + w_tsp + pension + (ss * 0.85)
             magi = gross_income.copy() 
             taxable_income = np.maximum(0, gross_income - deduction) 
             
@@ -220,7 +251,6 @@ class StochasticRetirementEngine:
                 limit, rate = brackets[i]
                 base_tax_fed += np.clip(taxable_income - prev_limit, 0, limit - prev_limit) * rate
                 
-            # Applied combined State + Local (County) Tax
             tax_state_local = taxable_income * combined_state_local_rate
             history['taxes_state'][:, yr] = tax_state_local
             
@@ -301,7 +331,8 @@ class StochasticRetirementEngine:
             history['cash_bal'][:, yr] = cash
             history['hsa_bal'][:, yr] = hsa
             
-            history['net_spendable'][:, yr] = (scheduled_withdrawal + pension + ss 
+            # --- THE FIX: NET SPENDABLE CALCULATES ACTUAL WITHDRAWN DOLLARS ---
+            history['net_spendable'][:, yr] = (actual_portfolio_withdrawal + pension + ss 
                                                - base_tax_fed - tax_state_local 
                                                - medicare_cost - history['health_cost'][:, yr] 
                                                - current_mortgage)
