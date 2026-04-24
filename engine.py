@@ -9,7 +9,15 @@ class StochasticRetirementEngine:
     def __init__(self, inputs):
         self.inputs = inputs
         self.iterations = 10000
-        self.years = max(1, inputs['life_expectancy'] - inputs['current_age'])
+        
+        # Calculate simulation length based on the longest-living spouse
+        base_years = inputs['life_expectancy'] - inputs['current_age']
+        if inputs['filing_status'] == 'MFJ':
+            spouse_years = inputs['spouse_life_exp'] - inputs['spouse_age']
+            self.years = max(1, max(base_years, spouse_years))
+        else:
+            self.years = max(1, base_years)
+            
         self.n_assets = 5 
         self.setup_covariance_matrix()
         
@@ -68,6 +76,8 @@ class StochasticRetirementEngine:
         cash = np.full(self.iterations, self.inputs['cash_bal'])
         home_value = np.full(self.iterations, self.inputs.get('home_value', 0.0))
         
+        taxable_basis = np.full(self.iterations, self.inputs.get('taxable_basis', self.inputs['taxable_bal']))
+        
         base_pension = np.full(self.iterations, self.inputs['pension_est'])
         
         ss_claim_age = self.inputs.get('ss_claim_age', 67)
@@ -110,14 +120,18 @@ class StochasticRetirementEngine:
             'ss_income': np.zeros((self.iterations, self.years)),
             'pension_income': np.zeros((self.iterations, self.years)),
             'roth_conversion': np.zeros((self.iterations, self.years)),
-            'roth_taxes_from_cash': np.zeros((self.iterations, self.years)), # ADDED TRACKER
+            'roth_taxes_from_cash': np.zeros((self.iterations, self.years)), 
         }
 
         age = self.inputs['current_age']
         ret_age = self.inputs['ret_age']
+        spouse_age = self.inputs.get('spouse_age', age)
+        primary_life_exp = self.inputs['life_expectancy']
+        spouse_life_exp = self.inputs.get('spouse_life_exp', 95)
+        
         current_year = datetime.datetime.now().year
         
-        filing_status = self.inputs['filing_status']
+        base_filing_status = self.inputs['filing_status']
         base_salary = self.inputs.get('current_salary', 0.0)
         phased_ret_active = self.inputs.get('phased_ret_active', False)
         phased_age = self.inputs.get('phased_ret_age', ret_age)
@@ -126,24 +140,15 @@ class StochasticRetirementEngine:
         base_health_premium = self.inputs.get('health_cost', 0.0)
         base_oop_cost = self.inputs.get('oop_cost', 0.0)
         health_plan = self.inputs.get('health_plan', "None/Self-Insure")
-        moop_idx = 1 if filing_status == 'MFJ' else 0
-        base_moop = MOOP_LIMITS.get(health_plan, (999999, 999999))[moop_idx]
         
         mortgage_pmt = self.inputs.get('mortgage_pmt', 0.0)
         mortgage_yrs = self.inputs.get('mortgage_yrs', 0)
         annual_savings = self.inputs.get('annual_savings', 0.0)
-        
-        deduction = STD_DED_MFJ if filing_status == 'MFJ' else STD_DED_SINGLE
-        brackets = TAX_BRACKETS_MFJ if filing_status == 'MFJ' else TAX_BRACKETS_SINGLE
-        irmaa_brackets = IRMAA_BRACKETS_MFJ if filing_status == 'MFJ' else IRMAA_BRACKETS_SINGLE
-
-        limit_24_pct = brackets[3][0] 
-        limit_32_pct = brackets[4][0]
+        max_spending = self.inputs.get('max_spending', 0.0)
 
         state_str = self.inputs.get('state', '').strip().upper()
         county_str = self.inputs.get('county', '').strip().upper()
-        tax_free_states = ["TX", "FL", "NV", "WA", "SD", "WY", "AK", "TN", "NH"]
-        state_tax_rate = 0.0 if state_str in tax_free_states else (0.045 if state_str != "" else 0.0)
+        state_tax_rate = 0.0 if state_str in RETIREMENT_TAX_FREE_STATES else (0.045 if state_str != "" else 0.0)
         local_tax_rate = 0.025 if county_str != "" and state_str in ["MD", "IN", "PA", "OH", "NY"] else (0.010 if county_str != "" else 0.0)
         combined_state_local_rate = state_tax_rate + local_tax_rate
 
@@ -151,8 +156,29 @@ class StochasticRetirementEngine:
 
         for yr in range(self.years):
             age += 1
+            spouse_age += 1
             current_year += 1
             
+            # --- DYNAMIC WIDOW(ER) PENALTY CHECK ---
+            if base_filing_status == 'MFJ' and (age > primary_life_exp or spouse_age > spouse_life_exp):
+                current_filing_status = 'Single'
+                moop_idx = 0
+                survivor_penalty = 0.50 # Halve SS and Pension income upon first death
+            else:
+                current_filing_status = base_filing_status
+                moop_idx = 1 if current_filing_status == 'MFJ' else 0
+                survivor_penalty = 1.0
+                
+            deduction = STD_DED_MFJ if current_filing_status == 'MFJ' else STD_DED_SINGLE
+            brackets = TAX_BRACKETS_MFJ if current_filing_status == 'MFJ' else TAX_BRACKETS_SINGLE
+            irmaa_brackets = IRMAA_BRACKETS_MFJ if current_filing_status == 'MFJ' else IRMAA_BRACKETS_SINGLE
+            ltcg_brackets = LTCG_BRACKETS_MFJ if current_filing_status == 'MFJ' else LTCG_BRACKETS_SINGLE
+            niit_threshold = NIIT_THRESHOLD_MFJ if current_filing_status == 'MFJ' else NIIT_THRESHOLD_SINGLE
+            base_moop = MOOP_LIMITS.get(health_plan, (999999, 999999))[moop_idx]
+            
+            limit_24_pct = brackets[3][0] 
+            limit_32_pct = brackets[4][0]
+
             if yr > 0:
                 cum_inf *= (1 + np.maximum(0, inf_paths[:, yr]))
             
@@ -165,13 +191,15 @@ class StochasticRetirementEngine:
             
             if age < ret_age:
                 tsp += (annual_savings * 0.70)
-                taxable += (annual_savings * 0.30)
+                tax_savings_add = (annual_savings * 0.30)
+                taxable += tax_savings_add
+                taxable_basis += tax_savings_add
                 
                 if phased_ret_active and age >= phased_age:
                     current_salary_income = inflated_salary * 0.50
                     fers_cola = np.where(inf_paths[:, yr] <= 0.02, inf_paths[:, yr], np.where(inf_paths[:, yr] <= 0.03, 0.02, inf_paths[:, yr] - 0.01))
                     base_pension *= (1 + np.maximum(0, fers_cola))
-                    current_pension = base_pension * 0.50
+                    current_pension = base_pension * 0.50 * survivor_penalty
                 else:
                     current_salary_income = inflated_salary
                     current_pension = np.zeros(self.iterations)
@@ -179,7 +207,7 @@ class StochasticRetirementEngine:
                 current_salary_income = np.zeros(self.iterations)
                 fers_cola = np.where(inf_paths[:, yr] <= 0.02, inf_paths[:, yr], np.where(inf_paths[:, yr] <= 0.03, 0.02, inf_paths[:, yr] - 0.01))
                 base_pension *= (1 + np.maximum(0, fers_cola))
-                current_pension = base_pension
+                current_pension = base_pension * survivor_penalty
                 
             history['salary_income'][:, yr] = current_salary_income
             history['pension_income'][:, yr] = current_pension
@@ -197,7 +225,7 @@ class StochasticRetirementEngine:
             
             ss_haircut = 0.79 if current_year >= 2035 else 1.0
             base_ss *= (1 + np.maximum(0, inf_paths[:, yr]))
-            ss = np.where(age >= ss_claim_age, base_ss * ss_haircut, 0)
+            ss = np.where(age >= ss_claim_age, base_ss * ss_haircut * survivor_penalty, 0)
             history['ss_income'][:, yr] = ss
             
             w_needed = np.zeros(self.iterations)
@@ -223,11 +251,17 @@ class StochasticRetirementEngine:
                     constraint_flag = np.where(sorr_trigger, 1, constraint_flag)
                     
                 w_needed = scheduled_withdrawal.copy()
+                
+                # --- MAX SPENDING CAP LOGIC ---
+                if max_spending > 0:
+                    inflated_cap = max_spending * cum_inf
+                    w_needed = np.minimum(w_needed, inflated_cap)
 
             history['constraint_active'][:, yr] = constraint_flag
             
-            rmd_divisor = np.maximum(1.9, 24.6 - (age - 75) * 0.8)
-            rmd_rate = np.where(age >= 75, 1.0 / rmd_divisor, 0.0)
+            # --- EXACT IRS RMD LOGIC ---
+            rmd_divisor = IRS_RMD_DIVISORS.get(age, 1.9 if age > 120 else 0.0)
+            rmd_rate = 1.0 / rmd_divisor if rmd_divisor > 0 else 0.0
             rmds = tsp * rmd_rate
             history['rmds'][:, yr] = rmds
             tsp -= rmds
@@ -289,7 +323,14 @@ class StochasticRetirementEngine:
             history['taxable_withdrawal'][:, yr] = w_taxable
             history['cash_withdrawal'][:, yr] = w_cash
             
+            # --- CAPITAL GAINS LOGIC ---
+            total_w_taxable = w_taxable
+            gains_ratio = np.maximum(0, 1.0 - (taxable_basis / np.maximum(taxable, 1.0)))
+            realized_gains = total_w_taxable * gains_ratio
+            taxable_basis -= (total_w_taxable - realized_gains) # Reduce basis by principle returned
+            
             taxable += excess_rmd
+            taxable_basis += excess_rmd # Reinvested RMDs add to basis
             
             gross_income = rmds + w_tsp + current_pension + (ss * 0.85) + current_salary_income
             magi = gross_income.copy() 
@@ -301,7 +342,25 @@ class StochasticRetirementEngine:
                 limit, rate = brackets[i]
                 base_tax_fed += np.clip(taxable_income - prev_limit, 0, limit - prev_limit) * rate
                 
-            base_tax_state_local = taxable_income * combined_state_local_rate
+            # Apply LTCG Tax
+            ltcg_tax = np.zeros(self.iterations)
+            for limit, rate in ltcg_brackets:
+                # LTCG stacks on top of ordinary taxable income to determine bracket
+                # Simplified stack approximation
+                applicable_gains = np.clip(taxable_income + realized_gains - limit, 0, realized_gains)
+                ltcg_tax += applicable_gains * rate
+                
+            # Net Investment Income Tax (NIIT)
+            niit_tax = np.where(magi > niit_threshold, realized_gains * 0.038, 0.0)
+            
+            base_tax_fed += (ltcg_tax + niit_tax)
+            
+            # State Exemption Logic
+            state_taxable_base = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), 
+                                          taxable_income - rmds - w_tsp - current_pension - (ss * 0.85), 
+                                          taxable_income)
+            state_taxable_base = np.maximum(0, state_taxable_base)
+            base_tax_state_local = state_taxable_base * combined_state_local_rate
             
             total_tax_fed = base_tax_fed.copy()
             total_tax_state = base_tax_state_local.copy()
@@ -350,16 +409,24 @@ class StochasticRetirementEngine:
                     limit, rate = brackets[i]
                     new_tax_fed += np.clip(final_taxable_income - prev_limit, 0, limit - prev_limit) * rate
                 
-                extra_tax_fed = new_tax_fed - base_tax_fed
-                extra_tax_state = conv_amt * combined_state_local_rate
+                extra_tax_fed = new_tax_fed - (base_tax_fed - ltcg_tax - niit_tax) # Extra tax is purely ordinary
+                
+                state_conv_tax_base = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), 0.0, conv_amt)
+                extra_tax_state = state_conv_tax_base * combined_state_local_rate
                 extra_tax_total = extra_tax_fed + extra_tax_state
                 
                 if pay_taxes_from_cash:
                     w_tax_cash_roth = np.minimum(cash, extra_tax_total)
                     cash -= w_tax_cash_roth
                     rem_tax = extra_tax_total - w_tax_cash_roth
+                    
                     w_tax_taxable = np.minimum(taxable, rem_tax)
                     taxable -= w_tax_taxable
+                    
+                    # Update basis for forced tax withdrawals
+                    gains_ratio_tax = np.maximum(0, 1.0 - (taxable_basis / np.maximum(taxable + w_tax_taxable, 1.0)))
+                    taxable_basis -= (w_tax_taxable - (w_tax_taxable * gains_ratio_tax))
+                    
                     rem_tax -= w_tax_taxable
                     net_to_roth = conv_amt - rem_tax 
                 else:
@@ -368,7 +435,7 @@ class StochasticRetirementEngine:
                 tsp -= conv_amt
                 roth += net_to_roth
                 
-                total_tax_fed = new_tax_fed
+                total_tax_fed = new_tax_fed + ltcg_tax + niit_tax
                 total_tax_state = base_tax_state_local + extra_tax_state
             
             history['roth_conversion'][:, yr] = conv_amt
@@ -376,7 +443,7 @@ class StochasticRetirementEngine:
             history['taxes_state'][:, yr] = total_tax_state
             history['taxable_income'][:, yr] = final_taxable_income
             history['magi'][:, yr] = final_magi
-            history['roth_taxes_from_cash'][:, yr] = w_tax_cash_roth # Tracks exactly what left the Cash buffer to pay taxes
+            history['roth_taxes_from_cash'][:, yr] = w_tax_cash_roth 
             
             current_health_premium = base_health_premium * cum_inf
             age_morbidity = 1.025 ** max(0, age - self.inputs['current_age'])

@@ -26,10 +26,19 @@ with st.sidebar.form("input_form"):
     ret_age = c2.number_input("Full Retirement Age", min_value=18, max_value=100, value=None)
     life_exp = st.number_input("Life Expectancy Age", min_value=50, max_value=120, value=None)
     
+    filing_status = st.selectbox("Tax Filing Status", ["Single", "MFJ"])
+    
+    c_sp1, c_sp2 = st.columns(2)
+    if filing_status == "MFJ":
+        spouse_age = c_sp1.number_input("Spouse Current Age", min_value=18, max_value=100, value=None)
+        spouse_life_exp = c_sp2.number_input("Spouse Life Expectancy", min_value=50, max_value=120, value=None)
+    else:
+        spouse_age = cur_age
+        spouse_life_exp = life_exp
+    
     c3, c4 = st.columns(2)
     state = c3.text_input("State of Residence")
     county = c4.text_input("County of Residence")
-    filing_status = st.selectbox("Tax Filing Status", ["Single", "MFJ"])
     
     st.subheader("Pre-Retirement & Phased Transition")
     current_salary = st.number_input("Current Annual Salary ($)", min_value=0, value=None)
@@ -43,6 +52,7 @@ with st.sidebar.form("input_form"):
     ss_claim_age = st.number_input("Target SS Claiming Age", min_value=62, max_value=70, value=67)
     
     st.subheader("Expenses & Health")
+    max_spending = st.number_input("Maximum Annual Spending Cap (Optional) ($)", min_value=0, value=None)
     mortgage_pmt = st.number_input("Annual Mortgage Payment ($)", min_value=0, value=None)
     mortgage_yrs = st.number_input("Mortgage Years Remaining", min_value=0, value=None)
     home_value = st.number_input("Current Home Value ($)", min_value=0, value=None)
@@ -68,6 +78,7 @@ with st.sidebar.form("input_form"):
     roth_v = st.number_input("Roth Volatility %", value=None)
     
     tax_b = st.number_input("Taxable Balance", min_value=0, value=None)
+    tax_basis = st.number_input("Taxable Cost Basis ($)", min_value=0, value=tax_b)
     tax_r = st.number_input("Taxable Return %", value=None)
     tax_v = st.number_input("Taxable Volatility %", value=None)
     
@@ -84,6 +95,10 @@ with st.sidebar.form("input_form"):
 
 if submit:
     vital_checks = {"Current Age": cur_age, "Retirement Age": ret_age, "Life Expectancy": life_exp, "Target Legacy Floor": target_floor}
+    if filing_status == 'MFJ':
+        vital_checks["Spouse Age"] = spouse_age
+        vital_checks["Spouse Life Exp"] = spouse_life_exp
+        
     missing_vitals = [name for name, val in vital_checks.items() if val is None]
     
     if missing_vitals:
@@ -98,16 +113,18 @@ if submit:
 
     inputs = {
         'current_age': int(cur_age), 'ret_age': int(ret_age), 'life_expectancy': int(life_exp),
+        'spouse_age': int(spouse_age), 'spouse_life_exp': int(spouse_life_exp),
         'filing_status': filing_status, 'state': state, 'county': county, 
         'current_salary': safe_float(current_salary), 'annual_savings': safe_float(annual_savings),
         'phased_ret_active': phased_ret_active, 'phased_ret_age': int(phased_ret_age or ret_age),
         'pension_est': safe_float(pension_est), 'ss_fra': safe_float(ss_fra), 'ss_claim_age': int(ss_claim_age),
+        'max_spending': safe_float(max_spending),
         'health_plan': health_plan, 'health_cost': safe_float(health_cost),
         'oop_cost': safe_float(oop_cost), 'mortgage_pmt': safe_float(mortgage_pmt), 'mortgage_yrs': int(mortgage_yrs or 0),
         'home_value': safe_float(home_value), 'target_floor': safe_float(target_floor),
         'tsp_bal': safe_float(tsp_b), 'tsp_ret': safe_float(tsp_r)/100, 'tsp_vol': safe_float(tsp_v, True)/100,
         'roth_bal': safe_float(roth_b), 'roth_ret': safe_float(roth_r)/100, 'roth_vol': safe_float(roth_v, True)/100,
-        'taxable_bal': safe_float(tax_b), 'taxable_ret': safe_float(tax_r)/100, 'taxable_vol': safe_float(tax_v, True)/100,
+        'taxable_bal': safe_float(tax_b), 'taxable_basis': safe_float(tax_basis), 'taxable_ret': safe_float(tax_r)/100, 'taxable_vol': safe_float(tax_v, True)/100,
         'hsa_bal': safe_float(hsa_b), 'hsa_ret': safe_float(hsa_r)/100, 'hsa_vol': safe_float(hsa_v, True)/100,
         'cash_bal': safe_float(cash_b), 'cash_ret': safe_float(cash_r)/100,
         'pay_taxes_from_cash': pay_taxes_from_cash
@@ -144,7 +161,7 @@ if submit:
 
     with t2:
         st.subheader("Integrated Cash Flow & Simulation Execution")
-        st.info(f"**How the Model Reaches the Target Legacy:** The mathematical engine utilizes a 1-Dimensional Root-Finding Algorithm (Brent's Method). It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) up and down until it successfully forces the Median (50th Percentile) Terminal Wealth to land exactly at your declared Target Legacy Floor of **${inputs['target_floor']:,.0f}** at Life Expectancy.")
+        st.info(f"**How the Model Reaches the Target Legacy:** The mathematical engine utilizes a 1-Dimensional Root-Finding Algorithm (Brent's Method). It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) up and down until it successfully forces the Median Terminal Wealth to land exactly at your declared Target Legacy Floor. *(If you inputted a Maximum Spending Cap, the Terminal Wealth may artificially exceed the floor because your spending was capped).*")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -155,9 +172,8 @@ if submit:
             st.markdown("*^ Income Gap Mapping: Visualizes the shortfall between your Guaranteed Income (Social Security & Pension) and your Total Expenses. The gap is strictly funded by portfolio distributions.*")
             
         st.markdown("### Integrated Year-by-Year Cash Flow Projections")
-        st.write("Dynamic outflows interact with fluctuating portfolio values. Includes baseline spending + taxes + healthcare costs. *Note: 'Total Income' reflects Gross Cash Flow (including tax-free withdrawals), which may mathematically exceed your IRS tax bracket ceilings.*")
-        display_cols = ['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'Annual 401(k)/TSP Withdrawal', 'Salary Income', 'Social Security', 'Pension']
-        st.dataframe(df_median[display_cols].style.format({"Total Income": "${:,.0f}", "IRS Taxable Income": "${:,.0f}", "Total Expenses": "${:,.0f}", "Net Spendable Annual": "${:,.0f}", "Annual 401(k)/TSP Withdrawal": "${:,.0f}", "Salary Income": "${:,.0f}", "Social Security": "${:,.0f}", "Pension": "${:,.0f}"}), use_container_width=True)
+        display_cols = ['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'TSP Withdrawal', 'Salary Income', 'Social Security', 'Pension']
+        st.dataframe(df_median[display_cols].style.format({"Total Income": "${:,.0f}", "IRS Taxable Income": "${:,.0f}", "Total Expenses": "${:,.0f}", "Net Spendable Annual": "${:,.0f}", "TSP Withdrawal": "${:,.0f}", "Salary Income": "${:,.0f}", "Social Security": "${:,.0f}", "Pension": "${:,.0f}"}), use_container_width=True)
 
     with t3:
         st.subheader("Variable Spending Rules & Adaptive Guardrails")
@@ -184,14 +200,13 @@ if submit:
         c1.metric("Highly Liquid Assets (Cash + Taxable)", f"${total_cash_short_term:,.0f}")
         c2.metric("Year 1 Est. Portfolio Burn Rate", f"${yr1_portfolio_burn:,.0f}")
         c3.metric("Years of Safe Liquidity Buffer", f"{safe_years:.1f} Years")
-        st.write("This profile evaluates how much cash and short-term buffer assets you hold outside of your TSP. A high 'Years of Safe Liquidity' ratio means you can weather a prolonged stock market crash without having to lock in losses by selling your TSP shares at the bottom. *(Note: The Cash/MM balance will naturally drop toward $0 over time in the median CSV data. This is a statistical effect caused by the algorithm draining the cash buffer in crash years across 10,000 simulations to protect your TSP).*")
 
     with t5:
         st.subheader("Taxes & Dynamic Withdrawals")
         limit_24 = TAX_BRACKETS_MFJ[3][0] if filing_status == 'MFJ' else TAX_BRACKETS_SINGLE[3][0]
         
         if df_median['IRS Taxable Income'][ret_idx] > limit_24:
-            st.error(f"🚨 **Lifestyle Exceeds 24% Bracket**: Your baseline spending needs (TSP Withdrawals + Pension) naturally push your IRS Taxable Income to **${df_median['IRS Taxable Income'][ret_idx]:,.0f}**, which is above your 24% ceiling of **${limit_24:,.0f}**. The Roth Optimizer has safely disabled itself to prevent pushing you even higher. To lower your tax bracket, simply increase your 'Target Legacy Floor' input to purposefully reduce your annual spending.")
+            st.error(f"🚨 **Lifestyle Exceeds 24% Bracket**: Your baseline spending needs naturally push your IRS Taxable Income to **${df_median['IRS Taxable Income'][ret_idx]:,.0f}**, which is above your 24% ceiling of **${limit_24:,.0f}**. The Roth Optimizer disabled itself to prevent pushing you even higher.")
         else:
             st.info(f"**Tax Diagnostic Check:** You selected **{filing_status}**. The 24% marginal bracket ceiling for this status is **${limit_24:,.0f}**. Your IRS Taxable Income successfully remained under this ceiling.")
             
@@ -229,12 +244,8 @@ if submit:
         
         if med_taxes[-1] > med_taxes[0] * 2.5:
             st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Execute Roth Conversions.")
-        medicare_costs = np.median(history['medicare_cost'], axis=0)
-        if np.any(medicare_costs > 2100):  
-            st.warning("⚠️ **Medicare IRMAA Alert**: Your simulated MAGI breaches IRMAA cliffs, triggering thousands in projected surcharges.")
-        cash_depletion = np.where(np.percentile(history['cash_bal'], 10, axis=0) <= 0)[0]
-        if len(cash_depletion) > 0:
-            st.error(f"⚠️ **SORR Buffer Alert**: In severe downturns, your Money Market buffer is projected to fully deplete at Age {age_arr[cash_depletion[0]]}.")
+        if filing_status == 'MFJ':
+            st.error("⚠️ **Widow(er) Tax Penalty**: Upon the first spouse's mortality, your tax filing status shifts to Single, shrinking your brackets and drastically increasing your vulnerability to IRMAA surcharges. Roth conversions are critical while you are still MFJ.")
         if prob_success >= 85:
             st.success("✅ **Plan is on Track**: You have a highly secure probability of meeting your terminal floor.")
 
@@ -249,11 +260,6 @@ if submit:
 
     with t8:
         st.subheader("Roth Conversion Optimizer")
-        st.info("""
-        **Actuarial Evaluation: Is it mathematically advantageous to voluntarily exceed the 24% bracket?**  
-        Conventional wisdom dictates you should never convert above the 24% marginal bracket because the jump to 32% represents a massive 8% "Tax Cliff." 
-        However, if your TSP is large enough, your future RMDs will force your Total Income deep into the 35%+ brackets anyway. The engine explicitly evaluates an **"Aggressive 32% Strategy"** to see if paying 32% today mathematically yields a higher Terminal Wealth than capping conversions at 24%.
-        """)
         
         col1, col2 = st.columns(2)
         with col1:
@@ -270,11 +276,6 @@ if submit:
             st.warning("**Verdict: No Conversions Recommended.**")
         else:
             st.success(f"Verdict: **Execute the '{winner}' Strategy**")
-            if "32%" in winner:
-                st.write("📈 **Actuarial Note:** The math proved that your future RMD tax-drag is so severe that it is advantageous to intentionally break the 24% tax cliff and absorb the 32% marginal rates today.")
-            else:
-                st.write("🛡️ **Actuarial Note:** The 32% strategy failed to beat the 24% capped strategies. The math proves you should strictly respect the 24% ceiling.")
-                
             st.write(f"- **Real Lifetime Tax Savings:** ${max(0, tax_savings):,.0f}")
             st.write(f"- **Reduction in Lifetime RMDs:** ${rmd_reduction:,.0f}")
             st.write(f"- **Net Increase to Legacy:** ${wealth_increase:,.0f}")
@@ -295,17 +296,11 @@ if submit:
             "Probability of Portfolio Success": [f"{max(0, prob_success - 8):.1f}%", f"{prob_success:.1f}%", f"{min(100, prob_success + 6):.1f}%"]
         }
         st.table(pd.DataFrame(ss_data))
-        
-        st.markdown("### Optimal Filing Decision")
         st.success("**Verdict: Delay Claiming until Age 70**")
-        st.write("**Why delay to 70? The 'Longevity Insurance' Concept:** Actuarially, Social Security is the only guaranteed, inflation-adjusted, market-immune income stream you will ever possess. By delaying to Age 70, your payout permanently increases by 8% per year. This creates massive 'Longevity Insurance.' If you live deep into your 90s, this vastly inflated SS paycheck drastically reduces the withdrawal pressure placed on your TSP/Roth, virtually guaranteeing you will not outlive your portfolio.")
 
     with t10:
         st.subheader("Medicare Part B & Actuarial Healthcare OOP")
         st.plotly_chart(plot_medicare_comparison(history, years_arr, inputs), use_container_width=True)
-        
-        total_medicare_cost = np.sum(np.median(history['medicare_cost'], axis=0))
-        st.write(f"- **Total Projected Lifetime IRMAA Penalties & Part B:** ${total_medicare_cost:,.0f}")
         
         moop_cap = MOOP_LIMITS.get(health_plan, (999999, 999999))[1 if filing_status == 'MFJ' else 0]
         if moop_cap == 999999:
