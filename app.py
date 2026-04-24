@@ -135,26 +135,15 @@ if submit:
         col1, col2 = st.columns(2)
         with col1:
             st.plotly_chart(plot_fan_chart(history, years_arr), use_container_width=True)
-            st.markdown("""
-            **Understanding the Fan (Hurricane) Chart & Sequence of Return Risk (SORR)**  
-            This visualization shows the distribution of potential outcomes over time based on 10,000 market scenarios. 
-            - The **Dark Blue line** is the Median (50th percentile) expected outcome.
-            - The **Light Blue outer bands** represent the 10th (pessimistic) and 90th (optimistic) percentiles. 
-            - **Sequence of Return Risk:** If you suffer a "bad start" where severe market losses hit early in retirement, your portfolio will ride the bottom edge of this fan. This vulnerability chart proves whether your portfolio possesses enough cash buffers to survive a worst-case scenario without falling to zero.
-            """)
-            
+            st.markdown("*^ Sequence of Return Risk (SORR): The fan chart demonstrates plan vulnerability. If market losses hit early in retirement, your portfolio will follow the lower bands, triggering variable spending cuts.*")
         with col2:
             st.plotly_chart(plot_income_gap(history, years_arr), use_container_width=True)
-            st.markdown("""
-            **Understanding the Income Gap Mapping**  
-            This chart displays the shortfall between your highly stable guaranteed income (Blue Area: Social Security and Pensions) and your Total Expense obligations (Red Line: Lifestyle + Taxes + Health + Mortgage). 
-            - **The White Space:** The gap between the blue area and the red line represents the exact dollar amount that *must* be successfully withdrawn from your investment portfolios each year to sustain your retirement.
-            """)
+            st.markdown("*^ Income Gap Mapping: Visualizes the shortfall between your Guaranteed Income (Social Security & Pension) and your Total Expenses. The gap is strictly funded by portfolio distributions.*")
             
         st.markdown("### Integrated Year-by-Year Cash Flow Projections")
-        st.write("Dynamic outflows interact with fluctuating portfolio values. Includes baseline spending + taxes + healthcare costs. *Note: 'Total Income' reflects Gross Cash Flow (including tax-free withdrawals), which may mathematically exceed your IRS tax bracket ceilings.*")
-        display_cols = ['Calendar Year', 'Age', 'Total Income', 'Total Expenses', 'Net Spendable Annual', 'Annual 401(k)/TSP Withdrawal', 'Social Security', 'Pension', 'HSA Balance']
-        st.dataframe(df_median[display_cols].style.format({"Total Income": "${:,.0f}", "Total Expenses": "${:,.0f}", "Net Spendable Annual": "${:,.0f}", "Annual 401(k)/TSP Withdrawal": "${:,.0f}", "Social Security": "${:,.0f}", "Pension": "${:,.0f}", "HSA Balance": "${:,.0f}"}), use_container_width=True)
+        st.write("Dynamic outflows interact with fluctuating portfolio values. Includes baseline spending + taxes + healthcare costs. *Note: 'Total Income' below reflects your Gross Lifestyle Cash Flow (including tax-free distributions), which is often significantly higher than your IRS Taxable Income.*")
+        display_cols = ['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'Annual 401(k)/TSP Withdrawal', 'Social Security', 'Pension']
+        st.dataframe(df_median[display_cols].style.format({"Total Income": "${:,.0f}", "IRS Taxable Income": "${:,.0f}", "Total Expenses": "${:,.0f}", "Net Spendable Annual": "${:,.0f}", "Annual 401(k)/TSP Withdrawal": "${:,.0f}", "Social Security": "${:,.0f}", "Pension": "${:,.0f}"}), use_container_width=True)
 
     with t3:
         st.subheader("Variable Spending Rules & Adaptive Guardrails")
@@ -162,8 +151,7 @@ if submit:
         
         st.markdown("""
         ### What the Guardrails Mean for You
-        This model does not assume a rigid, blind withdrawal strategy. Instead, it utilizes **Guyton-Klinger Guardrails**, an adaptive cash-flow system that adjusts your paycheck based on the health of the market to mathematically guarantee you never run out of money.
-        
+        This model utilizes **Guyton-Klinger Guardrails**, an adaptive cash-flow system that adjusts your paycheck based on the health of the market to mathematically guarantee you never run out of money.
         - **Capital Preservation Rule (The Pay Cut):** If the market crashes and your withdrawal rate climbs 20% higher than your initial rate, the engine forces a **10% reduction** in your spending. This protects your portfolio from death-spiraling.
         - **Prosperity Rule (The Pay Raise):** If the market booms and your withdrawal rate falls 20% below your initial rate, the engine grants you a **10% raise** in discretionary spending to enjoy your wealth.
         - **Inflation Freeze Rule:** In any year where your portfolio suffers a negative return, you forfeit your annual inflation (Cost of Living) increase for that year.
@@ -186,6 +174,10 @@ if submit:
 
     with t5:
         st.subheader("Taxes & Dynamic Withdrawals")
+        
+        limit_24 = 383900 if filing_status == 'MFJ' else 191950
+        st.info(f"**Tax Diagnostic Check:** You selected **{filing_status}**. The 24% marginal bracket ceiling for this status is **${limit_24:,.0f}**. If your 'IRS Taxable Income' in the CSV exceeds this number, it indicates your baseline lifestyle distributions + your pension naturally forced you into the 32% bracket before the engine even attempted any Roth conversions.")
+        
         col1, col2 = st.columns(2)
         with col1:
             st.plotly_chart(plot_withdrawal_hierarchy(history, years_arr), use_container_width=True)
@@ -216,8 +208,9 @@ if submit:
         st.metric("Estimated Net After-Tax Value to Heirs", f"${net_to_heirs:,.0f}", delta=f"Lost to IRD Taxes: -${med_tsp * 0.24:,.0f}", delta_color="inverse")
 
     with t7:
-        st.subheader("Planner Plus Coach Alerts & Actionable To-Do List")
+        st.subheader("PlannerPlus Coach Alerts & Actionable To-Do List")
         med_taxes = np.median(history['taxes_fed'], axis=0)
+        
         if med_taxes[-1] > med_taxes[0] * 2.5:
             st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Execute Roth Conversions.")
         medicare_costs = np.median(history['medicare_cost'], axis=0)
@@ -243,10 +236,7 @@ if submit:
         st.info("""
         **Actuarial Evaluation: Is it mathematically advantageous to voluntarily exceed the 24% bracket?**  
         Conventional wisdom dictates you should never convert above the 24% marginal bracket because the jump to 32% represents a massive 8% "Tax Cliff." 
-        
         However, if your TSP is large enough, your future RMDs will force your Total Income deep into the 35%+ brackets anyway. The engine explicitly evaluates an **"Aggressive 32% Strategy"** to see if paying 32% today mathematically yields a higher Terminal Wealth than capping conversions at 24%.
-        
-        *Note: Your 'Total Income' shown in the Cash Flow tables represents total gross portfolio distributions to fund your lifestyle and taxes. The Roth Optimizer strictly caps IRS Taxable Income at the bracket thresholds, though your gross cash flows may mathematically exceed this figure depending on your withdrawal needs.*
         """)
         
         col1, col2 = st.columns(2)
@@ -275,8 +265,8 @@ if submit:
             
             st.markdown("#### Step-by-Step Conversion Schedule")
             roth_amts = np.median(roth_results[winner]['hist']['roth_conversion'], axis=0)
-            conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_amts})
-            st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}"}))
+            conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_amts, "Est. IRS Taxable Income": np.median(roth_results[winner]['hist']['taxable_income'], axis=0)})
+            st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}", "Est. IRS Taxable Income": "${:,.0f}"}))
 
     with t9:
         st.subheader("Social Security Claiming Strategy")
@@ -292,10 +282,7 @@ if submit:
         
         st.markdown("### Optimal Filing Decision")
         st.success("**Verdict: Delay Claiming until Age 70**")
-        st.write("""
-        **Why delay to 70? The 'Longevity Insurance' Concept:** 
-        Actuarially, Social Security is the only guaranteed, inflation-adjusted, market-immune income stream you will ever possess. By delaying to Age 70, your payout permanently increases by 8% per year. This creates massive 'Longevity Insurance.' If you live deep into your 90s, this vastly inflated SS paycheck drastically reduces the withdrawal pressure placed on your TSP/Roth, virtually guaranteeing you will not outlive your portfolio.
-        """)
+        st.write("**Why delay to 70? The 'Longevity Insurance' Concept:** Actuarially, Social Security is the only guaranteed, inflation-adjusted, market-immune income stream you will ever possess. By delaying to Age 70, your payout permanently increases by 8% per year. This creates massive 'Longevity Insurance.' If you live deep into your 90s, this vastly inflated SS paycheck drastically reduces the withdrawal pressure placed on your TSP/Roth, virtually guaranteeing you will not outlive your portfolio.")
 
     with t10:
         st.subheader("Medicare Part B & IRMAA vs. Retiree Coverage")
