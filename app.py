@@ -51,6 +51,7 @@ with st.sidebar.form("input_form"):
     st.subheader("Expenses & Target Floors")
     target_floor = st.number_input("Target Legacy (Floor) at Life Exp ($)", min_value=0, value=None)
     min_spending = st.number_input("Minimum Annual Spending Amount ($)", min_value=0, value=None)
+    max_spending = st.number_input("Maximum Annual Spending Cap ($)", min_value=0, value=None)
     
     max_tax_bracket = st.selectbox("Maximum Target Tax Bracket (Roth Cap)", ["12%", "22%", "24%", "32%", "35%", "37%"], index=2)
     mortgage_pmt = st.number_input("Annual Mortgage Payment ($)", min_value=0, value=None)
@@ -66,20 +67,34 @@ with st.sidebar.form("input_form"):
     health_cost = st.number_input("Current Annual Health Premium ($)", min_value=0, value=None)
     oop_cost = st.number_input("Today's Typical Out-of-Pocket Medical ($)", min_value=0, value=None)
     
-    st.subheader("Current Portfolios")
-    portfolio_choice = st.selectbox("Select Portfolio Strategy", list(PORTFOLIOS.keys()), index=1)
+    st.subheader("Current Portfolios & Strategies")
     
-    tsp_b = st.number_input("TSP Balance", min_value=0, value=None)
-    roth_b = st.number_input("Roth IRA Balance", min_value=0, value=None)
+    cb1, cb2 = st.columns(2)
+    tsp_b = cb1.number_input("TSP Balance ($)", value=0.0)
+    tsp_strat = cb2.selectbox("TSP Strategy", list(PORTFOLIOS.keys()), index=1)
     
-    tax_b = st.number_input("Taxable Balance", min_value=0, value=None)
-    tax_basis = st.number_input("Taxable Cost Basis ($)", min_value=0, value=tax_b)
+    cb3, cb4 = st.columns(2)
+    ira_b = cb3.number_input("Trad. IRA Balance ($)", value=0.0)
+    ira_strat = cb4.selectbox("Trad. IRA Strategy", list(PORTFOLIOS.keys()), index=1)
     
-    cash_b = st.number_input("Money Market Balance", min_value=0, value=None)
-    cash_r = st.number_input("Money Market Yield %", value=None)
+    cb5, cb6 = st.columns(2)
+    roth_b = cb5.number_input("Roth IRA Balance ($)", value=0.0)
+    roth_strat = cb6.selectbox("Roth IRA Strategy", list(PORTFOLIOS.keys()), index=2)
+    
+    cb7, cb8 = st.columns(2)
+    tax_b = cb7.number_input("Taxable Balance ($)", value=0.0)
+    tax_strat = cb8.selectbox("Taxable Strategy", list(PORTFOLIOS.keys()), index=1)
+    tax_basis = st.number_input("Taxable Cost Basis ($)", min_value=0.0, value=tax_b)
+    
+    cb9, cb10 = st.columns(2)
+    hsa_b = cb9.number_input("HSA Balance ($)", value=0.0)
+    hsa_strat = cb10.selectbox("HSA Strategy", list(PORTFOLIOS.keys()), index=1)
+    
+    cb11, cb12 = st.columns(2)
+    cash_b = cb11.number_input("Money Market Balance ($)", value=0.0)
+    cash_r = cb12.number_input("Money Market Yield %", value=4.0)
+    
     pay_taxes_from_cash = st.checkbox("Pay Roth Conversion Taxes from Cash Buffer?", value=True)
-    
-    hsa_b = st.number_input("HSA Balance (Optional)", min_value=0, value=None)
     
     submit = st.form_submit_button("Run Optimization Engine")
 
@@ -106,15 +121,16 @@ if submit:
         'current_salary': safe_float(current_salary), 'annual_savings': safe_float(annual_savings),
         'phased_ret_active': phased_ret_active, 'phased_ret_age': int(phased_ret_age or ret_age),
         'pension_est': safe_float(pension_est), 'ss_fra': safe_float(ss_fra), 'ss_claim_age': int(ss_claim_age),
-        'min_spending': safe_float(min_spending), 'max_tax_bracket': max_tax_bracket,
+        'min_spending': safe_float(min_spending), 'max_spending': safe_float(max_spending),
+        'max_tax_bracket': max_tax_bracket,
         'health_plan': health_plan, 'health_cost': safe_float(health_cost), 'oop_cost': safe_float(oop_cost), 
         'mortgage_pmt': safe_float(mortgage_pmt), 'mortgage_yrs': int(mortgage_yrs or 0),
         'home_value': safe_float(home_value), 'target_floor': safe_float(target_floor),
-        'portfolio_choice': portfolio_choice,
-        'tsp_bal': safe_float(tsp_b), 'tsp_vol': 0.0, 'tsp_ret': 0.0,
-        'roth_bal': safe_float(roth_b), 'roth_vol': 0.0, 'roth_ret': 0.0,
-        'taxable_bal': safe_float(tax_b), 'taxable_basis': safe_float(tax_basis), 'taxable_vol': 0.0, 'taxable_ret': 0.0,
-        'hsa_bal': safe_float(hsa_b), 'hsa_vol': 0.0, 'hsa_ret': 0.0,
+        'tsp_bal': safe_float(tsp_b), 'tsp_strat': tsp_strat,
+        'ira_bal': safe_float(ira_b), 'ira_strat': ira_strat,
+        'roth_bal': safe_float(roth_b), 'roth_strat': roth_strat,
+        'taxable_bal': safe_float(tax_b), 'taxable_basis': safe_float(tax_basis), 'taxable_strat': tax_strat,
+        'hsa_bal': safe_float(hsa_b), 'hsa_strat': hsa_strat,
         'cash_bal': safe_float(cash_b), 'cash_ret': safe_float(cash_r)/100,
         'pay_taxes_from_cash': pay_taxes_from_cash
     }
@@ -125,7 +141,6 @@ if submit:
         roth_results = engine.analyze_roth_strategies(opt_iwr)
         winner = max(roth_results, key=lambda key: roth_results[key]['wealth'])
         history = roth_results[winner]['hist']
-        port_analysis = engine.analyze_portfolios(opt_iwr, roth_strategy=1)
     
     st.success(f"Simulation Complete. Optimized Initial Portfolio Withdrawal Rate: **{opt_iwr*100:.2f}%**")
 
@@ -147,23 +162,10 @@ if submit:
         col2.metric("Median Terminal Wealth", f"${median_paths[-1]:,.0f}")
         col3.metric("10th Percentile Wealth", f"${np.percentile(history['total_bal'], 10, axis=0)[-1]:,.0f}")
         st.plotly_chart(plot_wealth_trajectory(history, inputs['target_floor'], years_arr), use_container_width=True)
-        
-        st.markdown("---")
-        st.subheader("Portfolio Optimization & Efficient Frontier")
-        st.write("This analysis evaluates your selected portfolio against standard market mixes to find the optimal balance of growth vs. Sequence of Return Risk (guardrail pay cuts).")
-        
-        port_names = list(port_analysis.keys())
-        port_wealths = [port_analysis[p]['wealth'] for p in port_names]
-        port_cuts = [port_analysis[p]['cut_prob'] for p in port_names]
-        
-        p_df = pd.DataFrame({"Portfolio Strategy": port_names, "Median Terminal Wealth": port_wealths, "Probability of Guardrail Pay Cuts": port_cuts})
-        st.table(p_df.style.format({"Median Terminal Wealth": "${:,.0f}", "Probability of Guardrail Pay Cuts": "{:.1f}%"}))
-        
-        st.success(f"**Current Selection:** You are evaluating the {portfolio_choice} portfolio. While an Aggressive portfolio yields the highest Terminal Wealth, its high volatility dramatically increases your risk of forced lifestyle pay cuts early in retirement. Choose the mix that best fits your risk tolerance.")
 
     with t2:
         st.subheader("Integrated Cash Flow & Simulation Execution")
-        st.info(f"**How the Model Reaches the Target Legacy:** The engine utilizes Brent's Method. It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) until it successfully forces the Median Terminal Wealth to land exactly at your declared Target Legacy Floor of **${inputs['target_floor']:,.0f}** at Life Expectancy. *(If you inputted a Minimum Spending Floor, the algorithm protected that baseline).*")
+        st.info(f"**How the Model Reaches the Target Legacy:** The mathematical engine utilizes a 1-Dimensional Root-Finding Algorithm (Brent's Method). It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) up and down until it successfully forces the Median Terminal Wealth to land exactly at your declared Target Legacy Floor. *(If you inputted a Maximum Spending Cap, the Terminal Wealth may artificially exceed the floor because your spending was capped).*")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -172,8 +174,8 @@ if submit:
             st.plotly_chart(plot_income_gap(history, years_arr), use_container_width=True)
             
         st.markdown("### Integrated Year-by-Year Cash Flow Projections")
-        display_cols = ['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'TSP Withdrawal', 'Salary Income', 'Social Security', 'Pension']
-        st.dataframe(df_median[display_cols].style.format({"Total Income": "${:,.0f}", "IRS Taxable Income": "${:,.0f}", "Total Expenses": "${:,.0f}", "Net Spendable Annual": "${:,.0f}", "TSP Withdrawal": "${:,.0f}", "Salary Income": "${:,.0f}", "Social Security": "${:,.0f}", "Pension": "${:,.0f}"}), use_container_width=True)
+        display_cols = ['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'TSP Withdrawal', 'Trad IRA Withdrawal', 'Salary Income', 'Social Security', 'Pension']
+        st.dataframe(df_median[display_cols].style.format({"Total Income": "${:,.0f}", "IRS Taxable Income": "${:,.0f}", "Total Expenses": "${:,.0f}", "Net Spendable Annual": "${:,.0f}", "TSP Withdrawal": "${:,.0f}", "Trad IRA Withdrawal": "${:,.0f}", "Salary Income": "${:,.0f}", "Social Security": "${:,.0f}", "Pension": "${:,.0f}"}), use_container_width=True)
 
     with t3:
         st.subheader("Variable Spending Rules & Adaptive Guardrails")
@@ -182,7 +184,7 @@ if submit:
         ### What the Guardrails Mean for You
         - **Capital Preservation Rule (The Pay Cut):** If the market crashes and your withdrawal rate climbs 20% higher than your initial rate, the engine forces a **10% reduction** in your spending.
         - **Prosperity Rule (The Pay Raise):** If the market booms and your withdrawal rate falls 20% below your initial rate, the engine grants you a **10% raise** in discretionary spending.
-        - **Inflation Freeze Rule:** In any year where your portfolio suffers a negative return, you forfeit your annual inflation (Cost of Living) increase.
+        - **Inflation Freeze Rule:** In any year where your portfolio suffers a negative return, you forfeit your annual inflation increase.
         - **Minimum Spending Floor Override:** *If you inputted a Minimum Spending Amount, the engine will override all Guardrail pay cuts to ensure your cash flow never drops below your absolute survival line.*
         """)
 
@@ -213,8 +215,8 @@ if submit:
         strat_data = {
             "Strategy Component": ["Tax-Efficient Withdrawal Order", "Dynamic Downturn Strategy", "Capital Gains (LTCG)", "Impact of Inflation"],
             "Analysis / Value": [
-                "Normal Years: Fund lifestyle purely from TSP, allowing Roth to compound tax-free.",
-                "Crash Years: Halt TSP withdrawals. Deplete Cash -> Taxable -> Roth to avoid Sequence of Return Risk.",
+                "Normal Years: Fund lifestyle purely from TSP/IRA, allowing Roth to compound tax-free.",
+                "Crash Years: Halt TSP withdrawals. Deplete Cash -> Taxable -> Roth to avoid Sequence Risk.",
                 "The engine tracks your Taxable Cost Basis. When Taxable funds are sold, it applies 0/15/20% LTCG brackets + 3.8% NIIT.",
                 "Expenses rise geometrically with CPI. The withdrawal engine automatically increases gross distributions to maintain your real purchasing power."
             ]
@@ -225,11 +227,12 @@ if submit:
         st.subheader("After-Tax Legacy & Estate Breakdown")
         st.plotly_chart(plot_legacy_breakdown(history), use_container_width=True)
         med_tsp = np.median(history['tsp_bal'][:, -1])
+        med_ira = np.median(history['ira_bal'][:, -1])
         med_roth = np.median(history['roth_bal'][:, -1])
         med_taxable = np.median(history['taxable_bal'][:, -1]) + np.median(history['cash_bal'][:, -1])
         med_home = np.median(history['home_value'][:, -1])
-        net_to_heirs = (med_tsp * 0.76) + med_taxable + med_roth + med_home
-        st.metric("Estimated Net After-Tax Value to Heirs", f"${net_to_heirs:,.0f}", delta=f"Lost to IRD Taxes: -${med_tsp * 0.24:,.0f}", delta_color="inverse")
+        net_to_heirs = ((med_tsp + med_ira) * 0.76) + med_taxable + med_roth + med_home
+        st.metric("Estimated Net After-Tax Value to Heirs", f"${net_to_heirs:,.0f}", delta=f"Lost to IRD Taxes: -${(med_tsp+med_ira) * 0.24:,.0f}", delta_color="inverse")
 
     with t7:
         st.subheader("PlannerPlus Coach Alerts & Actionable To-Do List")
@@ -295,9 +298,6 @@ if submit:
     with t10:
         st.subheader("Medicare Part B & Actuarial Healthcare OOP")
         st.plotly_chart(plot_medicare_comparison(history, years_arr, inputs), use_container_width=True)
-        
-        total_medicare_cost = np.sum(np.median(history['medicare_cost'], axis=0))
-        st.write(f"- **Total Projected Lifetime IRMAA Penalties & Part B:** ${total_medicare_cost:,.0f}")
         
         moop_cap = MOOP_LIMITS.get(health_plan, (999999, 999999))[1 if filing_status == 'MFJ' else 0]
         if moop_cap == 999999:
