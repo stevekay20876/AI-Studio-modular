@@ -30,9 +30,13 @@ with st.sidebar.form("input_form"):
     county = c4.text_input("County of Residence")
     filing_status = st.selectbox("Tax Filing Status", ["Single", "MFJ"])
     
+    st.subheader("Pre-Retirement Accumulation")
+    annual_savings = st.number_input("Annual Savings (Until Retirement) ($)", min_value=0, value=None)
+    
     st.subheader("Federal Details & Income")
     pension_est = st.number_input("Annual Pension Estimate ($)", min_value=0, value=None)
     ss_fra = st.number_input("Social Security at FRA ($/yr)", min_value=0, value=None)
+    ss_claim_age = st.number_input("Target SS Claiming Age", min_value=62, max_value=70, value=67)
     
     st.subheader("Expenses & Health")
     mortgage_pmt = st.number_input("Annual Mortgage Payment ($)", min_value=0, value=None)
@@ -88,7 +92,8 @@ if submit:
     inputs = {
         'current_age': int(cur_age), 'ret_age': int(ret_age), 'life_expectancy': int(life_exp),
         'filing_status': filing_status, 'state': state, 'county': county, 
-        'pension_est': safe_float(pension_est), 'ss_fra': safe_float(ss_fra), 
+        'annual_savings': safe_float(annual_savings),
+        'pension_est': safe_float(pension_est), 'ss_fra': safe_float(ss_fra), 'ss_claim_age': int(ss_claim_age),
         'health_plan': health_plan, 'health_cost': safe_float(health_cost),
         'oop_cost': safe_float(oop_cost), 'mortgage_pmt': safe_float(mortgage_pmt), 'mortgage_yrs': int(mortgage_yrs or 0),
         'target_floor': safe_float(target_floor),
@@ -141,14 +146,12 @@ if submit:
             st.markdown("*^ Income Gap Mapping: Visualizes the shortfall between your Guaranteed Income (Social Security & Pension) and your Total Expenses. The gap is strictly funded by portfolio distributions.*")
             
         st.markdown("### Integrated Year-by-Year Cash Flow Projections")
-        st.write("Dynamic outflows interact with fluctuating portfolio values. Includes baseline spending + taxes + healthcare costs. *Note: 'Total Income' below reflects your Gross Lifestyle Cash Flow (including tax-free distributions), which is often significantly higher than your IRS Taxable Income.*")
         display_cols = ['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'Annual 401(k)/TSP Withdrawal', 'Social Security', 'Pension']
         st.dataframe(df_median[display_cols].style.format({"Total Income": "${:,.0f}", "IRS Taxable Income": "${:,.0f}", "Total Expenses": "${:,.0f}", "Net Spendable Annual": "${:,.0f}", "Annual 401(k)/TSP Withdrawal": "${:,.0f}", "Social Security": "${:,.0f}", "Pension": "${:,.0f}"}), use_container_width=True)
 
     with t3:
         st.subheader("Variable Spending Rules & Adaptive Guardrails")
         st.plotly_chart(plot_income_volatility(history, years_arr), use_container_width=True)
-        
         st.markdown("""
         ### What the Guardrails Mean for You
         This model utilizes **Guyton-Klinger Guardrails**, an adaptive cash-flow system that adjusts your paycheck based on the health of the market to mathematically guarantee you never run out of money.
@@ -160,22 +163,10 @@ if submit:
     with t4:
         st.subheader("Net Worth Forecast & Asset Liquidity Profile")
         st.plotly_chart(plot_liquidity_timeline(history, years_arr), use_container_width=True)
-        
-        st.markdown("### Asset Liquidity Profile (Year 1)")
-        total_cash_short_term = inputs['cash_bal'] + inputs['taxable_bal']
-        yr1_portfolio_burn = df_median['Total Expenses'][0] + df_median['Net Spendable Annual'][0] - df_median['Social Security'][0] - df_median['Pension'][0]
-        safe_years = total_cash_short_term / max(yr1_portfolio_burn, 1)
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Highly Liquid Assets (Cash + Taxable)", f"${total_cash_short_term:,.0f}")
-        c2.metric("Year 1 Est. Portfolio Burn Rate", f"${yr1_portfolio_burn:,.0f}")
-        c3.metric("Years of Safe Liquidity Buffer", f"{safe_years:.1f} Years")
-        st.write("This profile evaluates how much cash and short-term buffer assets you hold outside of your TSP. A high 'Years of Safe Liquidity' ratio means you can weather a prolonged stock market crash without having to lock in losses by selling your TSP shares at the bottom.")
 
     with t5:
         st.subheader("Taxes & Dynamic Withdrawals")
-        
-        limit_24 = 383900 if filing_status == 'MFJ' else 191950
+        limit_24 = 394600 if filing_status == 'MFJ' else 197300
         st.info(f"**Tax Diagnostic Check:** You selected **{filing_status}**. The 24% marginal bracket ceiling for this status is **${limit_24:,.0f}**. If your 'IRS Taxable Income' in the CSV exceeds this number, it indicates your baseline lifestyle distributions + your pension naturally forced you into the 32% bracket before the engine even attempted any Roth conversions.")
         
         col1, col2 = st.columns(2)
@@ -185,8 +176,6 @@ if submit:
             st.plotly_chart(plot_taxes_and_rmds(history, years_arr), use_container_width=True)
             
         st.markdown("### Tax-Efficient Withdrawal Strategy Analysis")
-        st.write("The charts above demonstrate the model shifting your withdrawals dynamically between your TSP, Cash, and Roth accounts depending on market conditions and tax optimization needs.")
-        
         strat_data = {
             "Strategy Component": ["Tax-Efficient Withdrawal Order", "Dynamic Downturn Strategy", "Target Annual Spending Need", "Impact of Inflation"],
             "Analysis / Value": [
