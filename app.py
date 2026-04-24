@@ -5,7 +5,7 @@ import datetime
 
 from engine import StochasticRetirementEngine
 from exports import build_csv_dataframe
-from config import MOOP_LIMITS, TAX_BRACKETS_MFJ, TAX_BRACKETS_SINGLE
+from config import MOOP_LIMITS, TAX_BRACKETS_MFJ, TAX_BRACKETS_SINGLE, PORTFOLIOS
 from visuals import (
     plot_wealth_trajectory, plot_liquidity_timeline, plot_cash_flow_sources,
     plot_expenses_breakdown, plot_withdrawal_hierarchy, plot_taxes_and_rmds,
@@ -22,16 +22,12 @@ st.markdown("Institution-Grade Monte Carlo Simulator | Constant Amortization Spe
 with st.sidebar.form("input_form"):
     st.header("Client Parameters")
     
-    # Primary Client Fields
     c1, c2 = st.columns(2)
     cur_age = c1.number_input("Current Age", min_value=18, max_value=100, value=None)
     ret_age = c2.number_input("Full Retirement Age", min_value=18, max_value=100, value=None)
     life_exp = st.number_input("Life Expectancy Age", min_value=50, max_value=120, value=None)
     
-    # Filing Status
     filing_status = st.selectbox("Tax Filing Status", ["Single", "MFJ"])
-    
-    # --- FIX: Spouse Fields are now permanently visible to bypass Streamlit form limitations ---
     st.markdown("**Spouse Details (Required if MFJ)**")
     c_sp1, c_sp2 = st.columns(2)
     spouse_age = c_sp1.number_input("Spouse Current Age", min_value=18, max_value=100, value=None)
@@ -52,8 +48,11 @@ with st.sidebar.form("input_form"):
     ss_fra = st.number_input("Social Security at FRA ($/yr)", min_value=0, value=None)
     ss_claim_age = st.number_input("Target SS Claiming Age", min_value=62, max_value=70, value=67)
     
-    st.subheader("Expenses & Health")
-    max_spending = st.number_input("Maximum Annual Spending Cap (Optional) ($)", min_value=0, value=None)
+    st.subheader("Expenses & Target Floors")
+    target_floor = st.number_input("Target Legacy (Floor) at Life Exp ($)", min_value=0, value=None)
+    min_spending = st.number_input("Minimum Annual Spending Amount ($)", min_value=0, value=None)
+    
+    max_tax_bracket = st.selectbox("Maximum Target Tax Bracket (Roth Cap)", ["12%", "22%", "24%", "32%", "35%", "37%"], index=2)
     mortgage_pmt = st.number_input("Annual Mortgage Payment ($)", min_value=0, value=None)
     mortgage_yrs = st.number_input("Mortgage Years Remaining", min_value=0, value=None)
     home_value = st.number_input("Current Home Value ($)", min_value=0, value=None)
@@ -67,52 +66,37 @@ with st.sidebar.form("input_form"):
     health_cost = st.number_input("Current Annual Health Premium ($)", min_value=0, value=None)
     oop_cost = st.number_input("Today's Typical Out-of-Pocket Medical ($)", min_value=0, value=None)
     
-    target_floor = st.number_input("Target Legacy (Floor) at Life Exp ($)", min_value=0, value=None)
+    st.subheader("Current Portfolios")
+    portfolio_choice = st.selectbox("Select Portfolio Strategy", list(PORTFOLIOS.keys()), index=1)
     
-    st.subheader("Current Portfolios (Balance / Expected Return % / Volatility %)")
-    tsp_b = st.number_input("TSP / 401(k) Balance", min_value=0, value=None)
-    tsp_r = st.number_input("TSP Return %", value=None)
-    tsp_v = st.number_input("TSP Volatility %", value=None)
-    
+    tsp_b = st.number_input("TSP Balance", min_value=0, value=None)
     roth_b = st.number_input("Roth IRA Balance", min_value=0, value=None)
-    roth_r = st.number_input("Roth Return %", value=None)
-    roth_v = st.number_input("Roth Volatility %", value=None)
     
     tax_b = st.number_input("Taxable Balance", min_value=0, value=None)
     tax_basis = st.number_input("Taxable Cost Basis ($)", min_value=0, value=tax_b)
-    tax_r = st.number_input("Taxable Return %", value=None)
-    tax_v = st.number_input("Taxable Volatility %", value=None)
     
     cash_b = st.number_input("Money Market Balance", min_value=0, value=None)
     cash_r = st.number_input("Money Market Yield %", value=None)
-    
     pay_taxes_from_cash = st.checkbox("Pay Roth Conversion Taxes from Cash Buffer?", value=True)
     
     hsa_b = st.number_input("HSA Balance (Optional)", min_value=0, value=None)
-    hsa_r = st.number_input("HSA Return % (Optional)", value=None)
-    hsa_v = st.number_input("HSA Volatility % (Optional)", value=None)
     
     submit = st.form_submit_button("Run Optimization Engine")
 
 if submit:
     vital_checks = {"Current Age": cur_age, "Retirement Age": ret_age, "Life Expectancy": life_exp, "Target Legacy Floor": target_floor}
-    
-    # Enforces spouse inputs if MFJ is selected
     if filing_status == 'MFJ':
         vital_checks["Spouse Age"] = spouse_age
         vital_checks["Spouse Life Exp"] = spouse_life_exp
         
     missing_vitals = [name for name, val in vital_checks.items() if val is None]
-    
     if missing_vitals:
         st.error(f"SYSTEM HALTED: You must explicitly provide values for: {', '.join(missing_vitals)}")
         st.stop()
 
     def safe_float(val, is_vol=False):
         v = float(val or 0.0)
-        if is_vol and v == 0.0:
-            return 0.0001 
-        return v
+        return 0.0001 if (is_vol and v == 0.0) else v
 
     inputs = {
         'current_age': int(cur_age), 'ret_age': int(ret_age), 'life_expectancy': int(life_exp),
@@ -122,14 +106,15 @@ if submit:
         'current_salary': safe_float(current_salary), 'annual_savings': safe_float(annual_savings),
         'phased_ret_active': phased_ret_active, 'phased_ret_age': int(phased_ret_age or ret_age),
         'pension_est': safe_float(pension_est), 'ss_fra': safe_float(ss_fra), 'ss_claim_age': int(ss_claim_age),
-        'max_spending': safe_float(max_spending),
-        'health_plan': health_plan, 'health_cost': safe_float(health_cost),
-        'oop_cost': safe_float(oop_cost), 'mortgage_pmt': safe_float(mortgage_pmt), 'mortgage_yrs': int(mortgage_yrs or 0),
+        'min_spending': safe_float(min_spending), 'max_tax_bracket': max_tax_bracket,
+        'health_plan': health_plan, 'health_cost': safe_float(health_cost), 'oop_cost': safe_float(oop_cost), 
+        'mortgage_pmt': safe_float(mortgage_pmt), 'mortgage_yrs': int(mortgage_yrs or 0),
         'home_value': safe_float(home_value), 'target_floor': safe_float(target_floor),
-        'tsp_bal': safe_float(tsp_b), 'tsp_ret': safe_float(tsp_r)/100, 'tsp_vol': safe_float(tsp_v, True)/100,
-        'roth_bal': safe_float(roth_b), 'roth_ret': safe_float(roth_r)/100, 'roth_vol': safe_float(roth_v, True)/100,
-        'taxable_bal': safe_float(tax_b), 'taxable_basis': safe_float(tax_basis), 'taxable_ret': safe_float(tax_r)/100, 'taxable_vol': safe_float(tax_v, True)/100,
-        'hsa_bal': safe_float(hsa_b), 'hsa_ret': safe_float(hsa_r)/100, 'hsa_vol': safe_float(hsa_v, True)/100,
+        'portfolio_choice': portfolio_choice,
+        'tsp_bal': safe_float(tsp_b), 'tsp_vol': 0.0, 'tsp_ret': 0.0,
+        'roth_bal': safe_float(roth_b), 'roth_vol': 0.0, 'roth_ret': 0.0,
+        'taxable_bal': safe_float(tax_b), 'taxable_basis': safe_float(tax_basis), 'taxable_vol': 0.0, 'taxable_ret': 0.0,
+        'hsa_bal': safe_float(hsa_b), 'hsa_vol': 0.0, 'hsa_ret': 0.0,
         'cash_bal': safe_float(cash_b), 'cash_ret': safe_float(cash_r)/100,
         'pay_taxes_from_cash': pay_taxes_from_cash
     }
@@ -138,9 +123,9 @@ if submit:
         engine = StochasticRetirementEngine(inputs)
         opt_iwr = engine.optimize_iwr()
         roth_results = engine.analyze_roth_strategies(opt_iwr)
-        
         winner = max(roth_results, key=lambda key: roth_results[key]['wealth'])
         history = roth_results[winner]['hist']
+        port_analysis = engine.analyze_portfolios(opt_iwr, roth_strategy=1)
     
     st.success(f"Simulation Complete. Optimized Initial Portfolio Withdrawal Rate: **{opt_iwr*100:.2f}%**")
 
@@ -162,18 +147,29 @@ if submit:
         col2.metric("Median Terminal Wealth", f"${median_paths[-1]:,.0f}")
         col3.metric("10th Percentile Wealth", f"${np.percentile(history['total_bal'], 10, axis=0)[-1]:,.0f}")
         st.plotly_chart(plot_wealth_trajectory(history, inputs['target_floor'], years_arr), use_container_width=True)
+        
+        st.markdown("---")
+        st.subheader("Portfolio Optimization & Efficient Frontier")
+        st.write("This analysis evaluates your selected portfolio against standard market mixes to find the optimal balance of growth vs. Sequence of Return Risk (guardrail pay cuts).")
+        
+        port_names = list(port_analysis.keys())
+        port_wealths = [port_analysis[p]['wealth'] for p in port_names]
+        port_cuts = [port_analysis[p]['cut_prob'] for p in port_names]
+        
+        p_df = pd.DataFrame({"Portfolio Strategy": port_names, "Median Terminal Wealth": port_wealths, "Probability of Guardrail Pay Cuts": port_cuts})
+        st.table(p_df.style.format({"Median Terminal Wealth": "${:,.0f}", "Probability of Guardrail Pay Cuts": "{:.1f}%"}))
+        
+        st.success(f"**Current Selection:** You are evaluating the {portfolio_choice} portfolio. While an Aggressive portfolio yields the highest Terminal Wealth, its high volatility dramatically increases your risk of forced lifestyle pay cuts early in retirement. Choose the mix that best fits your risk tolerance.")
 
     with t2:
         st.subheader("Integrated Cash Flow & Simulation Execution")
-        st.info(f"**How the Model Reaches the Target Legacy:** The mathematical engine utilizes a 1-Dimensional Root-Finding Algorithm (Brent's Method). It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) up and down until it successfully forces the Median Terminal Wealth to land exactly at your declared Target Legacy Floor. *(If you inputted a Maximum Spending Cap, the Terminal Wealth may artificially exceed the floor because your spending was capped).*")
+        st.info(f"**How the Model Reaches the Target Legacy:** The engine utilizes Brent's Method. It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) until it successfully forces the Median Terminal Wealth to land exactly at your declared Target Legacy Floor of **${inputs['target_floor']:,.0f}** at Life Expectancy. *(If you inputted a Minimum Spending Floor, the algorithm protected that baseline).*")
         
         col1, col2 = st.columns(2)
         with col1:
             st.plotly_chart(plot_fan_chart(history, years_arr), use_container_width=True)
-            st.markdown("*^ Sequence of Return Risk (SORR): The fan chart demonstrates plan vulnerability. If market losses hit early in retirement, your portfolio will follow the lower bands, triggering variable spending cuts.*")
         with col2:
             st.plotly_chart(plot_income_gap(history, years_arr), use_container_width=True)
-            st.markdown("*^ Income Gap Mapping: Visualizes the shortfall between your Guaranteed Income (Social Security & Pension) and your Total Expenses. The gap is strictly funded by portfolio distributions.*")
             
         st.markdown("### Integrated Year-by-Year Cash Flow Projections")
         display_cols = ['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'TSP Withdrawal', 'Salary Income', 'Social Security', 'Pension']
@@ -184,22 +180,22 @@ if submit:
         st.plotly_chart(plot_income_volatility(history, years_arr), use_container_width=True)
         st.markdown("""
         ### What the Guardrails Mean for You
-        This model utilizes **Guyton-Klinger Guardrails**, an adaptive cash-flow system that adjusts your paycheck based on the health of the market to mathematically guarantee you never run out of money.
-        - **Capital Preservation Rule (The Pay Cut):** If the market crashes and your withdrawal rate climbs 20% higher than your initial rate, the engine forces a **10% reduction** in your spending. This protects your portfolio from death-spiraling.
-        - **Prosperity Rule (The Pay Raise):** If the market booms and your withdrawal rate falls 20% below your initial rate, the engine grants you a **10% raise** in discretionary spending to enjoy your wealth.
-        - **Inflation Freeze Rule:** In any year where your portfolio suffers a negative return, you forfeit your annual inflation (Cost of Living) increase for that year.
+        - **Capital Preservation Rule (The Pay Cut):** If the market crashes and your withdrawal rate climbs 20% higher than your initial rate, the engine forces a **10% reduction** in your spending.
+        - **Prosperity Rule (The Pay Raise):** If the market booms and your withdrawal rate falls 20% below your initial rate, the engine grants you a **10% raise** in discretionary spending.
+        - **Inflation Freeze Rule:** In any year where your portfolio suffers a negative return, you forfeit your annual inflation (Cost of Living) increase.
+        - **Minimum Spending Floor Override:** *If you inputted a Minimum Spending Amount, the engine will override all Guardrail pay cuts to ensure your cash flow never drops below your absolute survival line.*
         """)
 
     with t4:
         st.subheader("Net Worth Forecast & Asset Liquidity Profile")
         st.plotly_chart(plot_liquidity_timeline(history, years_arr), use_container_width=True)
         
-        st.markdown("### Asset Liquidity Profile (Year 1 of Retirement)")
         ret_idx = max(0, inputs['ret_age'] - inputs['current_age'])
         total_cash_short_term = df_median['Money Market Balance'][ret_idx] + df_median['Taxable ETF Balance'][ret_idx]
         yr1_portfolio_burn = df_median['Total Expenses'][ret_idx] + df_median['Net Spendable Annual'][ret_idx] - df_median['Social Security'][ret_idx] - df_median['Pension'][ret_idx] - df_median['Salary Income'][ret_idx]
         safe_years = total_cash_short_term / max(yr1_portfolio_burn, 1)
         
+        st.markdown("### Asset Liquidity Profile (Year 1 of Retirement)")
         c1, c2, c3 = st.columns(3)
         c1.metric("Highly Liquid Assets (Cash + Taxable)", f"${total_cash_short_term:,.0f}")
         c2.metric("Year 1 Est. Portfolio Burn Rate", f"${yr1_portfolio_burn:,.0f}")
@@ -207,13 +203,6 @@ if submit:
 
     with t5:
         st.subheader("Taxes & Dynamic Withdrawals")
-        limit_24 = TAX_BRACKETS_MFJ[3][0] if filing_status == 'MFJ' else TAX_BRACKETS_SINGLE[3][0]
-        
-        if df_median['IRS Taxable Income'][ret_idx] > limit_24:
-            st.error(f"🚨 **Lifestyle Exceeds 24% Bracket**: Your baseline spending needs naturally push your IRS Taxable Income to **${df_median['IRS Taxable Income'][ret_idx]:,.0f}**, which is above your 24% ceiling of **${limit_24:,.0f}**. The Roth Optimizer disabled itself to prevent pushing you even higher.")
-        else:
-            st.info(f"**Tax Diagnostic Check:** You selected **{filing_status}**. The 24% marginal bracket ceiling for this status is **${limit_24:,.0f}**. Your IRS Taxable Income successfully remained under this ceiling.")
-            
         col1, col2 = st.columns(2)
         with col1:
             st.plotly_chart(plot_withdrawal_hierarchy(history, years_arr), use_container_width=True)
@@ -222,12 +211,12 @@ if submit:
             
         st.markdown("### Tax-Efficient Withdrawal Strategy Analysis")
         strat_data = {
-            "Strategy Component": ["Tax-Efficient Withdrawal Order", "Dynamic Downturn Strategy", "Target Annual Spending Need", "Impact of Inflation"],
+            "Strategy Component": ["Tax-Efficient Withdrawal Order", "Dynamic Downturn Strategy", "Capital Gains (LTCG)", "Impact of Inflation"],
             "Analysis / Value": [
                 "Normal Years: Fund lifestyle purely from TSP, allowing Roth to compound tax-free.",
                 "Crash Years: Halt TSP withdrawals. Deplete Cash -> Taxable -> Roth to avoid Sequence of Return Risk.",
-                f"Your Year 1 Discretionary Net Spendable target is exactly ${df_median['Net Spendable Annual'][ret_idx]:,.0f}.",
-                "Expenses rise geometrically with CPI. The withdrawal engine automatically increases gross distributions to maintain your real purchasing power, barring an Inflation Freeze rule trigger."
+                "The engine tracks your Taxable Cost Basis. When Taxable funds are sold, it applies 0/15/20% LTCG brackets + 3.8% NIIT.",
+                "Expenses rise geometrically with CPI. The withdrawal engine automatically increases gross distributions to maintain your real purchasing power."
             ]
         }
         st.table(pd.DataFrame(strat_data))
@@ -264,11 +253,7 @@ if submit:
 
     with t8:
         st.subheader("Roth Conversion Optimizer")
-        st.info("""
-        **Actuarial Evaluation: Is it mathematically advantageous to voluntarily exceed the 24% bracket?**  
-        Conventional wisdom dictates you should never convert above the 24% marginal bracket because the jump to 32% represents a massive 8% "Tax Cliff." 
-        However, if your TSP is large enough, your future RMDs will force your Total Income deep into the 35%+ brackets anyway. The engine explicitly evaluates an **"Aggressive 32% Strategy"** to see if paying 32% today mathematically yields a higher Terminal Wealth than capping conversions at 24%.
-        """)
+        st.info(f"**Target Ceiling Parameter:** The Roth optimizer rigorously evaluated all tax strategies strictly capped up to the user-selected maximum target bracket of **{max_tax_bracket}**.")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -285,11 +270,6 @@ if submit:
             st.warning("**Verdict: No Conversions Recommended.**")
         else:
             st.success(f"Verdict: **Execute the '{winner}' Strategy**")
-            if "32%" in winner:
-                st.write("📈 **Actuarial Note:** The math proved that your future RMD tax-drag is so severe that it is advantageous to intentionally break the 24% tax cliff and absorb the 32% marginal rates today.")
-            else:
-                st.write("🛡️ **Actuarial Note:** The 32% strategy failed to beat the 24% capped strategies. The math proves you should strictly respect the 24% ceiling.")
-                
             st.write(f"- **Real Lifetime Tax Savings:** ${max(0, tax_savings):,.0f}")
             st.write(f"- **Reduction in Lifetime RMDs:** ${rmd_reduction:,.0f}")
             st.write(f"- **Net Increase to Legacy:** ${wealth_increase:,.0f}")
@@ -310,10 +290,7 @@ if submit:
             "Probability of Portfolio Success": [f"{max(0, prob_success - 8):.1f}%", f"{prob_success:.1f}%", f"{min(100, prob_success + 6):.1f}%"]
         }
         st.table(pd.DataFrame(ss_data))
-        
-        st.markdown("### Optimal Filing Decision")
         st.success("**Verdict: Delay Claiming until Age 70**")
-        st.write("**Why delay to 70? The 'Longevity Insurance' Concept:** Actuarially, Social Security is the only guaranteed, inflation-adjusted, market-immune income stream you will ever possess. By delaying to Age 70, your payout permanently increases by 8% per year. This creates massive 'Longevity Insurance.' If you live deep into your 90s, this vastly inflated SS paycheck drastically reduces the withdrawal pressure placed on your TSP/Roth, virtually guaranteeing you will not outlive your portfolio.")
 
     with t10:
         st.subheader("Medicare Part B & Actuarial Healthcare OOP")

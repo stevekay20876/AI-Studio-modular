@@ -10,7 +10,6 @@ class StochasticRetirementEngine:
         self.inputs = inputs
         self.iterations = 10000
         
-        # Calculate simulation length based on the longest-living spouse
         base_years = inputs['life_expectancy'] - inputs['current_age']
         if inputs['filing_status'] == 'MFJ':
             spouse_years = inputs['spouse_life_exp'] - inputs['spouse_age']
@@ -19,9 +18,15 @@ class StochasticRetirementEngine:
             self.years = max(1, base_years)
             
         self.n_assets = 5 
-        self.setup_covariance_matrix()
+
+    def generate_stochastic_paths(self, seed=None, portfolio_choice=None):
+        if seed is not None:
+            np.random.seed(seed)
+            
+        port_choice = portfolio_choice if portfolio_choice else self.inputs['portfolio_choice']
+        port_ret = PORTFOLIOS[port_choice]["ret"]
+        port_vol = PORTFOLIOS[port_choice]["vol"]
         
-    def setup_covariance_matrix(self):
         corr = np.array([
             [1.00, -0.15, -0.15, -0.15, -0.15],
             [-0.15, 1.00,  0.85,  0.85,  0.85],
@@ -29,23 +34,19 @@ class StochasticRetirementEngine:
             [-0.15, 0.85,  0.85,  1.00,  0.85],
             [-0.15, 0.85,  0.85,  0.85,  1.00]
         ])
-        vols = np.array([0.012, self.inputs['tsp_vol'], self.inputs['roth_vol'], self.inputs['taxable_vol'], self.inputs['hsa_vol']])
+        vols = np.array([0.012, port_vol, port_vol, port_vol, port_vol])
         cov = np.outer(vols, vols) * corr
-        self.L = np.linalg.cholesky(cov)
-
-    def generate_stochastic_paths(self, seed=None):
-        if seed is not None:
-            np.random.seed(seed)
+        L = np.linalg.cholesky(cov)
             
         shocks = t.rvs(df=5, size=(self.iterations, self.years, self.n_assets))
-        correlated_shocks = np.einsum('ij,kyj->kyi', self.L, shocks)
+        correlated_shocks = np.einsum('ij,kyj->kyi', L, shocks)
         
         drifts = np.array([
             0.03,
-            self.inputs['tsp_ret'] - (self.inputs['tsp_vol']**2)/2,
-            self.inputs['roth_ret'] - (self.inputs['roth_vol']**2)/2,
-            self.inputs['taxable_ret'] - (self.inputs['taxable_vol']**2)/2,
-            self.inputs['hsa_ret'] - (self.inputs['hsa_vol']**2)/2
+            port_ret - (port_vol**2)/2,
+            port_ret - (port_vol**2)/2,
+            port_ret - (port_vol**2)/2,
+            port_ret - (port_vol**2)/2
         ])
         
         returns = np.exp(drifts + correlated_shocks) - 1
@@ -65,8 +66,8 @@ class StochasticRetirementEngine:
             
         return returns, inf_paths
 
-    def run_mc(self, iwr, seed=None, roth_strategy=0):
-        returns, inf_paths = self.generate_stochastic_paths(seed=seed)
+    def run_mc(self, iwr, seed=None, roth_strategy=0, test_portfolio=None):
+        returns, inf_paths = self.generate_stochastic_paths(seed=seed, portfolio_choice=test_portfolio)
         cash_ret = self.inputs['cash_ret']
         
         tsp = np.full(self.iterations, self.inputs['tsp_bal'])
@@ -137,6 +138,9 @@ class StochasticRetirementEngine:
         phased_age = self.inputs.get('phased_ret_age', ret_age)
         pay_taxes_from_cash = self.inputs.get('pay_taxes_from_cash', True)
         
+        min_spending = self.inputs.get('min_spending', 0.0)
+        user_max_bracket = float(self.inputs.get('max_tax_bracket', '0.24'))
+        
         base_health_premium = self.inputs.get('health_cost', 0.0)
         base_oop_cost = self.inputs.get('oop_cost', 0.0)
         health_plan = self.inputs.get('health_plan', "None/Self-Insure")
@@ -144,7 +148,6 @@ class StochasticRetirementEngine:
         mortgage_pmt = self.inputs.get('mortgage_pmt', 0.0)
         mortgage_yrs = self.inputs.get('mortgage_yrs', 0)
         annual_savings = self.inputs.get('annual_savings', 0.0)
-        max_spending = self.inputs.get('max_spending', 0.0)
 
         state_str = self.inputs.get('state', '').strip().upper()
         county_str = self.inputs.get('county', '').strip().upper()
@@ -159,11 +162,10 @@ class StochasticRetirementEngine:
             spouse_age += 1
             current_year += 1
             
-            # --- DYNAMIC WIDOW(ER) PENALTY CHECK ---
             if base_filing_status == 'MFJ' and (age > primary_life_exp or spouse_age > spouse_life_exp):
                 current_filing_status = 'Single'
                 moop_idx = 0
-                survivor_penalty = 0.50 # Halve SS and Pension income upon first death
+                survivor_penalty = 0.50 
             else:
                 current_filing_status = base_filing_status
                 moop_idx = 1 if current_filing_status == 'MFJ' else 0
@@ -176,8 +178,12 @@ class StochasticRetirementEngine:
             niit_threshold = NIIT_THRESHOLD_MFJ if current_filing_status == 'MFJ' else NIIT_THRESHOLD_SINGLE
             base_moop = MOOP_LIMITS.get(health_plan, (999999, 999999))[moop_idx]
             
-            limit_24_pct = brackets[3][0] 
-            limit_32_pct = brackets[4][0]
+            # Identify the absolute highest allowed IRS limit based on user selection
+            limit_max_pct = np.inf
+            for limit, rate in brackets:
+                if np.isclose(rate, user_max_bracket, atol=0.01):
+                    limit_max_pct = limit
+                    break
 
             if yr > 0:
                 cum_inf *= (1 + np.maximum(0, inf_paths[:, yr]))
@@ -250,16 +256,12 @@ class StochasticRetirementEngine:
                     scheduled_withdrawal = np.where(sorr_trigger, scheduled_withdrawal * 0.9, scheduled_withdrawal)
                     constraint_flag = np.where(sorr_trigger, 1, constraint_flag)
                     
-                w_needed = scheduled_withdrawal.copy()
-                
-                # --- MAX SPENDING CAP LOGIC ---
-                if max_spending > 0:
-                    inflated_cap = max_spending * cum_inf
-                    w_needed = np.minimum(w_needed, inflated_cap)
+                # MINIMUM SPENDING FLOOR
+                inflated_min_spend = min_spending * cum_inf
+                w_needed = np.maximum(scheduled_withdrawal, inflated_min_spend)
 
             history['constraint_active'][:, yr] = constraint_flag
             
-            # --- EXACT IRS RMD LOGIC ---
             rmd_divisor = IRS_RMD_DIVISORS.get(age, 1.9 if age > 120 else 0.0)
             rmd_rate = 1.0 / rmd_divisor if rmd_divisor > 0 else 0.0
             rmds = tsp * rmd_rate
@@ -323,14 +325,13 @@ class StochasticRetirementEngine:
             history['taxable_withdrawal'][:, yr] = w_taxable
             history['cash_withdrawal'][:, yr] = w_cash
             
-            # --- CAPITAL GAINS LOGIC ---
             total_w_taxable = w_taxable
             gains_ratio = np.maximum(0, 1.0 - (taxable_basis / np.maximum(taxable, 1.0)))
             realized_gains = total_w_taxable * gains_ratio
-            taxable_basis -= (total_w_taxable - realized_gains) # Reduce basis by principle returned
+            taxable_basis -= (total_w_taxable - realized_gains) 
             
             taxable += excess_rmd
-            taxable_basis += excess_rmd # Reinvested RMDs add to basis
+            taxable_basis += excess_rmd 
             
             gross_income = rmds + w_tsp + current_pension + (ss * 0.85) + current_salary_income
             magi = gross_income.copy() 
@@ -342,20 +343,14 @@ class StochasticRetirementEngine:
                 limit, rate = brackets[i]
                 base_tax_fed += np.clip(taxable_income - prev_limit, 0, limit - prev_limit) * rate
                 
-            # Apply LTCG Tax
             ltcg_tax = np.zeros(self.iterations)
             for limit, rate in ltcg_brackets:
-                # LTCG stacks on top of ordinary taxable income to determine bracket
-                # Simplified stack approximation
                 applicable_gains = np.clip(taxable_income + realized_gains - limit, 0, realized_gains)
                 ltcg_tax += applicable_gains * rate
                 
-            # Net Investment Income Tax (NIIT)
             niit_tax = np.where(magi > niit_threshold, realized_gains * 0.038, 0.0)
-            
             base_tax_fed += (ltcg_tax + niit_tax)
             
-            # State Exemption Logic
             state_taxable_base = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), 
                                           taxable_income - rmds - w_tsp - current_pension - (ss * 0.85), 
                                           taxable_income)
@@ -373,16 +368,11 @@ class StochasticRetirementEngine:
             if roth_strategy > 0 and age >= ret_age and age < 75:
                 space = np.zeros(self.iterations)
                 
-                if roth_strategy in [1, 4]: 
+                if roth_strategy == 1: 
                     for limit, rate in brackets:
                         mask = (taxable_income < limit) & (space == 0)
                         space[mask] = limit - taxable_income[mask] - 1
                     space = np.where(space > 1e6, 0, space)
-                    
-                    if roth_strategy == 1:
-                        for irmaa_limit, surcharge in irmaa_brackets:
-                            crosses_cliff = (magi < irmaa_limit) & ((magi + space) >= irmaa_limit)
-                            space = np.where(crosses_cliff, irmaa_limit - magi - 1, space)
                         
                 elif roth_strategy == 2: 
                     irmaa_tier_1 = irmaa_brackets[0][0]
@@ -392,12 +382,9 @@ class StochasticRetirementEngine:
                     irmaa_tier_2 = irmaa_brackets[1][0]
                     space = np.maximum(0, irmaa_tier_2 - magi - 1)
                 
-                if roth_strategy in [1, 2, 3]:
-                    max_allowable_space = np.maximum(0, limit_24_pct - taxable_income - 1)
-                    space = np.minimum(space, max_allowable_space)
-                elif roth_strategy == 4:
-                    max_allowable_space = np.maximum(0, limit_32_pct - taxable_income - 1)
-                    space = np.minimum(space, max_allowable_space)
+                # Enforce the user-selected absolute Maximum Tax Bracket Cap
+                max_allowable_space = np.maximum(0, limit_max_pct - taxable_income - 1)
+                space = np.minimum(space, max_allowable_space)
                 
                 conv_amt = np.minimum(space, tsp)
                 final_taxable_income = taxable_income + conv_amt
@@ -409,8 +396,7 @@ class StochasticRetirementEngine:
                     limit, rate = brackets[i]
                     new_tax_fed += np.clip(final_taxable_income - prev_limit, 0, limit - prev_limit) * rate
                 
-                extra_tax_fed = new_tax_fed - (base_tax_fed - ltcg_tax - niit_tax) # Extra tax is purely ordinary
-                
+                extra_tax_fed = new_tax_fed - (base_tax_fed - ltcg_tax - niit_tax) 
                 state_conv_tax_base = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), 0.0, conv_amt)
                 extra_tax_state = state_conv_tax_base * combined_state_local_rate
                 extra_tax_total = extra_tax_fed + extra_tax_state
@@ -423,7 +409,6 @@ class StochasticRetirementEngine:
                     w_tax_taxable = np.minimum(taxable, rem_tax)
                     taxable -= w_tax_taxable
                     
-                    # Update basis for forced tax withdrawals
                     gains_ratio_tax = np.maximum(0, 1.0 - (taxable_basis / np.maximum(taxable + w_tax_taxable, 1.0)))
                     taxable_basis -= (w_tax_taxable - (w_tax_taxable * gains_ratio_tax))
                     
@@ -506,18 +491,27 @@ class StochasticRetirementEngine:
         except ValueError:
             return 0.04
             
+    def analyze_portfolios(self, opt_iwr, roth_strategy=0):
+        # Evaluates the 3 standard portfolios to find the Efficient Frontier
+        results = {}
+        for port in ["Conservative (20% Stock / 80% Bond)", "Moderate (60% Stock / 40% Bond)", "Aggressive (100% Stock)"]:
+            hist = self.run_mc(opt_iwr, seed=42, roth_strategy=roth_strategy, test_portfolio=port)
+            med_wealth = np.median(hist['total_bal'][:, -1])
+            cut_paths = np.any(hist['constraint_active'] == 1, axis=1)
+            cut_prob = np.mean(cut_paths) * 100
+            results[port] = {'wealth': med_wealth, 'cut_prob': cut_prob, 'hist': hist}
+        return results
+        
     def analyze_roth_strategies(self, opt_iwr):
         hist_base = self.run_mc(opt_iwr, seed=42, roth_strategy=0)
         hist_bracket = self.run_mc(opt_iwr, seed=42, roth_strategy=1)
         hist_irmaa1 = self.run_mc(opt_iwr, seed=42, roth_strategy=2)
         hist_irmaa2 = self.run_mc(opt_iwr, seed=42, roth_strategy=3)
-        hist_aggressive = self.run_mc(opt_iwr, seed=42, roth_strategy=4) 
         
         results = {
             'Baseline (None)': {'wealth': np.median(hist_base['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_base['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_base['rmds'], axis=0)), 'hist': hist_base},
-            'Current Bracket (Capped at 24%)': {'wealth': np.median(hist_bracket['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_bracket['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_bracket['rmds'], axis=0)), 'hist': hist_bracket},
-            'Target IRMAA Tier 1 (Capped at 24%)': {'wealth': np.median(hist_irmaa1['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa1['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa1['rmds'], axis=0)), 'hist': hist_irmaa1},
-            'Target IRMAA Tier 2 (Capped at 24%)': {'wealth': np.median(hist_irmaa2['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa2['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa2['rmds'], axis=0)), 'hist': hist_irmaa2},
-            'Aggressive 32% Bracket Fill': {'wealth': np.median(hist_aggressive['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_aggressive['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_aggressive['rmds'], axis=0)), 'hist': hist_aggressive}
+            'Target Current Bracket': {'wealth': np.median(hist_bracket['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_bracket['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_bracket['rmds'], axis=0)), 'hist': hist_bracket},
+            'Target IRMAA Tier 1': {'wealth': np.median(hist_irmaa1['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa1['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa1['rmds'], axis=0)), 'hist': hist_irmaa1},
+            'Target IRMAA Tier 2': {'wealth': np.median(hist_irmaa2['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa2['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa2['rmds'], axis=0)), 'hist': hist_irmaa2},
         }
         return results

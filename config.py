@@ -28,7 +28,6 @@ IRMAA_BRACKETS_SINGLE = [(103000, 0), (129000, 838.8), (161000, 2101.2), (193000
 IRMAA_BRACKETS_MFJ = [(206000, 0), (258000, 838.8), (322000, 2101.2), (386000, 3362.4), (749999, 4624.8), (np.inf, 5043.6)]
 
 # --- STATE RETIREMENT EXEMPTIONS ---
-# States that fully exempt Retirement Income (TSP, Pensions, SS) or have NO income tax
 RETIREMENT_TAX_FREE_STATES = ["FL", "TX", "NV", "WA", "SD", "WY", "AK", "TN", "NH", "IL", "PA", "MS"]
 
 # --- STATUTORY HEALTH INSURANCE MOOP LIMITS (Single, MFJ) ---
@@ -46,4 +45,11 @@ IRS_RMD_DIVISORS = {
     95: 8.9, 96: 8.4, 97: 7.8, 98: 7.3, 99: 6.8, 100: 6.4, 101: 6.0, 102: 5.6, 103: 5.2, 104: 4.9, 
     105: 4.6, 106: 4.3, 107: 4.1, 108: 3.9, 109: 3.7, 110: 3.5, 111: 3.4, 112: 3.3, 113: 3.1, 114: 3.0,
     115: 2.9, 116: 2.8, 117: 2.7, 118: 2.5, 119: 2.3, 120: 2.0
+}
+
+# --- PRE-SET ACTUARIAL PORTFOLIOS ---
+PORTFOLIOS = {
+    "Conservative (20% Stock / 80% Bond)": {"ret": 0.045, "vol": 0.06},
+    "Moderate (60% Stock / 40% Bond)": {"ret": 0.070, "vol": 0.10},
+    "Aggressive (100% Stock)": {"ret": 0.095, "vol": 0.15}
 }
