@@ -3,7 +3,25 @@ import numpy as np
 import scipy.optimize as optimize
 from scipy.stats import t
 import datetime
-from config import *
+
+# --- 2025 IRS TAX BRACKETS & LIMITS ---
+STD_DED_SINGLE = 15000
+STD_DED_MFJ = 30000
+
+TAX_BRACKETS_SINGLE = [
+    (11925, 0.10), (48475, 0.12), (103350, 0.22), 
+    (197300, 0.24), (250525, 0.32), (626350, 0.35), (np.inf, 0.37)
+]
+TAX_BRACKETS_MFJ = [
+    (23850, 0.10), (96950, 0.12), (206700, 0.22), 
+    (394600, 0.24), (501050, 0.32), (751600, 0.35), (np.inf, 0.37)
+]
+
+# 2024/2025 Estimated IRMAA Thresholds
+MEDICARE_PART_B_BASE = 2096.40
+IRMAA_BRACKETS_SINGLE = [(103000, 0), (129000, 838.8), (161000, 2101.2), (193000, 3362.4), (499999, 4624.8), (np.inf, 5043.6)]
+IRMAA_BRACKETS_MFJ = [(206000, 0), (258000, 838.8), (322000, 2101.2), (386000, 3362.4), (749999, 4624.8), (np.inf, 5043.6)]
+
 
 class StochasticRetirementEngine:
     def __init__(self, inputs):
@@ -69,6 +87,8 @@ class StochasticRetirementEngine:
         
         base_pension = np.full(self.iterations, self.inputs['pension_est'])
         base_ss = np.full(self.iterations, self.inputs['ss_fra'])
+        
+        # Base Withdrawal is calculated off the initial balance, but won't trigger until ret_age
         base_withdrawal = (tsp[0] + roth[0] + taxable[0] + cash[0]) * iwr
         scheduled_withdrawal = np.full(self.iterations, base_withdrawal)
         
@@ -87,6 +107,8 @@ class StochasticRetirementEngine:
             'extra_rmd': np.zeros((self.iterations, self.years)),
             'taxes_fed': np.zeros((self.iterations, self.years)),
             'taxes_state': np.zeros((self.iterations, self.years)),
+            'taxable_income': np.zeros((self.iterations, self.years)), 
+            'magi': np.zeros((self.iterations, self.years)),           
             'medicare_cost': np.zeros((self.iterations, self.years)),
             'health_cost': np.zeros((self.iterations, self.years)),
             'mortgage_cost': np.zeros((self.iterations, self.years)),
@@ -102,6 +124,7 @@ class StochasticRetirementEngine:
 
         age = self.inputs['current_age']
         current_year = datetime.datetime.now().year
+        ret_age = self.inputs['ret_age']
         
         base_health_premium = self.inputs.get('health_cost', 0.0)
         base_oop_cost = self.inputs.get('oop_cost', 0.0)
@@ -135,6 +158,7 @@ class StochasticRetirementEngine:
             age += 1
             current_year += 1
             
+            # --- 1. APPLY RETURNS ---
             prev_total_port = tsp + roth + taxable + cash
             tsp *= (1 + returns[:, yr, 1])
             roth *= (1 + returns[:, yr, 2])
@@ -146,6 +170,7 @@ class StochasticRetirementEngine:
             history['port_return'][:, yr] = (current_total_port - prev_total_port) / np.maximum(prev_total_port, 1)
             history['real_return'][:, yr] = history['port_return'][:, yr] - inf_paths[:, yr]
             
+            # --- 2. COLA ADJUSTMENTS ---
             if yr > 0:
                 cpi = np.maximum(0, inf_paths[:, yr]) 
                 base_ss *= (1 + cpi)
@@ -153,32 +178,44 @@ class StochasticRetirementEngine:
                 fers_cola = np.where(age >= 62, fers_cola, 0.0) 
                 base_pension *= (1 + fers_cola)
 
-            pension = np.where(age >= self.inputs['ret_age'], base_pension, 0)
+            pension = np.where(age >= ret_age, base_pension, 0)
             ss_haircut = 0.79 if current_year >= 2035 else 1.0
             ss = np.where(age >= 67, base_ss * ss_haircut, 0)
             history['pension_income'][:, yr] = pension
             history['ss_income'][:, yr] = ss
             
+            # --- 3. ACCUMULATION VS DECUMULATION LOGIC ---
+            w_needed = np.zeros(self.iterations)
             constraint_flag = np.zeros(self.iterations)
-            if yr > 0:
-                port_ret = history['port_return'][:, yr-1]
-                inf_adj = np.where(port_ret < 0, 0, inf_paths[:, yr])
-                scheduled_withdrawal *= (1 + inf_adj)
-                
-                cwr = scheduled_withdrawal / current_total_port
-                ceiling_hit = cwr > iwr * 1.2
-                scheduled_withdrawal = np.where(ceiling_hit, scheduled_withdrawal * 0.9, scheduled_withdrawal)
-                constraint_flag = np.where(ceiling_hit, 1, constraint_flag)
-                
-                scheduled_withdrawal = np.where(cwr < iwr * 0.8, scheduled_withdrawal * 1.1, scheduled_withdrawal)
-                
-                sorr_trigger = current_total_port <= prev_total_port * 0.9
-                scheduled_withdrawal = np.where(sorr_trigger, scheduled_withdrawal * 0.9, scheduled_withdrawal)
-                constraint_flag = np.where(sorr_trigger, 1, constraint_flag)
+            
+            # Only activate withdrawals and guardrails IF retired
+            if age >= ret_age:
+                if yr > 0:
+                    port_ret = history['port_return'][:, yr-1]
+                    inf_adj = np.where(port_ret < 0, 0, inf_paths[:, yr])
+                    scheduled_withdrawal *= (1 + inf_adj)
+                    
+                    cwr = scheduled_withdrawal / current_total_port
+                    ceiling_hit = cwr > iwr * 1.2
+                    scheduled_withdrawal = np.where(ceiling_hit, scheduled_withdrawal * 0.9, scheduled_withdrawal)
+                    constraint_flag = np.where(ceiling_hit, 1, constraint_flag)
+                    
+                    scheduled_withdrawal = np.where(cwr < iwr * 0.8, scheduled_withdrawal * 1.1, scheduled_withdrawal)
+                    
+                    sorr_trigger = current_total_port <= prev_total_port * 0.9
+                    scheduled_withdrawal = np.where(sorr_trigger, scheduled_withdrawal * 0.9, scheduled_withdrawal)
+                    constraint_flag = np.where(sorr_trigger, 1, constraint_flag)
+                    
+                w_needed = scheduled_withdrawal.copy()
+            else:
+                # If still working, scheduled withdrawal inflates silently but is NOT withdrawn
+                if yr > 0:
+                    cpi_adj = np.maximum(0, inf_paths[:, yr])
+                    scheduled_withdrawal *= (1 + cpi_adj)
 
             history['constraint_active'][:, yr] = constraint_flag
-            w_needed = scheduled_withdrawal.copy()
             
+            # --- 4. REQUIRED MINIMUM DISTRIBUTIONS (RMDs) ---
             rmd_rate = 0.036 if age >= 75 else 0.0
             rmds = tsp * rmd_rate
             history['rmds'][:, yr] = rmds
@@ -188,50 +225,53 @@ class StochasticRetirementEngine:
             excess_rmd = np.maximum(0, rmds - w_needed)
             history['extra_rmd'][:, yr] = excess_rmd
             
-            tsp_prior_ret = returns[:, yr-1, 1] if yr > 0 else np.zeros(self.iterations)
-            downturn = tsp_prior_ret <= -0.10
-            
+            # --- 5. WITHDRAWAL HIERARCHY (ONLY EXECUTES IF RETIRED OR IF RMD IS REQUIRED) ---
             w_tsp = np.zeros(self.iterations)
             w_cash = np.zeros(self.iterations)
             w_taxable = np.zeros(self.iterations)
             w_roth = np.zeros(self.iterations)
             
-            w_tsp_norm = np.where(~downturn, np.minimum(tsp, w_remaining), 0)
-            tsp -= w_tsp_norm
-            w_remaining -= w_tsp_norm
-            
-            w_cash_down = np.where(downturn, np.minimum(cash, w_remaining), 0)
-            cash -= w_cash_down
-            w_remaining -= w_cash_down
-            
-            w_tax_down = np.where(downturn, np.minimum(taxable, w_remaining), 0)
-            taxable -= w_tax_down
-            w_remaining -= w_tax_down
-            
-            w_roth_down = np.where(downturn, np.minimum(roth, w_remaining), 0)
-            roth -= w_roth_down
-            w_remaining -= w_roth_down
-            
-            w_tax_fb = np.minimum(taxable, w_remaining)
-            taxable -= w_tax_fb
-            w_remaining -= w_tax_fb
-            
-            w_cash_fb = np.minimum(cash, w_remaining)
-            cash -= w_cash_fb
-            w_remaining -= w_cash_fb
-            
-            w_roth_fb = np.minimum(roth, w_remaining)
-            roth -= w_roth_fb
-            w_remaining -= w_roth_fb
-            
-            w_tsp_fb = np.minimum(tsp, w_remaining)
-            tsp -= w_tsp_fb
-            w_remaining -= w_tsp_fb
-            
-            w_tsp += (w_tsp_norm + w_tsp_fb)
-            w_cash += (w_cash_down + w_cash_fb)
-            w_taxable += (w_tax_down + w_tax_fb)
-            w_roth += (w_roth_down + w_roth_fb)
+            if age >= ret_age:
+                tsp_prior_ret = returns[:, yr-1, 1] if yr > 0 else np.zeros(self.iterations)
+                downturn = tsp_prior_ret <= -0.10
+                
+                w_tsp_norm = np.where(~downturn, np.minimum(tsp, w_remaining), 0)
+                tsp -= w_tsp_norm
+                w_remaining -= w_tsp_norm
+                
+                w_cash_down = np.where(downturn, np.minimum(cash, w_remaining), 0)
+                cash -= w_cash_down
+                w_remaining -= w_cash_down
+                
+                w_tax_down = np.where(downturn, np.minimum(taxable, w_remaining), 0)
+                taxable -= w_tax_down
+                w_remaining -= w_tax_down
+                
+                w_roth_down = np.where(downturn, np.minimum(roth, w_remaining), 0)
+                roth -= w_roth_down
+                w_remaining -= w_roth_down
+                
+                # Universal Depletion Fallback
+                w_tax_fb = np.minimum(taxable, w_remaining)
+                taxable -= w_tax_fb
+                w_remaining -= w_tax_fb
+                
+                w_cash_fb = np.minimum(cash, w_remaining)
+                cash -= w_cash_fb
+                w_remaining -= w_cash_fb
+                
+                w_roth_fb = np.minimum(roth, w_remaining)
+                roth -= w_roth_fb
+                w_remaining -= w_roth_fb
+                
+                w_tsp_fb = np.minimum(tsp, w_remaining)
+                tsp -= w_tsp_fb
+                w_remaining -= w_tsp_fb
+                
+                w_tsp += (w_tsp_norm + w_tsp_fb)
+                w_cash += (w_cash_down + w_cash_fb)
+                w_taxable += (w_tax_down + w_tax_fb)
+                w_roth += (w_roth_down + w_roth_fb)
             
             actual_portfolio_withdrawal = w_tsp + w_cash + w_taxable + w_roth + rmds - excess_rmd
             
@@ -240,8 +280,10 @@ class StochasticRetirementEngine:
             history['taxable_withdrawal'][:, yr] = w_taxable
             history['cash_withdrawal'][:, yr] = w_cash
             
+            # Reinvest excess RMD back into taxable regardless of retirement status
             taxable += excess_rmd
             
+            # --- 6. BASE TAXES ---
             gross_income = rmds + w_tsp + pension + (ss * 0.85)
             magi = gross_income.copy() 
             taxable_income = np.maximum(0, gross_income - deduction) 
@@ -252,16 +294,19 @@ class StochasticRetirementEngine:
                 limit, rate = brackets[i]
                 base_tax_fed += np.clip(taxable_income - prev_limit, 0, limit - prev_limit) * rate
                 
-            tax_state_local = taxable_income * combined_state_local_rate
-            history['taxes_state'][:, yr] = tax_state_local
+            base_tax_state_local = taxable_income * combined_state_local_rate
             
+            # --- 7. ROTH CONVERSIONS ---
             total_tax_fed = base_tax_fed.copy()
+            total_tax_state = base_tax_state_local.copy()
             conv_amt = np.zeros(self.iterations)
+            
+            final_taxable_income = taxable_income.copy()
+            final_magi = magi.copy()
             
             if roth_strategy > 0 and age < 75:
                 space = np.zeros(self.iterations)
                 
-                # Strategies 1 to 4 Analysis
                 if roth_strategy in [1, 4]: 
                     for limit, rate in brackets:
                         mask = (taxable_income < limit) & (space == 0)
@@ -269,7 +314,6 @@ class StochasticRetirementEngine:
                     space = np.where(space > 1e6, 0, space)
                     
                     if roth_strategy == 1:
-                        # Dynamic IRMAA Protection ONLY for conservative strategies
                         for irmaa_limit, surcharge in irmaa_brackets:
                             crosses_cliff = (magi < irmaa_limit) & ((magi + space) >= irmaa_limit)
                             space = np.where(crosses_cliff, irmaa_limit - magi - 1, space)
@@ -282,32 +326,32 @@ class StochasticRetirementEngine:
                     irmaa_tier_2 = irmaa_brackets[1][0]
                     space = np.maximum(0, irmaa_tier_2 - magi - 1)
                 
-                # --- CAPPING LOGIC FOR EVALUATION ---
                 if roth_strategy in [1, 2, 3]:
-                    # Strict 24% Ceiling 
                     limit_24_pct = brackets[3][0] 
                     max_allowable_space = np.maximum(0, limit_24_pct - taxable_income - 1)
                     space = np.minimum(space, max_allowable_space)
                 elif roth_strategy == 4:
-                    # Aggressive 32% Ceiling (Evaluates if breaking the 24% rule is mathematically better)
                     limit_32_pct = brackets[4][0] 
                     max_allowable_space = np.maximum(0, limit_32_pct - taxable_income - 1)
                     space = np.minimum(space, max_allowable_space)
                 
                 conv_amt = np.minimum(space, tsp)
-                new_taxable_income = taxable_income + conv_amt
-                new_magi = magi + conv_amt
+                final_taxable_income = taxable_income + conv_amt
+                final_magi = magi + conv_amt
                 
                 new_tax_fed = np.zeros(self.iterations)
                 for i in range(len(brackets)):
                     prev_limit = brackets[i-1][0] if i > 0 else 0
                     limit, rate = brackets[i]
-                    new_tax_fed += np.clip(new_taxable_income - prev_limit, 0, limit - prev_limit) * rate
+                    new_tax_fed += np.clip(final_taxable_income - prev_limit, 0, limit - prev_limit) * rate
                 
-                extra_tax = new_tax_fed - base_tax_fed
-                w_tax_cash = np.minimum(cash, extra_tax)
+                extra_tax_fed = new_tax_fed - base_tax_fed
+                extra_tax_state = conv_amt * combined_state_local_rate
+                extra_tax_total = extra_tax_fed + extra_tax_state
+                
+                w_tax_cash = np.minimum(cash, extra_tax_total)
                 cash -= w_tax_cash
-                rem_tax = extra_tax - w_tax_cash
+                rem_tax = extra_tax_total - w_tax_cash
                 w_tax_taxable = np.minimum(taxable, rem_tax)
                 taxable -= w_tax_taxable
                 rem_tax -= w_tax_taxable
@@ -315,12 +359,17 @@ class StochasticRetirementEngine:
                 net_to_roth = conv_amt - rem_tax 
                 tsp -= conv_amt
                 roth += net_to_roth
+                
                 total_tax_fed = new_tax_fed
-                magi = new_magi
+                total_tax_state = base_tax_state_local + extra_tax_state
             
             history['roth_conversion'][:, yr] = conv_amt
             history['taxes_fed'][:, yr] = total_tax_fed
+            history['taxes_state'][:, yr] = total_tax_state
+            history['taxable_income'][:, yr] = final_taxable_income
+            history['magi'][:, yr] = final_magi
             
+            # --- 8. HEALTHCARE & HSA ---
             base_health_premium *= (1 + inf_paths[:, yr])
             inflated_oop = base_oop_cost * (1 + inf_paths[:, yr])
             
@@ -329,7 +378,7 @@ class StochasticRetirementEngine:
                 medicare_cost += MEDICARE_PART_B_BASE
                 for i in range(len(irmaa_brackets)):
                     limit, surcharge = irmaa_brackets[i]
-                    medicare_cost = np.where(magi > (irmaa_brackets[i-1][0] if i>0 else 0), MEDICARE_PART_B_BASE + surcharge, medicare_cost)
+                    medicare_cost = np.where(final_magi > (irmaa_brackets[i-1][0] if i>0 else 0), MEDICARE_PART_B_BASE + surcharge, medicare_cost)
             history['medicare_cost'][:, yr] = medicare_cost
 
             w_hsa = np.minimum(hsa, inflated_oop)
@@ -338,9 +387,11 @@ class StochasticRetirementEngine:
             
             history['health_cost'][:, yr] = base_health_premium + oop_remainder
             
+            # --- 9. MORTGAGE ---
             current_mortgage = np.full(self.iterations, mortgage_pmt if yr < mortgage_yrs else 0.0)
             history['mortgage_cost'][:, yr] = current_mortgage
             
+            # --- 10. WRAP UP BALANCES & SPENDABLE ---
             history['total_bal'][:, yr] = tsp + roth + taxable + cash
             history['tsp_bal'][:, yr] = tsp
             history['roth_bal'][:, yr] = roth
@@ -348,35 +399,20 @@ class StochasticRetirementEngine:
             history['cash_bal'][:, yr] = cash
             history['hsa_bal'][:, yr] = hsa
             
-            history['net_spendable'][:, yr] = (actual_portfolio_withdrawal + pension + ss 
-                                               - base_tax_fed - tax_state_local 
-                                               - medicare_cost - history['health_cost'][:, yr] 
-                                               - current_mortgage)
+            # Only record net spendable (lifestyle withdrawal) if actually retired
+            if age >= ret_age:
+                history['net_spendable'][:, yr] = (actual_portfolio_withdrawal + pension + ss 
+                                                   - base_tax_fed - base_tax_state_local 
+                                                   - medicare_cost - history['health_cost'][:, yr] 
+                                                   - current_mortgage)
+            else:
+                history['net_spendable'][:, yr] = 0.0
             
         return history
 
     def objective_function(self, iwr_test):
         history = self.run_mc(iwr_test, seed=42, roth_strategy=0)
-        return np.median(history['total_bal'][:, -1]) - self.inputs.get('target_floor', 0.0)
-
-    def optimize_iwr(self):
-        try:
-            return optimize.brentq(self.objective_function, a=0.01, b=0.15, xtol=1e-4, maxiter=15)
-        except ValueError:
-            return 0.04
-            
-    def analyze_roth_strategies(self, opt_iwr):
-        hist_base = self.run_mc(opt_iwr, seed=42, roth_strategy=0)
-        hist_bracket = self.run_mc(opt_iwr, seed=42, roth_strategy=1)
-        hist_irmaa1 = self.run_mc(opt_iwr, seed=42, roth_strategy=2)
-        hist_irmaa2 = self.run_mc(opt_iwr, seed=42, roth_strategy=3)
-        hist_aggressive = self.run_mc(opt_iwr, seed=42, roth_strategy=4) # The 32% Test
+        median_path = np.median(history['total_bal'], axis=0)
+        target_floor = self.inputs.get('target_floor', 0.0)
         
-        results = {
-            'Baseline (None)': {'wealth': np.median(hist_base['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_base['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_base['rmds'], axis=0)), 'hist': hist_base},
-            'Current Bracket (Capped at 24%)': {'wealth': np.median(hist_bracket['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_bracket['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_bracket['rmds'], axis=0)), 'hist': hist_bracket},
-            'Target IRMAA Tier 1 (Capped at 24%)': {'wealth': np.median(hist_irmaa1['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa1['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa1['rmds'], axis=0)), 'hist': hist_irmaa1},
-            'Target IRMAA Tier 2 (Capped at 24%)': {'wealth': np.median(hist_irmaa2['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa2['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa2['rmds'], axis=0)), 'hist': hist_irmaa2},
-            'Aggressive 32% Bracket Fill': {'wealth': np.median(hist_aggressive['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_aggressive['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_aggressive['rmds'], axis=0)), 'hist': hist_aggressive}
-        }
-        return results
+        # Premature Depletion Penalty: Forces optimizer to reject unsustainable pa
