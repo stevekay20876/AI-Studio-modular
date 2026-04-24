@@ -21,20 +21,21 @@ st.markdown("Institution-Grade Monte Carlo Simulator | Constant Amortization Spe
 
 with st.sidebar.form("input_form"):
     st.header("Client Parameters")
+    
+    # Primary Client Fields
     c1, c2 = st.columns(2)
     cur_age = c1.number_input("Current Age", min_value=18, max_value=100, value=None)
     ret_age = c2.number_input("Full Retirement Age", min_value=18, max_value=100, value=None)
     life_exp = st.number_input("Life Expectancy Age", min_value=50, max_value=120, value=None)
     
+    # Filing Status
     filing_status = st.selectbox("Tax Filing Status", ["Single", "MFJ"])
     
+    # --- FIX: Spouse Fields are now permanently visible to bypass Streamlit form limitations ---
+    st.markdown("**Spouse Details (Required if MFJ)**")
     c_sp1, c_sp2 = st.columns(2)
-    if filing_status == "MFJ":
-        spouse_age = c_sp1.number_input("Spouse Current Age", min_value=18, max_value=100, value=None)
-        spouse_life_exp = c_sp2.number_input("Spouse Life Expectancy", min_value=50, max_value=120, value=None)
-    else:
-        spouse_age = cur_age
-        spouse_life_exp = life_exp
+    spouse_age = c_sp1.number_input("Spouse Current Age", min_value=18, max_value=100, value=None)
+    spouse_life_exp = c_sp2.number_input("Spouse Life Expectancy", min_value=50, max_value=120, value=None)
     
     c3, c4 = st.columns(2)
     state = c3.text_input("State of Residence")
@@ -96,6 +97,7 @@ with st.sidebar.form("input_form"):
 if submit:
     vital_checks = {"Current Age": cur_age, "Retirement Age": ret_age, "Life Expectancy": life_exp, "Target Legacy Floor": target_floor}
     
+    # Enforces spouse inputs if MFJ is selected
     if filing_status == 'MFJ':
         vital_checks["Spouse Age"] = spouse_age
         vital_checks["Spouse Life Exp"] = spouse_life_exp
