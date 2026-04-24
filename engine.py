@@ -120,6 +120,7 @@ class StochasticRetirementEngine:
         base_salary = self.inputs.get('current_salary', 0.0)
         phased_ret_active = self.inputs.get('phased_ret_active', False)
         phased_age = self.inputs.get('phased_ret_age', ret_age)
+        pay_taxes_from_cash = self.inputs.get('pay_taxes_from_cash', True)
         
         base_health_premium = self.inputs.get('health_cost', 0.0)
         base_oop_cost = self.inputs.get('oop_cost', 0.0)
@@ -135,9 +136,6 @@ class StochasticRetirementEngine:
         brackets = TAX_BRACKETS_MFJ if filing_status == 'MFJ' else TAX_BRACKETS_SINGLE
         irmaa_brackets = IRMAA_BRACKETS_MFJ if filing_status == 'MFJ' else IRMAA_BRACKETS_SINGLE
 
-        # THE FIX: Explicitly target the 24% and 32% ceilings based on the array limits from config.py
-        # For Single: 24% ends at 197300, 32% ends at 250525
-        # For MFJ: 24% ends at 394600, 32% ends at 501050
         limit_24_pct = 394600 if filing_status == 'MFJ' else 197300
         limit_32_pct = 501050 if filing_status == 'MFJ' else 250525
 
@@ -157,7 +155,8 @@ class StochasticRetirementEngine:
             if yr > 0:
                 cum_inf *= (1 + np.maximum(0, inf_paths[:, yr]))
             
-            home_value *= (1 + inf_paths[:, yr]) 
+            # --- FIX: STABLE REAL ESTATE APPRECIATION (3.5%) ---
+            home_value *= 1.035
             history['home_value'][:, yr] = home_value
             
             inflated_salary = base_salary * cum_inf
@@ -288,6 +287,9 @@ class StochasticRetirementEngine:
             history['tsp_withdrawal'][:, yr] = w_tsp
             history['roth_withdrawal'][:, yr] = w_roth
             history['taxable_withdrawal'][:, yr] = w_taxable
+            
+            # --- FIX: DO NOT COUNT ROTH TAX PAYMENTS AS "WITHDRAWALS" IN CSV ---
+            # To isolate lifestyle cash flow vs tax payments.
             history['cash_withdrawal'][:, yr] = w_cash
             
             taxable += excess_rmd
@@ -311,7 +313,6 @@ class StochasticRetirementEngine:
             final_taxable_income = taxable_income.copy()
             final_magi = magi.copy()
             
-            # --- REFINED ROTH ENGINE ---
             if roth_strategy > 0 and age >= ret_age and age < 75:
                 space = np.zeros(self.iterations)
                 
@@ -334,7 +335,6 @@ class StochasticRetirementEngine:
                     irmaa_tier_2 = irmaa_brackets[1][0]
                     space = np.maximum(0, irmaa_tier_2 - magi - 1)
                 
-                # --- EXPLICIT HARD CAPS FOR STRATEGIES ---
                 if roth_strategy in [1, 2, 3]:
                     max_allowable_space = np.maximum(0, limit_24_pct - taxable_income - 1)
                     space = np.minimum(space, max_allowable_space)
@@ -356,14 +356,19 @@ class StochasticRetirementEngine:
                 extra_tax_state = conv_amt * combined_state_local_rate
                 extra_tax_total = extra_tax_fed + extra_tax_state
                 
-                w_tax_cash = np.minimum(cash, extra_tax_total)
-                cash -= w_tax_cash
-                rem_tax = extra_tax_total - w_tax_cash
-                w_tax_taxable = np.minimum(taxable, rem_tax)
-                taxable -= w_tax_taxable
-                rem_tax -= w_tax_taxable
-                
-                net_to_roth = conv_amt - rem_tax 
+                # --- FIX: OPTIONAL CASH DEPLETION FOR TAXES ---
+                if pay_taxes_from_cash:
+                    w_tax_cash = np.minimum(cash, extra_tax_total)
+                    cash -= w_tax_cash
+                    rem_tax = extra_tax_total - w_tax_cash
+                    w_tax_taxable = np.minimum(taxable, rem_tax)
+                    taxable -= w_tax_taxable
+                    rem_tax -= w_tax_taxable
+                    net_to_roth = conv_amt - rem_tax 
+                else:
+                    # Taxes withheld strictly from the conversion amount
+                    net_to_roth = conv_amt - extra_tax_total
+                    
                 tsp -= conv_amt
                 roth += net_to_roth
                 
@@ -408,10 +413,13 @@ class StochasticRetirementEngine:
             history['cash_bal'][:, yr] = cash
             history['hsa_bal'][:, yr] = hsa
             
-            history['net_spendable'][:, yr] = (actual_portfolio_withdrawal + current_pension + ss + current_salary_income
-                                               - total_tax_fed - total_tax_state 
-                                               - medicare_cost - history['health_cost'][:, yr] 
-                                               - current_mortgage)
+            if age >= ret_age:
+                history['net_spendable'][:, yr] = (actual_portfolio_withdrawal + current_pension + ss + current_salary_income
+                                                   - total_tax_fed - total_tax_state 
+                                                   - medicare_cost - history['health_cost'][:, yr] 
+                                                   - current_mortgage)
+            else:
+                history['net_spendable'][:, yr] = 0.0
             
         return history
 

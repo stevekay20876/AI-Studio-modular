@@ -5,7 +5,7 @@ import datetime
 
 from engine import StochasticRetirementEngine
 from exports import build_csv_dataframe
-from config import MOOP_LIMITS # <-- FIX: Import the dictionary from config
+from config import MOOP_LIMITS
 from visuals import (
     plot_wealth_trajectory, plot_liquidity_timeline, plot_cash_flow_sources,
     plot_expenses_breakdown, plot_withdrawal_hierarchy, plot_taxes_and_rmds,
@@ -74,6 +74,9 @@ with st.sidebar.form("input_form"):
     cash_b = st.number_input("Money Market Balance", min_value=0, value=None)
     cash_r = st.number_input("Money Market Yield %", value=None)
     
+    # --- FIX: Toggles whether conversions artificially drain the cash buffer ---
+    pay_taxes_from_cash = st.checkbox("Pay Roth Conversion Taxes from Cash Buffer?", value=True)
+    
     hsa_b = st.number_input("HSA Balance (Optional)", min_value=0, value=None)
     hsa_r = st.number_input("HSA Return % (Optional)", value=None)
     hsa_v = st.number_input("HSA Volatility % (Optional)", value=None)
@@ -107,7 +110,8 @@ if submit:
         'roth_bal': safe_float(roth_b), 'roth_ret': safe_float(roth_r)/100, 'roth_vol': safe_float(roth_v, True)/100,
         'taxable_bal': safe_float(tax_b), 'taxable_ret': safe_float(tax_r)/100, 'taxable_vol': safe_float(tax_v, True)/100,
         'hsa_bal': safe_float(hsa_b), 'hsa_ret': safe_float(hsa_r)/100, 'hsa_vol': safe_float(hsa_v, True)/100,
-        'cash_bal': safe_float(cash_b), 'cash_ret': safe_float(cash_r)/100
+        'cash_bal': safe_float(cash_b), 'cash_ret': safe_float(cash_r)/100,
+        'pay_taxes_from_cash': pay_taxes_from_cash
     }
 
     with st.spinner("Executing 10,000 Iteration Monte Carlo & Brent Optimization..."):
@@ -180,10 +184,12 @@ if submit:
         c1.metric("Highly Liquid Assets (Cash + Taxable)", f"${total_cash_short_term:,.0f}")
         c2.metric("Year 1 Est. Portfolio Burn Rate", f"${yr1_portfolio_burn:,.0f}")
         c3.metric("Years of Safe Liquidity Buffer", f"{safe_years:.1f} Years")
+        st.write("This profile evaluates how much cash and short-term buffer assets you hold outside of your TSP. A high 'Years of Safe Liquidity' ratio means you can weather a prolonged stock market crash without having to lock in losses by selling your TSP shares at the bottom.")
 
     with t5:
         st.subheader("Taxes & Dynamic Withdrawals")
         limit_24 = 394600 if filing_status == 'MFJ' else 197300
+        st.info(f"**Tax Diagnostic Check:** You selected **{filing_status}**. The 24% marginal bracket ceiling for this status is **${limit_24:,.0f}**. If your 'IRS Taxable Income' in the CSV exceeds this number, it indicates your baseline lifestyle distributions + your pension naturally forced you into the 32% bracket before the engine even attempted any Roth conversions.")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -239,7 +245,6 @@ if submit:
 
     with t8:
         st.subheader("Roth Conversion Optimizer")
-        
         st.info("""
         **Actuarial Evaluation: Is it mathematically advantageous to voluntarily exceed the 24% bracket?**  
         Conventional wisdom dictates you should never convert above the 24% marginal bracket because the jump to 32% represents a massive 8% "Tax Cliff." 
