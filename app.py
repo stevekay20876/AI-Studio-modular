@@ -21,20 +21,21 @@ st.markdown("Institution-Grade Monte Carlo Simulator | Constant Amortization Spe
 
 with st.sidebar.form("input_form"):
     st.header("Client Parameters")
+    
+    # Primary Client Fields
     c1, c2 = st.columns(2)
     cur_age = c1.number_input("Current Age", min_value=18, max_value=100, value=None)
     ret_age = c2.number_input("Full Retirement Age", min_value=18, max_value=100, value=None)
     life_exp = st.number_input("Life Expectancy Age", min_value=50, max_value=120, value=None)
     
+    # Filing Status & Spouse Fields
     filing_status = st.selectbox("Tax Filing Status", ["Single", "MFJ"])
-    
+    st.write("---")
+    st.markdown("**Spouse Details (If MFJ)**")
     c_sp1, c_sp2 = st.columns(2)
-    if filing_status == "MFJ":
-        spouse_age = c_sp1.number_input("Spouse Current Age", min_value=18, max_value=100, value=None)
-        spouse_life_exp = c_sp2.number_input("Spouse Life Expectancy", min_value=50, max_value=120, value=None)
-    else:
-        spouse_age = cur_age
-        spouse_life_exp = life_exp
+    spouse_age = c_sp1.number_input("Spouse Current Age", min_value=18, max_value=100, value=None)
+    spouse_life_exp = c_sp2.number_input("Spouse Life Expectancy", min_value=50, max_value=120, value=None)
+    st.write("---")
     
     c3, c4 = st.columns(2)
     state = c3.text_input("State of Residence")
@@ -95,6 +96,8 @@ with st.sidebar.form("input_form"):
 
 if submit:
     vital_checks = {"Current Age": cur_age, "Retirement Age": ret_age, "Life Expectancy": life_exp, "Target Legacy Floor": target_floor}
+    
+    # Dynamically require spouse inputs only if MFJ is selected
     if filing_status == 'MFJ':
         vital_checks["Spouse Age"] = spouse_age
         vital_checks["Spouse Life Exp"] = spouse_life_exp
@@ -113,7 +116,8 @@ if submit:
 
     inputs = {
         'current_age': int(cur_age), 'ret_age': int(ret_age), 'life_expectancy': int(life_exp),
-        'spouse_age': int(spouse_age), 'spouse_life_exp': int(spouse_life_exp),
+        'spouse_age': int(spouse_age) if spouse_age else int(cur_age), 
+        'spouse_life_exp': int(spouse_life_exp) if spouse_life_exp else int(life_exp),
         'filing_status': filing_status, 'state': state, 'county': county, 
         'current_salary': safe_float(current_salary), 'annual_savings': safe_float(annual_savings),
         'phased_ret_active': phased_ret_active, 'phased_ret_age': int(phased_ret_age or ret_age),
@@ -138,185 +142,4 @@ if submit:
         winner = max(roth_results, key=lambda key: roth_results[key]['wealth'])
         history = roth_results[winner]['hist']
     
-    st.success(f"Simulation Complete. Optimized Initial Portfolio Withdrawal Rate: **{opt_iwr*100:.2f}%**")
-
-    years_arr = np.arange(datetime.datetime.now().year, datetime.datetime.now().year + engine.years)
-    age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine.years)
-    median_paths = np.median(history['total_bal'], axis=0)
-    prob_success = np.mean(history['total_bal'][:, -1] >= inputs['target_floor']) * 100
-    df_median = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
-
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11 = st.tabs([
-        "📊 Projections", "💵 Cash Flow", "📉 Guardrails", "📈 Net Worth", "🏛️ Taxes", 
-        "🏛️ Legacy", "💡 Coach Alerts", "🔄 Roth Opt.", "🦅 Social Sec", "🏥 Medicare", "💾 Exports"
-    ])
-
-    with t1:
-        st.subheader("Lifetime Projections & Monte Carlo Analysis")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Probability of Success", f"{prob_success:.1f}%")
-        col2.metric("Median Terminal Wealth", f"${median_paths[-1]:,.0f}")
-        col3.metric("10th Percentile Wealth", f"${np.percentile(history['total_bal'], 10, axis=0)[-1]:,.0f}")
-        st.plotly_chart(plot_wealth_trajectory(history, inputs['target_floor'], years_arr), use_container_width=True)
-
-    with t2:
-        st.subheader("Integrated Cash Flow & Simulation Execution")
-        st.info(f"**How the Model Reaches the Target Legacy:** The mathematical engine utilizes a 1-Dimensional Root-Finding Algorithm (Brent's Method). It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) up and down until it successfully forces the Median Terminal Wealth to land exactly at your declared Target Legacy Floor. *(If you inputted a Maximum Spending Cap, the Terminal Wealth may artificially exceed the floor because your spending was capped).*")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.plotly_chart(plot_fan_chart(history, years_arr), use_container_width=True)
-            st.markdown("*^ Sequence of Return Risk (SORR): The fan chart demonstrates plan vulnerability. If market losses hit early in retirement, your portfolio will follow the lower bands, triggering variable spending cuts.*")
-        with col2:
-            st.plotly_chart(plot_income_gap(history, years_arr), use_container_width=True)
-            st.markdown("*^ Income Gap Mapping: Visualizes the shortfall between your Guaranteed Income (Social Security & Pension) and your Total Expenses. The gap is strictly funded by portfolio distributions.*")
-            
-        st.markdown("### Integrated Year-by-Year Cash Flow Projections")
-        display_cols = ['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'TSP Withdrawal', 'Salary Income', 'Social Security', 'Pension']
-        st.dataframe(df_median[display_cols].style.format({"Total Income": "${:,.0f}", "IRS Taxable Income": "${:,.0f}", "Total Expenses": "${:,.0f}", "Net Spendable Annual": "${:,.0f}", "TSP Withdrawal": "${:,.0f}", "Salary Income": "${:,.0f}", "Social Security": "${:,.0f}", "Pension": "${:,.0f}"}), use_container_width=True)
-
-    with t3:
-        st.subheader("Variable Spending Rules & Adaptive Guardrails")
-        st.plotly_chart(plot_income_volatility(history, years_arr), use_container_width=True)
-        st.markdown("""
-        ### What the Guardrails Mean for You
-        This model utilizes **Guyton-Klinger Guardrails**, an adaptive cash-flow system that adjusts your paycheck based on the health of the market to mathematically guarantee you never run out of money.
-        - **Capital Preservation Rule (The Pay Cut):** If the market crashes and your withdrawal rate climbs 20% higher than your initial rate, the engine forces a **10% reduction** in your spending. This protects your portfolio from death-spiraling.
-        - **Prosperity Rule (The Pay Raise):** If the market booms and your withdrawal rate falls 20% below your initial rate, the engine grants you a **10% raise** in discretionary spending to enjoy your wealth.
-        - **Inflation Freeze Rule:** In any year where your portfolio suffers a negative return, you forfeit your annual inflation (Cost of Living) increase for that year.
-        """)
-
-    with t4:
-        st.subheader("Net Worth Forecast & Asset Liquidity Profile")
-        st.plotly_chart(plot_liquidity_timeline(history, years_arr), use_container_width=True)
-        
-        st.markdown("### Asset Liquidity Profile (Year 1 of Retirement)")
-        ret_idx = max(0, inputs['ret_age'] - inputs['current_age'])
-        total_cash_short_term = df_median['Money Market Balance'][ret_idx] + df_median['Taxable ETF Balance'][ret_idx]
-        yr1_portfolio_burn = df_median['Total Expenses'][ret_idx] + df_median['Net Spendable Annual'][ret_idx] - df_median['Social Security'][ret_idx] - df_median['Pension'][ret_idx] - df_median['Salary Income'][ret_idx]
-        safe_years = total_cash_short_term / max(yr1_portfolio_burn, 1)
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Highly Liquid Assets (Cash + Taxable)", f"${total_cash_short_term:,.0f}")
-        c2.metric("Year 1 Est. Portfolio Burn Rate", f"${yr1_portfolio_burn:,.0f}")
-        c3.metric("Years of Safe Liquidity Buffer", f"{safe_years:.1f} Years")
-
-    with t5:
-        st.subheader("Taxes & Dynamic Withdrawals")
-        limit_24 = TAX_BRACKETS_MFJ[3][0] if filing_status == 'MFJ' else TAX_BRACKETS_SINGLE[3][0]
-        
-        if df_median['IRS Taxable Income'][ret_idx] > limit_24:
-            st.error(f"🚨 **Lifestyle Exceeds 24% Bracket**: Your baseline spending needs naturally push your IRS Taxable Income to **${df_median['IRS Taxable Income'][ret_idx]:,.0f}**, which is above your 24% ceiling of **${limit_24:,.0f}**. The Roth Optimizer disabled itself to prevent pushing you even higher.")
-        else:
-            st.info(f"**Tax Diagnostic Check:** You selected **{filing_status}**. The 24% marginal bracket ceiling for this status is **${limit_24:,.0f}**. Your IRS Taxable Income successfully remained under this ceiling.")
-            
-        col1, col2 = st.columns(2)
-        with col1:
-            st.plotly_chart(plot_withdrawal_hierarchy(history, years_arr), use_container_width=True)
-        with col2:
-            st.plotly_chart(plot_taxes_and_rmds(history, years_arr), use_container_width=True)
-            
-        st.markdown("### Tax-Efficient Withdrawal Strategy Analysis")
-        strat_data = {
-            "Strategy Component": ["Tax-Efficient Withdrawal Order", "Dynamic Downturn Strategy", "Target Annual Spending Need", "Impact of Inflation"],
-            "Analysis / Value": [
-                "Normal Years: Fund lifestyle purely from TSP, allowing Roth to compound tax-free.",
-                "Crash Years: Halt TSP withdrawals. Deplete Cash -> Taxable -> Roth to avoid Sequence of Return Risk.",
-                f"Your Year 1 Discretionary Net Spendable target is exactly ${df_median['Net Spendable Annual'][ret_idx]:,.0f}.",
-                "Expenses rise geometrically with CPI. The withdrawal engine automatically increases gross distributions to maintain your real purchasing power, barring an Inflation Freeze rule trigger."
-            ]
-        }
-        st.table(pd.DataFrame(strat_data))
-
-    with t6:
-        st.subheader("After-Tax Legacy & Estate Breakdown")
-        st.plotly_chart(plot_legacy_breakdown(history), use_container_width=True)
-        med_tsp = np.median(history['tsp_bal'][:, -1])
-        med_roth = np.median(history['roth_bal'][:, -1])
-        med_taxable = np.median(history['taxable_bal'][:, -1]) + np.median(history['cash_bal'][:, -1])
-        med_home = np.median(history['home_value'][:, -1])
-        net_to_heirs = (med_tsp * 0.76) + med_taxable + med_roth + med_home
-        st.metric("Estimated Net After-Tax Value to Heirs", f"${net_to_heirs:,.0f}", delta=f"Lost to IRD Taxes: -${med_tsp * 0.24:,.0f}", delta_color="inverse")
-
-    with t7:
-        st.subheader("PlannerPlus Coach Alerts & Actionable To-Do List")
-        med_taxes = np.median(history['taxes_fed'], axis=0)
-        
-        if med_taxes[-1] > med_taxes[0] * 2.5:
-            st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Execute Roth Conversions.")
-        if filing_status == 'MFJ':
-            st.error("⚠️ **Widow(er) Tax Penalty**: Upon the first spouse's mortality, your tax filing status shifts to Single, shrinking your brackets and drastically increasing your vulnerability to IRMAA surcharges. Roth conversions are critical while you are still MFJ.")
-        if prob_success >= 85:
-            st.success("✅ **Plan is on Track**: You have a highly secure probability of meeting your terminal floor.")
-
-        st.markdown("""
-        ### Complete Actionable To-Do List
-        1. **Set Up the Initial Paycheck:** Establish a baseline systematic withdrawal rate equal to the Optimized IWR generated by this report.
-        2. **Implement the Cash Buffer:** Physically separate 2 to 3 years worth of your 'Income Gap' into a high-yield Money Market or safe Taxable account to protect against an immediate market crash (Sequence of Return Risk).
-        3. **Execute Roth Strategy:** Work with a CPA to schedule the recommended systematic Roth conversions explicitly mapped out in the Roth Optimizer Tab.
-        4. **Lock In Healthcare:** Officially enroll in your selected Retiree Health plan and map out exactly when your Medicare Part B decision occurs.
-        5. **Update Estate Documents:** Ensure your TSP and Roth IRA beneficiary designations are current to maximize the SECURE Act 10-year stretch rules for your heirs.
-        """)
-
-    with t8:
-        st.subheader("Roth Conversion Optimizer")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.plotly_chart(plot_roth_strategy_comparison(roth_results), use_container_width=True)
-        with col2:
-            st.plotly_chart(plot_roth_tax_impact(roth_results, years_arr), use_container_width=True)
-            
-        tax_savings = roth_results['Baseline (None)']['taxes'] - roth_results[winner]['taxes']
-        rmd_reduction = roth_results['Baseline (None)']['rmds'] - roth_results[winner]['rmds']
-        wealth_increase = roth_results[winner]['wealth'] - roth_results['Baseline (None)']['wealth']
-        
-        st.markdown("### Recommended Action Plan")
-        if "Baseline" in winner:
-            st.warning("**Verdict: No Conversions Recommended.**")
-        else:
-            st.success(f"Verdict: **Execute the '{winner}' Strategy**")
-            st.write(f"- **Real Lifetime Tax Savings:** ${max(0, tax_savings):,.0f}")
-            st.write(f"- **Reduction in Lifetime RMDs:** ${rmd_reduction:,.0f}")
-            st.write(f"- **Net Increase to Legacy:** ${wealth_increase:,.0f}")
-            
-            st.markdown("#### Step-by-Step Conversion Schedule")
-            roth_amts = np.median(roth_results[winner]['hist']['roth_conversion'], axis=0)
-            conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_amts, "Est. IRS Taxable Income": np.median(roth_results[winner]['hist']['taxable_income'], axis=0)})
-            st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}", "Est. IRS Taxable Income": "${:,.0f}"}))
-
-    with t9:
-        st.subheader("Social Security Claiming Strategy")
-        st.plotly_chart(plot_ss_breakeven(inputs['ss_fra'], age_arr), use_container_width=True)
-        
-        ss_base = inputs['ss_fra']
-        ss_data = {
-            "Claiming Age": ["Age 62 (Early)", "Age 67 (FRA)", "Age 70 (Delayed)"],
-            "Annual Benefit (Pre-2035)": [f"${ss_base * 0.7:,.0f}", f"${ss_base:,.0f}", f"${ss_base * 1.24:,.0f}"],
-            "Probability of Portfolio Success": [f"{max(0, prob_success - 8):.1f}%", f"{prob_success:.1f}%", f"{min(100, prob_success + 6):.1f}%"]
-        }
-        st.table(pd.DataFrame(ss_data))
-        st.success("**Verdict: Delay Claiming until Age 70**")
-
-    with t10:
-        st.subheader("Medicare Part B & Actuarial Healthcare OOP")
-        st.plotly_chart(plot_medicare_comparison(history, years_arr, inputs), use_container_width=True)
-        
-        moop_cap = MOOP_LIMITS.get(health_plan, (999999, 999999))[1 if filing_status == 'MFJ' else 0]
-        if moop_cap == 999999:
-            st.error("⚠️ **Catastrophic Medical Risk**: Your declared plan holds an uncapped Maximum Out-of-Pocket (MOOP) liability.")
-        else:
-            st.info(f"🛡️ **Plan Protection Active**: Your {health_plan} correctly caps out-of-pocket medical tail-risk at **${moop_cap:,.0f}** per year (inflation adjusted).")
-            
-        fed_plans = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard"]
-        if inputs['health_plan'] in fed_plans or "TRICARE" in inputs['health_plan']:
-            st.success("Verdict: **Waive Part B & Rely on Retiree Coverage**")
-        else:
-            st.warning("Verdict: **Enroll in Medicare Part B**")
-
-    with t11:
-        st.subheader("Strict-Format CSV Data Exports")
-        df_pess = build_csv_dataframe(history, years_arr, age_arr, percentile=10)
-        colA, colB = st.columns(2)
-        colA.download_button("📄 Download Median (50th) CSV", df_median.to_csv(index=False), "Retirement_Median.csv", "text/csv")
-        colB.download_button("📄 Download Pessimistic (10th) CSV", df_pess.to_csv(index=False), "Retirement_Pess.csv", "text/csv")
+    st.success(f"Simulatio
