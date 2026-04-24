@@ -31,15 +31,17 @@ def plot_fan_chart(history, years_arr):
 
 def plot_liquidity_timeline(history, years_arr):
     fig = go.Figure()
+    fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['home_value'], axis=0), mode='lines', stackgroup='one', name='Home Value (Illiquid)', fillcolor='lightgray', line=dict(color='gray')))
     fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['tsp_bal'], axis=0), mode='lines', stackgroup='one', name='TSP (Tax-Deferred)'))
     fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['taxable_bal'], axis=0), mode='lines', stackgroup='one', name='Taxable'))
     fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['roth_bal'], axis=0), mode='lines', stackgroup='one', name='Roth IRA'))
     fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['cash_bal'], axis=0), mode='lines', stackgroup='one', name='Cash Buffer'))
-    fig.update_layout(title="Asset Liquidity Timeline", xaxis_title="Year", yaxis_title="Balance ($)", hovermode="x unified")
+    fig.update_layout(title="Total Net Worth Forecast (Including Real Estate)", xaxis_title="Year", yaxis_title="Balance ($)", hovermode="x unified")
     return fig
 
 def plot_cash_flow_sources(history, years_arr):
     fig = go.Figure()
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['salary_income'], axis=0), name="Salary", marker_color='purple'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['ss_income'], axis=0), name="Social Security", marker_color='#1f77b4'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['pension_income'], axis=0), name="Pension", marker_color='#ff7f0e'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['tsp_withdrawal'], axis=0), name="TSP Withdrawal", marker_color='#2ca02c'))
@@ -53,12 +55,12 @@ def plot_cash_flow_sources(history, years_arr):
     return fig
 
 def plot_income_gap(history, years_arr):
-    guaranteed_income = np.median(history['ss_income'] + history['pension_income'], axis=0)
+    guaranteed_income = np.median(history['salary_income'] + history['ss_income'] + history['pension_income'], axis=0)
     total_expenses = np.median(history['taxes_fed'] + history['health_cost'] + history['medicare_cost'] + history['mortgage_cost'] + history['net_spendable'], axis=0)
     
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=years_arr, y=total_expenses, mode='lines', name='Total Expenses / Lifestyle', line=dict(color='red', width=2)))
-    fig.add_trace(go.Scatter(x=years_arr, y=guaranteed_income, mode='lines', fill='tozeroy', name='Guaranteed Base (SS+Pension)', line=dict(color='blue')))
+    fig.add_trace(go.Scatter(x=years_arr, y=guaranteed_income, mode='lines', fill='tozeroy', name='Guaranteed Base (Salary/SS/Pension)', line=dict(color='blue')))
     fig.update_layout(title="Income Gap Mapping (Shortfall Funded by Portfolio)", xaxis_title="Year", yaxis_title="Amount ($)")
     return fig
 
@@ -106,10 +108,11 @@ def plot_legacy_breakdown(history):
     roth_term = np.median(history['roth_bal'][:, -1])
     taxable_term = np.median(history['taxable_bal'][:, -1])
     cash_term = np.median(history['cash_bal'][:, -1])
+    home_term = np.median(history['home_value'][:, -1])
     
-    labels = ['TSP/401k (Tax-Deferred)', 'Roth IRA (Tax-Free)', 'Taxable Investments (Step-up basis)', 'Cash/Money Market']
-    values = [max(0, tsp_term), max(0, roth_term), max(0, taxable_term), max(0, cash_term)]
-    colors = ['#1f77b4', '#2ca02c', '#ff7f0e', '#d62728']
+    labels = ['TSP/401k (Tax-Deferred)', 'Roth IRA (Tax-Free)', 'Taxable Investments', 'Cash/Money Market', 'Real Estate/Home']
+    values = [max(0, tsp_term), max(0, roth_term), max(0, taxable_term), max(0, cash_term), max(0, home_term)]
+    colors = ['#1f77b4', '#2ca02c', '#ff7f0e', '#d62728', 'gray']
 
     fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=.4, marker=dict(colors=colors))])
     fig.update_layout(title="Terminal Estate Composition (At Life Expectancy)")
