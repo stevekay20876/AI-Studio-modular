@@ -24,6 +24,7 @@ def build_csv_dataframe(history, years_arr, age_arr, percentile=50):
         "RMD Amount": np.percentile(history['rmds'], percentile, axis=0),
         "Extra RMD Amount": np.percentile(history['extra_rmd'], percentile, axis=0),
         "Roth Conversion Amount": np.percentile(history['roth_conversion'], percentile, axis=0),
+        "Roth Taxes Paid from Cash": np.percentile(history['roth_taxes_from_cash'], percentile, axis=0), # ADDED
         "IRS Taxable Income": np.percentile(history['taxable_income'], percentile, axis=0), 
         "MAGI (IRMAA Base)": np.percentile(history['magi'], percentile, axis=0), 
         "Federal Taxes": np.percentile(history['taxes_fed'], percentile, axis=0),

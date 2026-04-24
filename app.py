@@ -5,7 +5,7 @@ import datetime
 
 from engine import StochasticRetirementEngine
 from exports import build_csv_dataframe
-from config import MOOP_LIMITS
+from config import MOOP_LIMITS, TAX_BRACKETS_MFJ, TAX_BRACKETS_SINGLE
 from visuals import (
     plot_wealth_trajectory, plot_liquidity_timeline, plot_cash_flow_sources,
     plot_expenses_breakdown, plot_withdrawal_hierarchy, plot_taxes_and_rmds,
@@ -74,7 +74,6 @@ with st.sidebar.form("input_form"):
     cash_b = st.number_input("Money Market Balance", min_value=0, value=None)
     cash_r = st.number_input("Money Market Yield %", value=None)
     
-    # --- FIX: Toggles whether conversions artificially drain the cash buffer ---
     pay_taxes_from_cash = st.checkbox("Pay Roth Conversion Taxes from Cash Buffer?", value=True)
     
     hsa_b = st.number_input("HSA Balance (Optional)", min_value=0, value=None)
@@ -175,22 +174,27 @@ if submit:
         st.subheader("Net Worth Forecast & Asset Liquidity Profile")
         st.plotly_chart(plot_liquidity_timeline(history, years_arr), use_container_width=True)
         
-        st.markdown("### Asset Liquidity Profile (Year 1)")
-        total_cash_short_term = inputs['cash_bal'] + inputs['taxable_bal']
-        yr1_portfolio_burn = df_median['Total Expenses'][0] + df_median['Net Spendable Annual'][0] - df_median['Social Security'][0] - df_median['Pension'][0] - df_median['Salary Income'][0]
+        st.markdown("### Asset Liquidity Profile (Year 1 of Retirement)")
+        ret_idx = max(0, inputs['ret_age'] - inputs['current_age'])
+        total_cash_short_term = df_median['Money Market Balance'][ret_idx] + df_median['Taxable ETF Balance'][ret_idx]
+        yr1_portfolio_burn = df_median['Total Expenses'][ret_idx] + df_median['Net Spendable Annual'][ret_idx] - df_median['Social Security'][ret_idx] - df_median['Pension'][ret_idx] - df_median['Salary Income'][ret_idx]
         safe_years = total_cash_short_term / max(yr1_portfolio_burn, 1)
         
         c1, c2, c3 = st.columns(3)
         c1.metric("Highly Liquid Assets (Cash + Taxable)", f"${total_cash_short_term:,.0f}")
         c2.metric("Year 1 Est. Portfolio Burn Rate", f"${yr1_portfolio_burn:,.0f}")
         c3.metric("Years of Safe Liquidity Buffer", f"{safe_years:.1f} Years")
-        st.write("This profile evaluates how much cash and short-term buffer assets you hold outside of your TSP. A high 'Years of Safe Liquidity' ratio means you can weather a prolonged stock market crash without having to lock in losses by selling your TSP shares at the bottom.")
+        st.write("This profile evaluates how much cash and short-term buffer assets you hold outside of your TSP. A high 'Years of Safe Liquidity' ratio means you can weather a prolonged stock market crash without having to lock in losses by selling your TSP shares at the bottom. *(Note: The Cash/MM balance will naturally drop toward $0 over time in the median CSV data. This is a statistical effect caused by the algorithm draining the cash buffer in crash years across 10,000 simulations to protect your TSP).*")
 
     with t5:
         st.subheader("Taxes & Dynamic Withdrawals")
-        limit_24 = 394600 if filing_status == 'MFJ' else 197300
-        st.info(f"**Tax Diagnostic Check:** You selected **{filing_status}**. The 24% marginal bracket ceiling for this status is **${limit_24:,.0f}**. If your 'IRS Taxable Income' in the CSV exceeds this number, it indicates your baseline lifestyle distributions + your pension naturally forced you into the 32% bracket before the engine even attempted any Roth conversions.")
+        limit_24 = TAX_BRACKETS_MFJ[3][0] if filing_status == 'MFJ' else TAX_BRACKETS_SINGLE[3][0]
         
+        if df_median['IRS Taxable Income'][ret_idx] > limit_24:
+            st.error(f"🚨 **Lifestyle Exceeds 24% Bracket**: Your baseline spending needs (TSP Withdrawals + Pension) naturally push your IRS Taxable Income to **${df_median['IRS Taxable Income'][ret_idx]:,.0f}**, which is above your 24% ceiling of **${limit_24:,.0f}**. The Roth Optimizer has safely disabled itself to prevent pushing you even higher. To lower your tax bracket, simply increase your 'Target Legacy Floor' input to purposefully reduce your annual spending.")
+        else:
+            st.info(f"**Tax Diagnostic Check:** You selected **{filing_status}**. The 24% marginal bracket ceiling for this status is **${limit_24:,.0f}**. Your IRS Taxable Income successfully remained under this ceiling.")
+            
         col1, col2 = st.columns(2)
         with col1:
             st.plotly_chart(plot_withdrawal_hierarchy(history, years_arr), use_container_width=True)
@@ -203,7 +207,7 @@ if submit:
             "Analysis / Value": [
                 "Normal Years: Fund lifestyle purely from TSP, allowing Roth to compound tax-free.",
                 "Crash Years: Halt TSP withdrawals. Deplete Cash -> Taxable -> Roth to avoid Sequence of Return Risk.",
-                f"Your Year 1 Discretionary Net Spendable target is exactly ${df_median['Net Spendable Annual'][0]:,.0f}.",
+                f"Your Year 1 Discretionary Net Spendable target is exactly ${df_median['Net Spendable Annual'][ret_idx]:,.0f}.",
                 "Expenses rise geometrically with CPI. The withdrawal engine automatically increases gross distributions to maintain your real purchasing power, barring an Inflation Freeze rule trigger."
             ]
         }

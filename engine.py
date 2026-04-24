@@ -110,6 +110,7 @@ class StochasticRetirementEngine:
             'ss_income': np.zeros((self.iterations, self.years)),
             'pension_income': np.zeros((self.iterations, self.years)),
             'roth_conversion': np.zeros((self.iterations, self.years)),
+            'roth_taxes_from_cash': np.zeros((self.iterations, self.years)), # ADDED TRACKER
         }
 
         age = self.inputs['current_age']
@@ -136,8 +137,8 @@ class StochasticRetirementEngine:
         brackets = TAX_BRACKETS_MFJ if filing_status == 'MFJ' else TAX_BRACKETS_SINGLE
         irmaa_brackets = IRMAA_BRACKETS_MFJ if filing_status == 'MFJ' else IRMAA_BRACKETS_SINGLE
 
-        limit_24_pct = 394600 if filing_status == 'MFJ' else 197300
-        limit_32_pct = 501050 if filing_status == 'MFJ' else 250525
+        limit_24_pct = brackets[3][0] 
+        limit_32_pct = brackets[4][0]
 
         state_str = self.inputs.get('state', '').strip().upper()
         county_str = self.inputs.get('county', '').strip().upper()
@@ -155,7 +156,6 @@ class StochasticRetirementEngine:
             if yr > 0:
                 cum_inf *= (1 + np.maximum(0, inf_paths[:, yr]))
             
-            # --- FIX: STABLE REAL ESTATE APPRECIATION (3.5%) ---
             home_value *= 1.035
             history['home_value'][:, yr] = home_value
             
@@ -287,9 +287,6 @@ class StochasticRetirementEngine:
             history['tsp_withdrawal'][:, yr] = w_tsp
             history['roth_withdrawal'][:, yr] = w_roth
             history['taxable_withdrawal'][:, yr] = w_taxable
-            
-            # --- FIX: DO NOT COUNT ROTH TAX PAYMENTS AS "WITHDRAWALS" IN CSV ---
-            # To isolate lifestyle cash flow vs tax payments.
             history['cash_withdrawal'][:, yr] = w_cash
             
             taxable += excess_rmd
@@ -309,6 +306,7 @@ class StochasticRetirementEngine:
             total_tax_fed = base_tax_fed.copy()
             total_tax_state = base_tax_state_local.copy()
             conv_amt = np.zeros(self.iterations)
+            w_tax_cash_roth = np.zeros(self.iterations)
             
             final_taxable_income = taxable_income.copy()
             final_magi = magi.copy()
@@ -356,17 +354,15 @@ class StochasticRetirementEngine:
                 extra_tax_state = conv_amt * combined_state_local_rate
                 extra_tax_total = extra_tax_fed + extra_tax_state
                 
-                # --- FIX: OPTIONAL CASH DEPLETION FOR TAXES ---
                 if pay_taxes_from_cash:
-                    w_tax_cash = np.minimum(cash, extra_tax_total)
-                    cash -= w_tax_cash
-                    rem_tax = extra_tax_total - w_tax_cash
+                    w_tax_cash_roth = np.minimum(cash, extra_tax_total)
+                    cash -= w_tax_cash_roth
+                    rem_tax = extra_tax_total - w_tax_cash_roth
                     w_tax_taxable = np.minimum(taxable, rem_tax)
                     taxable -= w_tax_taxable
                     rem_tax -= w_tax_taxable
                     net_to_roth = conv_amt - rem_tax 
                 else:
-                    # Taxes withheld strictly from the conversion amount
                     net_to_roth = conv_amt - extra_tax_total
                     
                 tsp -= conv_amt
@@ -380,6 +376,7 @@ class StochasticRetirementEngine:
             history['taxes_state'][:, yr] = total_tax_state
             history['taxable_income'][:, yr] = final_taxable_income
             history['magi'][:, yr] = final_magi
+            history['roth_taxes_from_cash'][:, yr] = w_tax_cash_roth # Tracks exactly what left the Cash buffer to pay taxes
             
             current_health_premium = base_health_premium * cum_inf
             age_morbidity = 1.025 ** max(0, age - self.inputs['current_age'])
