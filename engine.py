@@ -135,6 +135,12 @@ class StochasticRetirementEngine:
         brackets = TAX_BRACKETS_MFJ if filing_status == 'MFJ' else TAX_BRACKETS_SINGLE
         irmaa_brackets = IRMAA_BRACKETS_MFJ if filing_status == 'MFJ' else IRMAA_BRACKETS_SINGLE
 
+        # THE FIX: Explicitly target the 24% and 32% ceilings based on the array limits from config.py
+        # For Single: 24% ends at 197300, 32% ends at 250525
+        # For MFJ: 24% ends at 394600, 32% ends at 501050
+        limit_24_pct = 394600 if filing_status == 'MFJ' else 197300
+        limit_32_pct = 501050 if filing_status == 'MFJ' else 250525
+
         state_str = self.inputs.get('state', '').strip().upper()
         county_str = self.inputs.get('county', '').strip().upper()
         tax_free_states = ["TX", "FL", "NV", "WA", "SD", "WY", "AK", "TN", "NH"]
@@ -151,23 +157,19 @@ class StochasticRetirementEngine:
             if yr > 0:
                 cum_inf *= (1 + np.maximum(0, inf_paths[:, yr]))
             
-            # --- HOME VALUE APPRECIATION ---
-            home_value *= (1 + inf_paths[:, yr]) # Home grows with standard inflation
+            home_value *= (1 + inf_paths[:, yr]) 
             history['home_value'][:, yr] = home_value
             
-            # --- SALARY & PHASED RETIREMENT LOGIC ---
             inflated_salary = base_salary * cum_inf
             current_salary_income = np.zeros(self.iterations)
             current_pension = np.zeros(self.iterations)
             
             if age < ret_age:
-                # Accumulation Phase
                 tsp += (annual_savings * 0.70)
                 taxable += (annual_savings * 0.30)
                 
                 if phased_ret_active and age >= phased_age:
                     current_salary_income = inflated_salary * 0.50
-                    # FERS COLA applied to pension base
                     fers_cola = np.where(inf_paths[:, yr] <= 0.02, inf_paths[:, yr], np.where(inf_paths[:, yr] <= 0.03, 0.02, inf_paths[:, yr] - 0.01))
                     base_pension *= (1 + np.maximum(0, fers_cola))
                     current_pension = base_pension * 0.50
@@ -175,7 +177,6 @@ class StochasticRetirementEngine:
                     current_salary_income = inflated_salary
                     current_pension = np.zeros(self.iterations)
             else:
-                # Full Retirement Phase
                 current_salary_income = np.zeros(self.iterations)
                 fers_cola = np.where(inf_paths[:, yr] <= 0.02, inf_paths[:, yr], np.where(inf_paths[:, yr] <= 0.03, 0.02, inf_paths[:, yr] - 0.01))
                 base_pension *= (1 + np.maximum(0, fers_cola))
@@ -310,9 +311,9 @@ class StochasticRetirementEngine:
             final_taxable_income = taxable_income.copy()
             final_magi = magi.copy()
             
+            # --- REFINED ROTH ENGINE ---
             if roth_strategy > 0 and age >= ret_age and age < 75:
                 space = np.zeros(self.iterations)
-                limit_24_pct = brackets[3][0] 
                 
                 if roth_strategy in [1, 4]: 
                     for limit, rate in brackets:
@@ -333,12 +334,11 @@ class StochasticRetirementEngine:
                     irmaa_tier_2 = irmaa_brackets[1][0]
                     space = np.maximum(0, irmaa_tier_2 - magi - 1)
                 
-                # --- STRICT CEILING LIMITS ---
+                # --- EXPLICIT HARD CAPS FOR STRATEGIES ---
                 if roth_strategy in [1, 2, 3]:
                     max_allowable_space = np.maximum(0, limit_24_pct - taxable_income - 1)
                     space = np.minimum(space, max_allowable_space)
                 elif roth_strategy == 4:
-                    limit_32_pct = brackets[4][0] 
                     max_allowable_space = np.maximum(0, limit_32_pct - taxable_income - 1)
                     space = np.minimum(space, max_allowable_space)
                 
@@ -376,12 +376,8 @@ class StochasticRetirementEngine:
             history['taxable_income'][:, yr] = final_taxable_income
             history['magi'][:, yr] = final_magi
             
-            # --- ACTUARIAL HEALTHCARE OOP MODEL ---
             current_health_premium = base_health_premium * cum_inf
-            
-            # Age-Morbidity factor: Medical costs naturally rise ~2.5% per year as you age
             age_morbidity = 1.025 ** max(0, age - self.inputs['current_age'])
-            # Medical inflation generally runs 1.5x standard CPI
             med_cpi_cum = np.prod(1 + (np.maximum(0, inf_paths[:, :yr+1]) * 1.5), axis=1) if yr > 0 else np.ones(self.iterations)
             
             raw_oop = base_oop_cost * med_cpi_cum * age_morbidity
