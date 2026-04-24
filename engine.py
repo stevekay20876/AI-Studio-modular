@@ -17,36 +17,54 @@ class StochasticRetirementEngine:
         else:
             self.years = max(1, base_years)
             
-        self.n_assets = 5 
+        self.n_assets = 6 
+        
+    def get_port_params(self, asset_key, override_port=None):
+        if override_port:
+            return PORTFOLIOS[override_port]['ret'], PORTFOLIOS[override_port]['vol']
+        else:
+            strat = self.inputs[asset_key]
+            return PORTFOLIOS[strat]['ret'], PORTFOLIOS[strat]['vol']
 
-    def generate_stochastic_paths(self, seed=None, portfolio_choice=None):
-        if seed is not None:
-            np.random.seed(seed)
-            
-        port_choice = portfolio_choice if portfolio_choice else self.inputs['portfolio_choice']
-        port_ret = PORTFOLIOS[port_choice]["ret"]
-        port_vol = PORTFOLIOS[port_choice]["vol"]
+    def setup_covariance_matrix(self, override_port=None):
+        _, v_tsp = self.get_port_params('tsp_strat', override_port)
+        _, v_ira = self.get_port_params('ira_strat', override_port)
+        _, v_roth = self.get_port_params('roth_strat', override_port)
+        _, v_tax = self.get_port_params('taxable_strat', override_port)
+        _, v_hsa = self.get_port_params('hsa_strat', override_port)
         
         corr = np.array([
-            [1.00, -0.15, -0.15, -0.15, -0.15],
-            [-0.15, 1.00,  0.85,  0.85,  0.85],
-            [-0.15, 0.85,  1.00,  0.85,  0.85],
-            [-0.15, 0.85,  0.85,  1.00,  0.85],
-            [-0.15, 0.85,  0.85,  0.85,  1.00]
+            [1.00, -0.15, -0.15, -0.15, -0.15, -0.15],
+            [-0.15, 1.00,  0.85,  0.85,  0.85,  0.85],
+            [-0.15, 0.85,  1.00,  0.85,  0.85,  0.85],
+            [-0.15, 0.85,  0.85,  1.00,  0.85,  0.85],
+            [-0.15, 0.85,  0.85,  0.85,  1.00,  0.85],
+            [-0.15, 0.85,  0.85,  0.85,  0.85,  1.00]
         ])
-        vols = np.array([0.012, port_vol, port_vol, port_vol, port_vol])
+        vols = np.array([0.012, v_tsp, v_ira, v_roth, v_tax, v_hsa])
         cov = np.outer(vols, vols) * corr
-        L = np.linalg.cholesky(cov)
+        return np.linalg.cholesky(cov)
+
+    def generate_stochastic_paths(self, L, seed=None, override_port=None):
+        if seed is not None:
+            np.random.seed(seed)
             
         shocks = t.rvs(df=5, size=(self.iterations, self.years, self.n_assets))
         correlated_shocks = np.einsum('ij,kyj->kyi', L, shocks)
         
+        r_tsp, v_tsp = self.get_port_params('tsp_strat', override_port)
+        r_ira, v_ira = self.get_port_params('ira_strat', override_port)
+        r_roth, v_roth = self.get_port_params('roth_strat', override_port)
+        r_tax, v_tax = self.get_port_params('taxable_strat', override_port)
+        r_hsa, v_hsa = self.get_port_params('hsa_strat', override_port)
+        
         drifts = np.array([
             0.03,
-            port_ret - (port_vol**2)/2,
-            port_ret - (port_vol**2)/2,
-            port_ret - (port_vol**2)/2,
-            port_ret - (port_vol**2)/2
+            r_tsp - (v_tsp**2)/2,
+            r_ira - (v_ira**2)/2,
+            r_roth - (v_roth**2)/2,
+            r_tax - (v_tax**2)/2,
+            r_hsa - (v_hsa**2)/2
         ])
         
         returns = np.exp(drifts + correlated_shocks) - 1
@@ -66,11 +84,13 @@ class StochasticRetirementEngine:
             
         return returns, inf_paths
 
-    def run_mc(self, iwr, seed=None, roth_strategy=0, test_portfolio=None):
-        returns, inf_paths = self.generate_stochastic_paths(seed=seed, portfolio_choice=test_portfolio)
+    def run_mc(self, iwr, seed=None, roth_strategy=0, override_port=None):
+        L = self.setup_covariance_matrix(override_port)
+        returns, inf_paths = self.generate_stochastic_paths(L, seed=seed, override_port=override_port)
         cash_ret = self.inputs['cash_ret']
         
         tsp = np.full(self.iterations, self.inputs['tsp_bal'])
+        ira = np.full(self.iterations, self.inputs['ira_bal'])
         roth = np.full(self.iterations, self.inputs['roth_bal'])
         taxable = np.full(self.iterations, self.inputs['taxable_bal'])
         hsa = np.full(self.iterations, self.inputs['hsa_bal'])
@@ -78,7 +98,6 @@ class StochasticRetirementEngine:
         home_value = np.full(self.iterations, self.inputs.get('home_value', 0.0))
         
         taxable_basis = np.full(self.iterations, self.inputs.get('taxable_basis', self.inputs['taxable_bal']))
-        
         base_pension = np.full(self.iterations, self.inputs['pension_est'])
         
         ss_claim_age = self.inputs.get('ss_claim_age', 67)
@@ -94,12 +113,14 @@ class StochasticRetirementEngine:
         history = {
             'total_bal': np.zeros((self.iterations, self.years)),
             'tsp_bal': np.zeros((self.iterations, self.years)),
+            'ira_bal': np.zeros((self.iterations, self.years)),
             'roth_bal': np.zeros((self.iterations, self.years)),
             'taxable_bal': np.zeros((self.iterations, self.years)),
             'cash_bal': np.zeros((self.iterations, self.years)),
             'hsa_bal': np.zeros((self.iterations, self.years)),
             'home_value': np.zeros((self.iterations, self.years)),
             'tsp_withdrawal': np.zeros((self.iterations, self.years)),
+            'ira_withdrawal': np.zeros((self.iterations, self.years)),
             'roth_withdrawal': np.zeros((self.iterations, self.years)),    
             'taxable_withdrawal': np.zeros((self.iterations, self.years)), 
             'cash_withdrawal': np.zeros((self.iterations, self.years)),    
@@ -131,7 +152,6 @@ class StochasticRetirementEngine:
         spouse_life_exp = self.inputs.get('spouse_life_exp', 95)
         
         current_year = datetime.datetime.now().year
-        
         base_filing_status = self.inputs['filing_status']
         base_salary = self.inputs.get('current_salary', 0.0)
         phased_ret_active = self.inputs.get('phased_ret_active', False)
@@ -178,7 +198,6 @@ class StochasticRetirementEngine:
             niit_threshold = NIIT_THRESHOLD_MFJ if current_filing_status == 'MFJ' else NIIT_THRESHOLD_SINGLE
             base_moop = MOOP_LIMITS.get(health_plan, (999999, 999999))[moop_idx]
             
-            # Identify the absolute highest allowed IRS limit based on user selection
             limit_max_pct = np.inf
             for limit, rate in brackets:
                 if np.isclose(rate, user_max_bracket, atol=0.01):
@@ -218,14 +237,15 @@ class StochasticRetirementEngine:
             history['salary_income'][:, yr] = current_salary_income
             history['pension_income'][:, yr] = current_pension
             
-            prev_total_port = tsp + roth + taxable + cash
+            prev_total_port = tsp + ira + roth + taxable + cash
             tsp *= (1 + returns[:, yr, 1])
-            roth *= (1 + returns[:, yr, 2])
-            taxable *= (1 + returns[:, yr, 3])
-            hsa *= (1 + returns[:, yr, 4])
+            ira *= (1 + returns[:, yr, 2])
+            roth *= (1 + returns[:, yr, 3])
+            taxable *= (1 + returns[:, yr, 4])
+            hsa *= (1 + returns[:, yr, 5])
             cash *= (1 + cash_ret)
             
-            current_total_port = tsp + roth + taxable + cash
+            current_total_port = tsp + ira + roth + taxable + cash
             history['port_return'][:, yr] = (current_total_port - prev_total_port) / np.maximum(prev_total_port, 1)
             history['real_return'][:, yr] = history['port_return'][:, yr] - inf_paths[:, yr]
             
@@ -256,7 +276,6 @@ class StochasticRetirementEngine:
                     scheduled_withdrawal = np.where(sorr_trigger, scheduled_withdrawal * 0.9, scheduled_withdrawal)
                     constraint_flag = np.where(sorr_trigger, 1, constraint_flag)
                     
-                # MINIMUM SPENDING FLOOR
                 inflated_min_spend = min_spending * cum_inf
                 w_needed = np.maximum(scheduled_withdrawal, inflated_min_spend)
 
@@ -264,15 +283,21 @@ class StochasticRetirementEngine:
             
             rmd_divisor = IRS_RMD_DIVISORS.get(age, 1.9 if age > 120 else 0.0)
             rmd_rate = 1.0 / rmd_divisor if rmd_divisor > 0 else 0.0
-            rmds = tsp * rmd_rate
+            
+            rmd_tsp = tsp * rmd_rate
+            rmd_ira = ira * rmd_rate
+            rmds = rmd_tsp + rmd_ira
+            
             history['rmds'][:, yr] = rmds
-            tsp -= rmds
+            tsp -= rmd_tsp
+            ira -= rmd_ira
             
             w_remaining = np.maximum(0, w_needed - rmds)
             excess_rmd = np.maximum(0, rmds - w_needed)
             history['extra_rmd'][:, yr] = excess_rmd
             
             w_tsp = np.zeros(self.iterations)
+            w_ira = np.zeros(self.iterations)
             w_cash = np.zeros(self.iterations)
             w_taxable = np.zeros(self.iterations)
             w_roth = np.zeros(self.iterations)
@@ -284,6 +309,10 @@ class StochasticRetirementEngine:
                 w_tsp_norm = np.where(~downturn, np.minimum(tsp, w_remaining), 0)
                 tsp -= w_tsp_norm
                 w_remaining -= w_tsp_norm
+                
+                w_ira_norm = np.where(~downturn, np.minimum(ira, w_remaining), 0)
+                ira -= w_ira_norm
+                w_remaining -= w_ira_norm
                 
                 w_cash_down = np.where(downturn, np.minimum(cash, w_remaining), 0)
                 cash -= w_cash_down
@@ -309,18 +338,24 @@ class StochasticRetirementEngine:
                 roth -= w_roth_fb
                 w_remaining -= w_roth_fb
                 
+                w_ira_fb = np.minimum(ira, w_remaining)
+                ira -= w_ira_fb
+                w_remaining -= w_ira_fb
+                
                 w_tsp_fb = np.minimum(tsp, w_remaining)
                 tsp -= w_tsp_fb
                 w_remaining -= w_tsp_fb
                 
                 w_tsp += (w_tsp_norm + w_tsp_fb)
+                w_ira += (w_ira_norm + w_ira_fb)
                 w_cash += (w_cash_down + w_cash_fb)
                 w_taxable += (w_tax_down + w_tax_fb)
                 w_roth += (w_roth_down + w_roth_fb)
             
-            actual_portfolio_withdrawal = w_tsp + w_cash + w_taxable + w_roth + rmds - excess_rmd
+            actual_portfolio_withdrawal = w_tsp + w_ira + w_cash + w_taxable + w_roth + rmds - excess_rmd
             
             history['tsp_withdrawal'][:, yr] = w_tsp
+            history['ira_withdrawal'][:, yr] = w_ira
             history['roth_withdrawal'][:, yr] = w_roth
             history['taxable_withdrawal'][:, yr] = w_taxable
             history['cash_withdrawal'][:, yr] = w_cash
@@ -333,7 +368,7 @@ class StochasticRetirementEngine:
             taxable += excess_rmd
             taxable_basis += excess_rmd 
             
-            gross_income = rmds + w_tsp + current_pension + (ss * 0.85) + current_salary_income
+            gross_income = rmds + w_tsp + w_ira + current_pension + (ss * 0.85) + current_salary_income
             magi = gross_income.copy() 
             taxable_income = np.maximum(0, gross_income - deduction) 
             
@@ -352,7 +387,7 @@ class StochasticRetirementEngine:
             base_tax_fed += (ltcg_tax + niit_tax)
             
             state_taxable_base = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), 
-                                          taxable_income - rmds - w_tsp - current_pension - (ss * 0.85), 
+                                          taxable_income - rmds - w_tsp - w_ira - current_pension - (ss * 0.85), 
                                           taxable_income)
             state_taxable_base = np.maximum(0, state_taxable_base)
             base_tax_state_local = state_taxable_base * combined_state_local_rate
@@ -368,11 +403,16 @@ class StochasticRetirementEngine:
             if roth_strategy > 0 and age >= ret_age and age < 75:
                 space = np.zeros(self.iterations)
                 
-                if roth_strategy == 1: 
+                if roth_strategy in [1, 4]: 
                     for limit, rate in brackets:
                         mask = (taxable_income < limit) & (space == 0)
                         space[mask] = limit - taxable_income[mask] - 1
                     space = np.where(space > 1e6, 0, space)
+                    
+                    if roth_strategy == 1:
+                        for irmaa_limit, surcharge in irmaa_brackets:
+                            crosses_cliff = (magi < irmaa_limit) & ((magi + space) >= irmaa_limit)
+                            space = np.where(crosses_cliff, irmaa_limit - magi - 1, space)
                         
                 elif roth_strategy == 2: 
                     irmaa_tier_1 = irmaa_brackets[0][0]
@@ -382,11 +422,18 @@ class StochasticRetirementEngine:
                     irmaa_tier_2 = irmaa_brackets[1][0]
                     space = np.maximum(0, irmaa_tier_2 - magi - 1)
                 
-                # Enforce the user-selected absolute Maximum Tax Bracket Cap
                 max_allowable_space = np.maximum(0, limit_max_pct - taxable_income - 1)
                 space = np.minimum(space, max_allowable_space)
                 
-                conv_amt = np.minimum(space, tsp)
+                conv_from_ira = np.minimum(space, ira)
+                ira -= conv_from_ira
+                rem_space = space - conv_from_ira
+                
+                conv_from_tsp = np.minimum(rem_space, tsp)
+                tsp -= conv_from_tsp
+                
+                conv_amt = conv_from_ira + conv_from_tsp
+                
                 final_taxable_income = taxable_income + conv_amt
                 final_magi = magi + conv_amt
                 
@@ -417,9 +464,7 @@ class StochasticRetirementEngine:
                 else:
                     net_to_roth = conv_amt - extra_tax_total
                     
-                tsp -= conv_amt
                 roth += net_to_roth
-                
                 total_tax_fed = new_tax_fed + ltcg_tax + niit_tax
                 total_tax_state = base_tax_state_local + extra_tax_state
             
@@ -451,12 +496,12 @@ class StochasticRetirementEngine:
             oop_remainder = inflated_oop - w_hsa
             
             history['health_cost'][:, yr] = current_health_premium + oop_remainder
-            
             current_mortgage = np.full(self.iterations, mortgage_pmt if yr < mortgage_yrs else 0.0)
             history['mortgage_cost'][:, yr] = current_mortgage
             
-            history['total_bal'][:, yr] = tsp + roth + taxable + cash
+            history['total_bal'][:, yr] = tsp + ira + roth + taxable + cash
             history['tsp_bal'][:, yr] = tsp
+            history['ira_bal'][:, yr] = ira
             history['roth_bal'][:, yr] = roth
             history['taxable_bal'][:, yr] = taxable
             history['cash_bal'][:, yr] = cash
@@ -492,26 +537,28 @@ class StochasticRetirementEngine:
             return 0.04
             
     def analyze_portfolios(self, opt_iwr, roth_strategy=0):
-        # Evaluates the 3 standard portfolios to find the Efficient Frontier
         results = {}
+        # 1. Custom Mix
+        hist_custom = self.run_mc(opt_iwr, seed=42, roth_strategy=roth_strategy, override_port=None)
+        results["Your Custom Mix"] = {'wealth': np.median(hist_custom['total_bal'][:, -1]), 'cut_prob': np.mean(np.any(hist_custom['constraint_active'] == 1, axis=1)) * 100, 'hist': hist_custom}
+        # 2. Benchmark Overrides
         for port in ["Conservative (20% Stock / 80% Bond)", "Moderate (60% Stock / 40% Bond)", "Aggressive (100% Stock)"]:
-            hist = self.run_mc(opt_iwr, seed=42, roth_strategy=roth_strategy, test_portfolio=port)
-            med_wealth = np.median(hist['total_bal'][:, -1])
-            cut_paths = np.any(hist['constraint_active'] == 1, axis=1)
-            cut_prob = np.mean(cut_paths) * 100
-            results[port] = {'wealth': med_wealth, 'cut_prob': cut_prob, 'hist': hist}
+            hist = self.run_mc(opt_iwr, seed=42, roth_strategy=roth_strategy, override_port=port)
+            results[port] = {'wealth': np.median(hist['total_bal'][:, -1]), 'cut_prob': np.mean(np.any(hist['constraint_active'] == 1, axis=1)) * 100, 'hist': hist}
         return results
-        
+
     def analyze_roth_strategies(self, opt_iwr):
         hist_base = self.run_mc(opt_iwr, seed=42, roth_strategy=0)
         hist_bracket = self.run_mc(opt_iwr, seed=42, roth_strategy=1)
         hist_irmaa1 = self.run_mc(opt_iwr, seed=42, roth_strategy=2)
         hist_irmaa2 = self.run_mc(opt_iwr, seed=42, roth_strategy=3)
+        hist_aggressive = self.run_mc(opt_iwr, seed=42, roth_strategy=4) 
         
         results = {
             'Baseline (None)': {'wealth': np.median(hist_base['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_base['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_base['rmds'], axis=0)), 'hist': hist_base},
             'Target Current Bracket': {'wealth': np.median(hist_bracket['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_bracket['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_bracket['rmds'], axis=0)), 'hist': hist_bracket},
             'Target IRMAA Tier 1': {'wealth': np.median(hist_irmaa1['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa1['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa1['rmds'], axis=0)), 'hist': hist_irmaa1},
             'Target IRMAA Tier 2': {'wealth': np.median(hist_irmaa2['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa2['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa2['rmds'], axis=0)), 'hist': hist_irmaa2},
+            'Aggressive Target Bracket': {'wealth': np.median(hist_aggressive['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_aggressive['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_aggressive['rmds'], axis=0)), 'hist': hist_aggressive}
         }
         return results

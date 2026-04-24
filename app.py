@@ -109,9 +109,8 @@ if submit:
         st.error(f"SYSTEM HALTED: You must explicitly provide values for: {', '.join(missing_vitals)}")
         st.stop()
 
-    def safe_float(val, is_vol=False):
-        v = float(val or 0.0)
-        return 0.0001 if (is_vol and v == 0.0) else v
+    def safe_float(val):
+        return float(val or 0.0)
 
     inputs = {
         'current_age': int(cur_age), 'ret_age': int(ret_age), 'life_expectancy': int(life_exp),
@@ -122,7 +121,7 @@ if submit:
         'phased_ret_active': phased_ret_active, 'phased_ret_age': int(phased_ret_age or ret_age),
         'pension_est': safe_float(pension_est), 'ss_fra': safe_float(ss_fra), 'ss_claim_age': int(ss_claim_age),
         'min_spending': safe_float(min_spending), 'max_spending': safe_float(max_spending),
-        'max_tax_bracket': max_tax_bracket,
+        'max_tax_bracket': float(max_tax_bracket.strip('%'))/100,
         'health_plan': health_plan, 'health_cost': safe_float(health_cost), 'oop_cost': safe_float(oop_cost), 
         'mortgage_pmt': safe_float(mortgage_pmt), 'mortgage_yrs': int(mortgage_yrs or 0),
         'home_value': safe_float(home_value), 'target_floor': safe_float(target_floor),
@@ -138,9 +137,14 @@ if submit:
     with st.spinner("Executing 10,000 Iteration Monte Carlo & Brent Optimization..."):
         engine = StochasticRetirementEngine(inputs)
         opt_iwr = engine.optimize_iwr()
+        
+        # Determine winning Roth Strategy
         roth_results = engine.analyze_roth_strategies(opt_iwr)
         winner = max(roth_results, key=lambda key: roth_results[key]['wealth'])
         history = roth_results[winner]['hist']
+        
+        # Run Efficient Frontier Analysis
+        port_analysis = engine.analyze_portfolios(opt_iwr, roth_strategy=1) # Proxy run for benchmarks
     
     st.success(f"Simulation Complete. Optimized Initial Portfolio Withdrawal Rate: **{opt_iwr*100:.2f}%**")
 
@@ -162,6 +166,25 @@ if submit:
         col2.metric("Median Terminal Wealth", f"${median_paths[-1]:,.0f}")
         col3.metric("10th Percentile Wealth", f"${np.percentile(history['total_bal'], 10, axis=0)[-1]:,.0f}")
         st.plotly_chart(plot_wealth_trajectory(history, inputs['target_floor'], years_arr), use_container_width=True)
+        
+        st.markdown("---")
+        st.subheader("Portfolio Optimization & Efficient Frontier")
+        st.write("This analysis evaluates your custom account-by-account mix against standard benchmark portfolios to find the optimal balance of growth vs. Sequence of Return Risk (guardrail pay cuts).")
+        
+        port_names = list(port_analysis.keys())
+        port_wealths = [port_analysis[p]['wealth'] for p in port_names]
+        port_cuts = [port_analysis[p]['cut_prob'] for p in port_names]
+        
+        p_df = pd.DataFrame({
+            "Portfolio Strategy": port_names, 
+            "Median Terminal Wealth": port_wealths, 
+            "Probability of Guardrail Pay Cuts": port_cuts
+        })
+        st.table(p_df.style.format({
+            "Median Terminal Wealth": "${:,.0f}", 
+            "Probability of Guardrail Pay Cuts": "{:.1f}%"
+        }))
+        st.success(f"**Current Selection:** You are evaluating **'Your Custom Mix'**. While an Aggressive portfolio yields the highest Terminal Wealth, its high volatility dramatically increases your risk of forced lifestyle pay cuts early in retirement. The optimal portfolio provides a balance.")
 
     with t2:
         st.subheader("Integrated Cash Flow & Simulation Execution")
