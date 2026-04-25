@@ -22,7 +22,7 @@ ui_styling = """
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    header {visibility: hidden;}
+    [data-testid="stHeader"] {visibility: hidden;}
     .block-container {
         padding-top: 2rem;
         padding-bottom: 2rem;
@@ -45,19 +45,7 @@ st.markdown(ui_styling, unsafe_allow_html=True)
 st.title("Advanced Quantitative Retirement Planner")
 st.markdown("Institution-Grade Monte Carlo Simulator | Constant Amortization Spending Model (CASAM)")
 
-# --- SAVE / LOAD PROFILE FEATURE ---
-st.sidebar.header("💾 Client Profiles")
-uploaded_profile = st.sidebar.file_uploader("Load Saved Profile (.json)", type="json")
-
-if uploaded_profile is not None:
-    try:
-        loaded_data = json.load(uploaded_profile)
-        for key, value in loaded_data.items():
-            st.session_state[key] = value
-        st.sidebar.success("Profile Loaded Successfully!")
-    except Exception as e:
-        st.sidebar.error("Error loading profile.")
-
+# Helper to extract current inputs for saving
 def get_current_state():
     keys_to_save = [
         'cur_age', 'ret_age', 'life_exp', 'filing_status', 'spouse_age', 'spouse_life_exp',
@@ -69,14 +57,34 @@ def get_current_state():
     ]
     return {k: st.session_state[k] for k in keys_to_save if k in st.session_state}
 
-st.sidebar.download_button(
-    label="⬇️ Save Current Profile",
-    data=json.dumps(get_current_state(), indent=4),
-    file_name="client_profile.json",
-    mime="application/json"
-)
-st.sidebar.markdown("---")
+# --- SAVE / LOAD PROFILE FEATURE (MOVED TO MAIN BODY) ---
+with st.expander("💾 Client Profile Management (Save / Load)", expanded=False):
+    st.write("Save your current inputs to your computer, or load a previously saved profile to instantly fill out the form.")
+    col_load, col_save = st.columns(2)
+    
+    with col_load:
+        uploaded_profile = st.file_uploader("Load Saved Profile (.json)", type="json")
+        if uploaded_profile is not None:
+            try:
+                loaded_data = json.load(uploaded_profile)
+                for key, value in loaded_data.items():
+                    st.session_state[key] = value
+                st.success("Profile Loaded Successfully!")
+            except Exception as e:
+                st.error("Error loading profile.")
+                
+    with col_save:
+        st.write("") # Alignment spacing
+        st.write("")
+        st.download_button(
+            label="⬇️ Save Current Profile to Computer",
+            data=json.dumps(get_current_state(), indent=4),
+            file_name="client_profile.json",
+            mime="application/json",
+            use_container_width=True
+        )
 
+# --- THE MAIN ACCORDION FORM ---
 with st.form("input_form"):
     st.markdown("### Step 1: Build Your Profile")
     
@@ -215,6 +223,8 @@ if submit:
         roth_results, winner, history = engine.analyze_roth_strategies(opt_iwr)
         port_analysis = engine.analyze_portfolios(opt_iwr, roth_strategy=1) 
     
+    st.success(f"Simulation Complete. Optimized Initial Portfolio Withdrawal Rate: **{opt_iwr*100:.2f}%**")
+
     years_arr = np.arange(datetime.datetime.now().year, datetime.datetime.now().year + engine.years)
     age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine.years)
     median_paths = np.median(history['total_bal'], axis=0)
@@ -301,6 +311,9 @@ if submit:
     with t4:
         st.subheader("Net Worth Forecast & Asset Liquidity Profile")
         st.plotly_chart(plot_liquidity_timeline(history, years_arr), use_container_width=True)
+        
+        total_cash_short_term = df_median['Money Market Balance'].iloc[ret_idx] + df_median['Taxable ETF Balance'].iloc[ret_idx]
+        safe_years = total_cash_short_term / max(yr1_burn, 1)
         
         st.markdown("### Asset Liquidity Profile (Year 1 of Retirement)")
         c1, c2, c3 = st.columns(3)
@@ -391,9 +404,7 @@ if submit:
             st.write(f"- **Net Increase to Legacy:** ${wealth_increase:,.0f}")
             
             st.markdown("#### Step-by-Step Conversion Schedule")
-            # --- THE FIX: Extracting correctly from the 'history' array ---
-            roth_amts = np.median(history['roth_conversion'], axis=0)
-            conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_amts, "Est. IRS Taxable Income": np.median(history['taxable_income'], axis=0)})
+            conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_results[winner]['conv_path'], "Est. IRS Taxable Income": roth_results[winner]['taxable_inc_path']})
             st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}", "Est. IRS Taxable Income": "${:,.0f}"}))
 
     with t9:
