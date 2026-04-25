@@ -134,6 +134,7 @@ class StochasticRetirementEngine:
             'medicare_cost': np.zeros((self.iterations, self.years)),
             'health_cost': np.zeros((self.iterations, self.years)),
             'mortgage_cost': np.zeros((self.iterations, self.years)),
+            'additional_expenses': np.zeros((self.iterations, self.years)), # NEW: Smile Curve Track
             'net_spendable': np.zeros((self.iterations, self.years)),
             'salary_income': np.zeros((self.iterations, self.years)),
             'port_return': np.zeros((self.iterations, self.years)),
@@ -169,6 +170,7 @@ class StochasticRetirementEngine:
         
         mortgage_pmt = self.inputs.get('mortgage_pmt', 0.0)
         mortgage_yrs = self.inputs.get('mortgage_yrs', 0)
+        base_add_exp = self.inputs.get('additional_expenses', 0.0)
         annual_savings = self.inputs.get('annual_savings', 0.0)
 
         state_str = self.inputs.get('state', '').strip().upper()
@@ -502,9 +504,18 @@ class StochasticRetirementEngine:
             oop_remainder = inflated_oop - w_hsa
             
             history['health_cost'][:, yr] = current_health_premium + oop_remainder
-            
             current_mortgage = np.full(self.iterations, mortgage_pmt if yr < mortgage_yrs else 0.0)
             history['mortgage_cost'][:, yr] = current_mortgage
+            
+            # --- RETIREMENT SMILE CURVE (ADDITIONAL EXPENSES) ---
+            if age >= ret_age:
+                years_in_ret = age - ret_age
+                smile_mult = 1.0 - (0.015 * years_in_ret) + (0.0005 * (years_in_ret ** 2))
+                current_add_exp = base_add_exp * cum_inf * smile_mult
+            else:
+                current_add_exp = np.zeros(self.iterations)
+            
+            history['additional_expenses'][:, yr] = current_add_exp
             
             history['total_bal'][:, yr] = tsp + ira + roth + taxable + cash
             history['tsp_bal'][:, yr] = tsp
@@ -518,7 +529,7 @@ class StochasticRetirementEngine:
                 history['net_spendable'][:, yr] = (actual_portfolio_withdrawal + current_pension + ss + current_salary_income
                                                    - total_tax_fed - total_tax_state 
                                                    - medicare_cost - history['health_cost'][:, yr] 
-                                                   - current_mortgage)
+                                                   - current_mortgage - current_add_exp)
             else:
                 history['net_spendable'][:, yr] = 0.0
             
@@ -542,8 +553,7 @@ class StochasticRetirementEngine:
             return optimize.brentq(self.objective_function, a=0.01, b=0.12, xtol=1e-4, maxiter=20)
         except ValueError:
             return 0.04
-
-    # --- THE RAM FIX: ONLY STORE LIGHTWEIGHT METRICS AND KEEP THE BEST HISTORY ---
+            
     def analyze_portfolios(self, opt_iwr, roth_strategy=0):
         results = {}
         hist_custom = self.run_mc(opt_iwr, seed=42, roth_strategy=roth_strategy, override_port=None)
@@ -567,12 +577,13 @@ class StochasticRetirementEngine:
 
     def analyze_roth_strategies(self, opt_iwr):
         results = {}
+        user_max = float(self.inputs.get("max_tax_bracket", 0.24)) * 100
         strats = [
             (0, 'Baseline (None)'),
-            (1, 'Current Bracket (Capped at 24%)'),
-            (2, 'Target IRMAA Tier 1 (Capped at 24%)'),
-            (3, 'Target IRMAA Tier 2 (Capped at 24%)'),
-            (4, 'Aggressive 32% Bracket Fill')
+            (1, 'Fill Current Bracket (IRMAA Protected)'),
+            (2, 'Target IRMAA Tier 1'),
+            (3, 'Target IRMAA Tier 2'),
+            (4, f'Max User Bracket Fill ({user_max:.0f}%)')
         ]
         
         best_wealth = -np.inf

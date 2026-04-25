@@ -50,14 +50,14 @@ def plot_cash_flow_sources(history, years_arr):
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['taxable_withdrawal'], axis=0), name="Taxable Withdrawal", marker_color='orange'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['cash_withdrawal'], axis=0), name="Cash Withdrawal", marker_color='gray'))
     
-    total_need = np.median(history['net_spendable'] + history['taxes_fed'] + history['taxes_state'] + history['health_cost'] + history['medicare_cost'] + history['mortgage_cost'], axis=0)
+    total_need = np.median(history['net_spendable'] + history['taxes_fed'] + history['taxes_state'] + history['health_cost'] + history['medicare_cost'] + history['mortgage_cost'] + history['additional_expenses'], axis=0)
     fig.add_trace(go.Scatter(x=years_arr, y=total_need, mode='lines', name='Total Spending Need', line=dict(color='black', width=2)))
     fig.update_layout(barmode='stack', title="Income Sources vs Total Spending Need", xaxis_title="Year", yaxis_title="Amount ($)")
     return fig
 
 def plot_income_gap(history, years_arr):
     guaranteed_income = np.median(history['salary_income'] + history['ss_income'] + history['pension_income'], axis=0)
-    total_expenses = np.median(history['taxes_fed'] + history['health_cost'] + history['medicare_cost'] + history['mortgage_cost'] + history['net_spendable'], axis=0)
+    total_expenses = np.median(history['taxes_fed'] + history['health_cost'] + history['medicare_cost'] + history['mortgage_cost'] + history['additional_expenses'] + history['net_spendable'], axis=0)
     
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=years_arr, y=total_expenses, mode='lines', name='Total Expenses / Lifestyle', line=dict(color='red', width=2)))
@@ -71,6 +71,7 @@ def plot_expenses_breakdown(history, years_arr):
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['medicare_cost'], axis=0), name="Medicare + IRMAA", marker_color='orange'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['health_cost'], axis=0), name="Health / OOP", marker_color='purple'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['mortgage_cost'], axis=0), name="Mortgage Payment", marker_color='brown'))
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['additional_expenses'], axis=0), name="Additional Expenses (Smile)", marker_color='pink'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['net_spendable'], axis=0), name="Discretionary Lifestyle", marker_color='teal'))
     fig.update_layout(barmode='stack', title="Itemized Core Expenses", xaxis_title="Year", yaxis_title="Amount ($)")
     return fig
@@ -133,7 +134,6 @@ def plot_roth_strategy_comparison(roth_results):
     fig.update_layout(xaxis_title="Median Terminal Wealth ($)", yaxis_title="")
     return fig
 
-# --- THE RAM FIX: Grab the saved median tax_path instead of digging into hist ---
 def plot_roth_tax_impact(roth_results, winner, years_arr):
     fig = go.Figure()
     base_tax = roth_results['Baseline (None)']['tax_path']
