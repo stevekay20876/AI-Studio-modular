@@ -4,6 +4,7 @@ import scipy.optimize as optimize
 from scipy.stats import t
 import datetime
 from config import *
+import gc
 
 class StochasticRetirementEngine:
     def __init__(self, inputs):
@@ -159,6 +160,7 @@ class StochasticRetirementEngine:
         pay_taxes_from_cash = self.inputs.get('pay_taxes_from_cash', True)
         
         min_spending = self.inputs.get('min_spending', 0.0)
+        max_spending = self.inputs.get('max_spending', 0.0)
         user_max_bracket = float(self.inputs.get('max_tax_bracket', '0.24'))
         
         base_health_premium = self.inputs.get('health_cost', 0.0)
@@ -278,6 +280,10 @@ class StochasticRetirementEngine:
                     
                 inflated_min_spend = min_spending * cum_inf
                 w_needed = np.maximum(scheduled_withdrawal, inflated_min_spend)
+                
+                if max_spending > 0:
+                    inflated_max_spend = max_spending * cum_inf
+                    w_needed = np.minimum(w_needed, inflated_max_spend)
 
             history['constraint_active'][:, yr] = constraint_flag
             
@@ -496,6 +502,7 @@ class StochasticRetirementEngine:
             oop_remainder = inflated_oop - w_hsa
             
             history['health_cost'][:, yr] = current_health_premium + oop_remainder
+            
             current_mortgage = np.full(self.iterations, mortgage_pmt if yr < mortgage_yrs else 0.0)
             history['mortgage_cost'][:, yr] = current_mortgage
             
@@ -535,30 +542,62 @@ class StochasticRetirementEngine:
             return optimize.brentq(self.objective_function, a=0.01, b=0.12, xtol=1e-4, maxiter=20)
         except ValueError:
             return 0.04
-            
+
+    # --- THE RAM FIX: ONLY STORE LIGHTWEIGHT METRICS AND KEEP THE BEST HISTORY ---
     def analyze_portfolios(self, opt_iwr, roth_strategy=0):
         results = {}
-        # 1. Custom Mix
         hist_custom = self.run_mc(opt_iwr, seed=42, roth_strategy=roth_strategy, override_port=None)
-        results["Your Custom Mix"] = {'wealth': np.median(hist_custom['total_bal'][:, -1]), 'cut_prob': np.mean(np.any(hist_custom['constraint_active'] == 1, axis=1)) * 100, 'hist': hist_custom}
-        # 2. Benchmark Overrides
+        results["Your Custom Mix"] = {
+            'wealth': np.median(hist_custom['total_bal'][:, -1]), 
+            'cut_prob': np.mean(np.any(hist_custom['constraint_active'] == 1, axis=1)) * 100
+        }
+        del hist_custom
+        gc.collect()
+        
         for port in ["Conservative (20% Stock / 80% Bond)", "Moderate (60% Stock / 40% Bond)", "Aggressive (100% Stock)"]:
             hist = self.run_mc(opt_iwr, seed=42, roth_strategy=roth_strategy, override_port=port)
-            results[port] = {'wealth': np.median(hist['total_bal'][:, -1]), 'cut_prob': np.mean(np.any(hist['constraint_active'] == 1, axis=1)) * 100, 'hist': hist}
+            results[port] = {
+                'wealth': np.median(hist['total_bal'][:, -1]), 
+                'cut_prob': np.mean(np.any(hist['constraint_active'] == 1, axis=1)) * 100
+            }
+            del hist
+            gc.collect()
+            
         return results
 
     def analyze_roth_strategies(self, opt_iwr):
-        hist_base = self.run_mc(opt_iwr, seed=42, roth_strategy=0)
-        hist_bracket = self.run_mc(opt_iwr, seed=42, roth_strategy=1)
-        hist_irmaa1 = self.run_mc(opt_iwr, seed=42, roth_strategy=2)
-        hist_irmaa2 = self.run_mc(opt_iwr, seed=42, roth_strategy=3)
-        hist_aggressive = self.run_mc(opt_iwr, seed=42, roth_strategy=4) 
+        results = {}
+        strats = [
+            (0, 'Baseline (None)'),
+            (1, 'Current Bracket (Capped at 24%)'),
+            (2, 'Target IRMAA Tier 1 (Capped at 24%)'),
+            (3, 'Target IRMAA Tier 2 (Capped at 24%)'),
+            (4, 'Aggressive 32% Bracket Fill')
+        ]
         
-        results = {
-            'Baseline (None)': {'wealth': np.median(hist_base['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_base['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_base['rmds'], axis=0)), 'hist': hist_base},
-            'Target Current Bracket': {'wealth': np.median(hist_bracket['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_bracket['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_bracket['rmds'], axis=0)), 'hist': hist_bracket},
-            'Target IRMAA Tier 1': {'wealth': np.median(hist_irmaa1['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa1['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa1['rmds'], axis=0)), 'hist': hist_irmaa1},
-            'Target IRMAA Tier 2': {'wealth': np.median(hist_irmaa2['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_irmaa2['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_irmaa2['rmds'], axis=0)), 'hist': hist_irmaa2},
-            'Aggressive Target Bracket': {'wealth': np.median(hist_aggressive['total_bal'][:, -1]), 'taxes': np.sum(np.median(hist_aggressive['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist_aggressive['rmds'], axis=0)), 'hist': hist_aggressive}
-        }
-        return results
+        best_wealth = -np.inf
+        winner_name = 'Baseline (None)'
+        winner_hist = None
+        
+        for s_idx, s_name in strats:
+            hist = self.run_mc(opt_iwr, seed=42, roth_strategy=s_idx)
+            wealth = np.median(hist['total_bal'][:, -1])
+            
+            results[s_name] = {
+                'wealth': wealth,
+                'taxes': np.sum(np.median(hist['taxes_fed'], axis=0)),
+                'rmds': np.sum(np.median(hist['rmds'], axis=0)),
+                'tax_path': np.median(hist['taxes_fed'], axis=0),
+                'conv_path': np.median(hist['roth_conversion'], axis=0),
+                'taxable_inc_path': np.median(hist['taxable_income'], axis=0)
+            }
+            
+            if wealth > best_wealth:
+                best_wealth = wealth
+                winner_name = s_name
+                winner_hist = hist 
+            else:
+                del hist 
+                gc.collect()
+                
+        return results, winner_name, winner_hist

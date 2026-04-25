@@ -134,17 +134,13 @@ if submit:
         'pay_taxes_from_cash': pay_taxes_from_cash
     }
 
-    with st.spinner("Executing 10,000 Iteration Monte Carlo & Brent Optimization..."):
+    with st.spinner("Executing 10,000 Iteration Monte Carlo & RAM Optimization..."):
         engine = StochasticRetirementEngine(inputs)
         opt_iwr = engine.optimize_iwr()
         
-        # Determine winning Roth Strategy
-        roth_results = engine.analyze_roth_strategies(opt_iwr)
-        winner = max(roth_results, key=lambda key: roth_results[key]['wealth'])
-        history = roth_results[winner]['hist']
-        
-        # Run Efficient Frontier Analysis
-        port_analysis = engine.analyze_portfolios(opt_iwr, roth_strategy=1) # Proxy run for benchmarks
+        # Unpack the new highly memory-efficient variables
+        roth_results, winner, history = engine.analyze_roth_strategies(opt_iwr)
+        port_analysis = engine.analyze_portfolios(opt_iwr, roth_strategy=1) 
     
     st.success(f"Simulation Complete. Optimized Initial Portfolio Withdrawal Rate: **{opt_iwr*100:.2f}%**")
 
@@ -152,6 +148,7 @@ if submit:
     age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine.years)
     median_paths = np.median(history['total_bal'], axis=0)
     prob_success = np.mean(history['total_bal'][:, -1] >= inputs['target_floor']) * 100
+    
     df_median = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
 
     t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11 = st.tabs([
@@ -184,11 +181,9 @@ if submit:
             "Median Terminal Wealth": "${:,.0f}", 
             "Probability of Guardrail Pay Cuts": "{:.1f}%"
         }))
-        st.success(f"**Current Selection:** You are evaluating **'Your Custom Mix'**. While an Aggressive portfolio yields the highest Terminal Wealth, its high volatility dramatically increases your risk of forced lifestyle pay cuts early in retirement. The optimal portfolio provides a balance.")
 
     with t2:
         st.subheader("Integrated Cash Flow & Simulation Execution")
-        st.info(f"**How the Model Reaches the Target Legacy:** The mathematical engine utilizes a 1-Dimensional Root-Finding Algorithm (Brent's Method). It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) up and down until it successfully forces the Median Terminal Wealth to land exactly at your declared Target Legacy Floor. *(If you inputted a Maximum Spending Cap, the Terminal Wealth may artificially exceed the floor because your spending was capped).*")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -205,10 +200,9 @@ if submit:
         st.plotly_chart(plot_income_volatility(history, years_arr), use_container_width=True)
         st.markdown("""
         ### What the Guardrails Mean for You
-        - **Capital Preservation Rule (The Pay Cut):** If the market crashes and your withdrawal rate climbs 20% higher than your initial rate, the engine forces a **10% reduction** in your spending.
-        - **Prosperity Rule (The Pay Raise):** If the market booms and your withdrawal rate falls 20% below your initial rate, the engine grants you a **10% raise** in discretionary spending.
-        - **Inflation Freeze Rule:** In any year where your portfolio suffers a negative return, you forfeit your annual inflation increase.
-        - **Minimum Spending Floor Override:** *If you inputted a Minimum Spending Amount, the engine will override all Guardrail pay cuts to ensure your cash flow never drops below your absolute survival line.*
+        - **Capital Preservation Rule:** If the market crashes and withdrawal rates climb 20% higher than your initial rate, the engine forces a **10% reduction** in spending.
+        - **Prosperity Rule:** If the market booms and withdrawal rates fall 20% below your initial rate, the engine grants a **10% raise**.
+        - **Inflation Freeze:** In any year where your portfolio suffers a negative return, you forfeit your annual inflation increase.
         """)
 
     with t4:
@@ -216,8 +210,8 @@ if submit:
         st.plotly_chart(plot_liquidity_timeline(history, years_arr), use_container_width=True)
         
         ret_idx = max(0, inputs['ret_age'] - inputs['current_age'])
-        total_cash_short_term = df_median['Money Market Balance'][ret_idx] + df_median['Taxable ETF Balance'][ret_idx]
-        yr1_portfolio_burn = df_median['Total Expenses'][ret_idx] + df_median['Net Spendable Annual'][ret_idx] - df_median['Social Security'][ret_idx] - df_median['Pension'][ret_idx] - df_median['Salary Income'][ret_idx]
+        total_cash_short_term = df_median['Money Market Balance'].iloc[ret_idx] + df_median['Taxable ETF Balance'].iloc[ret_idx]
+        yr1_portfolio_burn = df_median['Total Expenses'].iloc[ret_idx] + df_median['Net Spendable Annual'].iloc[ret_idx] - df_median['Social Security'].iloc[ret_idx] - df_median['Pension'].iloc[ret_idx] - df_median['Salary Income'].iloc[ret_idx]
         safe_years = total_cash_short_term / max(yr1_portfolio_burn, 1)
         
         st.markdown("### Asset Liquidity Profile (Year 1 of Retirement)")
@@ -228,23 +222,18 @@ if submit:
 
     with t5:
         st.subheader("Taxes & Dynamic Withdrawals")
+        limit_24 = TAX_BRACKETS_MFJ[3][0] if filing_status == 'MFJ' else TAX_BRACKETS_SINGLE[3][0]
+        
+        if df_median['IRS Taxable Income'].iloc[ret_idx] > limit_24:
+            st.error(f"🚨 **Lifestyle Exceeds 24% Bracket**: Your baseline spending needs naturally push your IRS Taxable Income to **${df_median['IRS Taxable Income'].iloc[ret_idx]:,.0f}**, which is above your 24% ceiling of **${limit_24:,.0f}**. The Roth Optimizer disabled itself to prevent pushing you even higher.")
+        else:
+            st.info(f"**Tax Diagnostic Check:** You selected **{filing_status}**. The 24% marginal bracket ceiling for this status is **${limit_24:,.0f}**. Your IRS Taxable Income successfully remained under this ceiling.")
+            
         col1, col2 = st.columns(2)
         with col1:
             st.plotly_chart(plot_withdrawal_hierarchy(history, years_arr), use_container_width=True)
         with col2:
             st.plotly_chart(plot_taxes_and_rmds(history, years_arr), use_container_width=True)
-            
-        st.markdown("### Tax-Efficient Withdrawal Strategy Analysis")
-        strat_data = {
-            "Strategy Component": ["Tax-Efficient Withdrawal Order", "Dynamic Downturn Strategy", "Capital Gains (LTCG)", "Impact of Inflation"],
-            "Analysis / Value": [
-                "Normal Years: Fund lifestyle purely from TSP/IRA, allowing Roth to compound tax-free.",
-                "Crash Years: Halt TSP withdrawals. Deplete Cash -> Taxable -> Roth to avoid Sequence Risk.",
-                "The engine tracks your Taxable Cost Basis. When Taxable funds are sold, it applies 0/15/20% LTCG brackets + 3.8% NIIT.",
-                "Expenses rise geometrically with CPI. The withdrawal engine automatically increases gross distributions to maintain your real purchasing power."
-            ]
-        }
-        st.table(pd.DataFrame(strat_data))
 
     with t6:
         st.subheader("After-Tax Legacy & Estate Breakdown")
@@ -274,18 +263,16 @@ if submit:
         2. **Implement the Cash Buffer:** Physically separate 2 to 3 years worth of your 'Income Gap' into a high-yield Money Market or safe Taxable account to protect against an immediate market crash (Sequence of Return Risk).
         3. **Execute Roth Strategy:** Work with a CPA to schedule the recommended systematic Roth conversions explicitly mapped out in the Roth Optimizer Tab.
         4. **Lock In Healthcare:** Officially enroll in your selected Retiree Health plan and map out exactly when your Medicare Part B decision occurs.
-        5. **Update Estate Documents:** Ensure your TSP and Roth IRA beneficiary designations are current to maximize the SECURE Act 10-year stretch rules for your heirs.
         """)
 
     with t8:
         st.subheader("Roth Conversion Optimizer")
-        st.info(f"**Target Ceiling Parameter:** The Roth optimizer rigorously evaluated all tax strategies strictly capped up to the user-selected maximum target bracket of **{max_tax_bracket}**.")
         
         col1, col2 = st.columns(2)
         with col1:
             st.plotly_chart(plot_roth_strategy_comparison(roth_results), use_container_width=True)
         with col2:
-            st.plotly_chart(plot_roth_tax_impact(roth_results, years_arr), use_container_width=True)
+            st.plotly_chart(plot_roth_tax_impact(roth_results, winner, years_arr), use_container_width=True)
             
         tax_savings = roth_results['Baseline (None)']['taxes'] - roth_results[winner]['taxes']
         rmd_reduction = roth_results['Baseline (None)']['rmds'] - roth_results[winner]['rmds']
@@ -301,8 +288,7 @@ if submit:
             st.write(f"- **Net Increase to Legacy:** ${wealth_increase:,.0f}")
             
             st.markdown("#### Step-by-Step Conversion Schedule")
-            roth_amts = np.median(roth_results[winner]['hist']['roth_conversion'], axis=0)
-            conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_amts, "Est. IRS Taxable Income": np.median(roth_results[winner]['hist']['taxable_income'], axis=0)})
+            conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_results[winner]['conv_path'], "Est. IRS Taxable Income": roth_results[winner]['taxable_inc_path']})
             st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}", "Est. IRS Taxable Income": "${:,.0f}"}))
 
     with t9:
@@ -321,6 +307,9 @@ if submit:
     with t10:
         st.subheader("Medicare Part B & Actuarial Healthcare OOP")
         st.plotly_chart(plot_medicare_comparison(history, years_arr, inputs), use_container_width=True)
+        
+        total_medicare_cost = np.sum(np.median(history['medicare_cost'], axis=0))
+        st.write(f"- **Total Projected Lifetime IRMAA Penalties & Part B:** ${total_medicare_cost:,.0f}")
         
         moop_cap = MOOP_LIMITS.get(health_plan, (999999, 999999))[1 if filing_status == 'MFJ' else 0]
         if moop_cap == 999999:
