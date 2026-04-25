@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import datetime
+import json # NEW: Required for saving/loading profiles
 
 from engine import StochasticRetirementEngine
 from exports import build_csv_dataframe
@@ -15,41 +16,6 @@ from visuals import (
 )
 
 st.set_page_config(page_title="Advanced Retirement Simulator", layout="wide")
-
-# --- INJECT BOLDIN-STYLE UI/CSS ---
-ui_styling = """
-    <style>
-    /* Hide Streamlit Branding */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    
-    /* Adjust top padding */
-    .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-    }
-    
-    /* Make metric text look like Boldin Dashboards */
-    [data-testid="stMetricValue"] {
-        font-size: 2.2rem !important;
-        font-weight: 700 !important;
-        color: #00837B !important; /* Teal Numbers */
-    }
-    
-    /* Style Containers to look like floating Cards */
-    [data-testid="stVerticalBlockBorderWrapper"] {
-        border-radius: 12px !important;
-        border: 1px solid #E5E7EB !important;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important;
-        background-color: #FFFFFF !important;
-    }
-    </style>
-"""
-st.markdown(ui_styling, unsafe_allow_html=True)
-
-st.title("Advanced Quantitative Retirement Planner")
-st.markdown("Institution-Grade Monte Carlo Simulator | Constant Amortization Spending Model (CASAM)")
 
 # --- INJECT BOLDIN-STYLE UI/CSS ---
 ui_styling = """
@@ -76,107 +42,147 @@ ui_styling = """
 """
 st.markdown(ui_styling, unsafe_allow_html=True)
 
-# --- THE NEW ACCORDION FORM (MAIN BODY) ---
+st.title("Advanced Quantitative Retirement Planner")
+st.markdown("Institution-Grade Monte Carlo Simulator | Constant Amortization Spending Model (CASAM)")
+
+# --- NEW: SAVE / LOAD PROFILE FEATURE ---
+st.sidebar.header("💾 Client Profiles")
+uploaded_profile = st.sidebar.file_uploader("Load Saved Profile (.json)", type="json")
+
+if uploaded_profile is not None:
+    try:
+        loaded_data = json.load(uploaded_profile)
+        for key, value in loaded_data.items():
+            st.session_state[key] = value
+        st.sidebar.success("Profile Loaded Successfully!")
+    except Exception as e:
+        st.sidebar.error("Error loading profile.")
+
+# Helper to extract current inputs for saving
+def get_current_state():
+    # Only save the specific input keys we care about
+    keys_to_save = [
+        'cur_age', 'ret_age', 'life_exp', 'filing_status', 'spouse_age', 'spouse_life_exp',
+        'state', 'county', 'current_salary', 'annual_savings', 'phased_ret_active', 'phased_ret_age',
+        'pension_est', 'ss_fra', 'ss_claim_age', 'target_floor', 'min_spending', 'max_spending',
+        'add_exp', 'max_tax_bracket', 'mortgage_pmt', 'mortgage_yrs', 'home_value', 'health_plan',
+        'health_cost', 'oop_cost', 'tsp_b', 'tsp_strat', 'ira_b', 'ira_strat', 'roth_b', 'roth_strat',
+        'tax_b', 'tax_basis', 'tax_strat', 'hsa_b', 'hsa_strat', 'cash_b', 'cash_r', 'pay_taxes_from_cash'
+    ]
+    return {k: st.session_state[k] for k in keys_to_save if k in st.session_state}
+
+st.sidebar.download_button(
+    label="⬇️ Save Current Profile",
+    data=json.dumps(get_current_state(), indent=4),
+    file_name="client_profile.json",
+    mime="application/json"
+)
+st.sidebar.markdown("---")
+
+# --- THE MAIN ACCORDION FORM ---
 with st.form("input_form"):
     st.markdown("### Step 1: Build Your Profile")
     
     with st.expander("👤 Personal & Tax Details", expanded=True):
         c1, c2, c3 = st.columns(3)
-        cur_age = c1.number_input("Current Age", min_value=18, max_value=100, value=None)
-        ret_age = c2.number_input("Full Retirement Age", min_value=18, max_value=100, value=None)
-        life_exp = c3.number_input("Life Expectancy Age", min_value=50, max_value=120, value=None)
+        cur_age = c1.number_input("Current Age", min_value=18, max_value=100, key="cur_age")
+        ret_age = c2.number_input("Full Retirement Age", min_value=18, max_value=100, key="ret_age")
+        life_exp = c3.number_input("Life Expectancy Age", min_value=50, max_value=120, key="life_exp")
         
         st.markdown("**Tax & Spouse Details**")
         c4, c5, c6 = st.columns(3)
-        filing_status = c4.selectbox("Tax Filing Status", ["Single", "MFJ"])
-        state = c5.text_input("State of Residence")
-        county = c6.text_input("County of Residence")
+        filing_status = c4.selectbox("Tax Filing Status", ["Single", "MFJ"], key="filing_status")
+        state_in = c5.text_input("State of Residence", key="state")
+        county_in = c6.text_input("County of Residence", key="county")
         
         c_sp1, c_sp2 = st.columns(2)
-        spouse_age = c_sp1.number_input("Spouse Current Age (If MFJ)", min_value=18, max_value=100, value=None)
-        spouse_life_exp = c_sp2.number_input("Spouse Life Expectancy", min_value=50, max_value=120, value=None)
+        spouse_age = c_sp1.number_input("Spouse Current Age (If MFJ)", min_value=18, max_value=100, value=None, key="spouse_age")
+        spouse_life_exp = c_sp2.number_input("Spouse Life Expectancy", min_value=50, max_value=120, value=None, key="spouse_life_exp")
 
     with st.expander("💼 Income & Social Security", expanded=False):
         st.markdown("**Pre-Retirement & Phased Transition**")
         c1, c2 = st.columns(2)
-        current_salary = c1.number_input("Current Annual Salary ($)", min_value=0, value=None)
-        annual_savings = c2.number_input("Total Annual Savings (Until Ret.) ($)", min_value=0, value=None)
+        current_salary = c1.number_input("Current Annual Salary ($)", min_value=0, value=None, key="current_salary")
+        annual_savings = c2.number_input("Total Annual Savings (Until Ret.) ($)", min_value=0, value=None, key="annual_savings")
         
         c3, c4 = st.columns(2)
-        phased_ret_active = c3.checkbox("Enable FERS Phased Retirement?")
-        phased_ret_age = c4.number_input("Phased Retirement Start Age", min_value=50, max_value=70, value=None)
+        phased_ret_active = c3.checkbox("Enable FERS Phased Retirement?", key="phased_ret_active")
+        phased_ret_age = c4.number_input("Phased Retirement Start Age", min_value=50, max_value=70, value=None, key="phased_ret_age")
         
         st.markdown("**Federal Details & Guaranteed Income**")
         c5, c6, c7 = st.columns(3)
-        pension_est = c5.number_input("Full Pension Est. ($)", min_value=0, value=None)
-        ss_fra = c6.number_input("Social Security at FRA ($/yr)", min_value=0, value=None)
-        ss_claim_age = c7.number_input("Target SS Claiming Age", min_value=62, max_value=70, value=67)
+        pension_est = c5.number_input("Full Pension Est. ($)", min_value=0, value=None, key="pension_est")
+        ss_fra = c6.number_input("Social Security at FRA ($/yr)", min_value=0, value=None, key="ss_fra")
+        ss_claim_age = c7.number_input("Target SS Claiming Age", min_value=62, max_value=70, value=67, key="ss_claim_age")
 
     with st.expander("📉 Expenses & Goals", expanded=False):
         st.markdown("**Spending Limits & Legacy Goals**")
         c1, c2, c3 = st.columns(3)
-        target_floor = c1.number_input("Target Legacy Floor ($)", min_value=0, value=None)
-        min_spending = c2.number_input("Minimum Spending Floor ($)", min_value=0, value=None)
-        max_spending = c3.number_input("Maximum Spending Cap ($)", min_value=0, value=None)
+        target_floor = c1.number_input("Target Legacy Floor ($)", min_value=0, value=None, key="target_floor")
+        min_spending = c2.number_input("Minimum Spending Floor ($)", min_value=0, value=None, key="min_spending")
+        max_spending = c3.number_input("Maximum Spending Cap ($)", min_value=0, value=None, key="max_spending")
         
         c4, c5 = st.columns(2)
-        add_exp = c4.number_input("Additional Expenses (Retirement Smile) ($)", min_value=0, value=None)
-        max_tax_bracket = c5.selectbox("Maximum Target Tax Bracket (Roth Cap)", ["12%", "22%", "24%", "32%", "35%", "37%"], index=2)
+        add_exp = c4.number_input("Additional Expenses (Retirement Smile) ($)", min_value=0, value=None, key="add_exp")
+        max_tax_bracket = c5.selectbox("Maximum Target Tax Bracket (Roth Cap)", ["12%", "22%", "24%", "32%", "35%", "37%"], index=2, key="max_tax_bracket")
         
         st.markdown("**Property & Debt**")
         c6, c7, c8 = st.columns(3)
-        home_value = c6.number_input("Current Home Value ($)", min_value=0, value=None)
-        mortgage_pmt = c7.number_input("Annual Mortgage Payment ($)", min_value=0, value=None)
-        mortgage_yrs = c8.number_input("Mortgage Years Remaining", min_value=0, value=None)
+        home_value = c6.number_input("Current Home Value ($)", min_value=0, value=None, key="home_value")
+        mortgage_pmt = c7.number_input("Annual Mortgage Payment ($)", min_value=0, value=None, key="mortgage_pmt")
+        mortgage_yrs = c8.number_input("Mortgage Years Remaining", min_value=0, value=None, key="mortgage_yrs")
         
         st.markdown("**Healthcare**")
         c9, c10, c11 = st.columns(3)
         health_options = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard", "Aetna Open Access", "Aetna Direct", "Aetna Advantage", "Cigna", "TRICARE for Life", "None/Self-Insure"]
-        health_plan = c9.selectbox("Retiree Health Coverage", health_options)
-        health_cost = c10.number_input("Annual Health Premium ($)", min_value=0, value=None)
-        oop_cost = c11.number_input("Typical Out-of-Pocket Medical ($)", min_value=0, value=None)
+        health_plan = c9.selectbox("Retiree Health Coverage", health_options, key="health_plan")
+        health_cost = c10.number_input("Annual Health Premium ($)", min_value=0, value=None, key="health_cost")
+        oop_cost = c11.number_input("Typical Out-of-Pocket Medical ($)", min_value=0, value=None, key="oop_cost")
 
     with st.expander("🏛️ Savings & Assets", expanded=False):
         st.markdown("**Current Portfolios & Strategies**")
         
         c1, c2 = st.columns(2)
-        tsp_b = c1.number_input("TSP Balance ($)", value=0.0)
-        tsp_strat = c2.selectbox("TSP Strategy", list(PORTFOLIOS.keys()), index=1)
+        tsp_b = c1.number_input("TSP Balance ($)", value=0.0, key="tsp_b")
+        tsp_strat = c2.selectbox("TSP Strategy", list(PORTFOLIOS.keys()), index=1, key="tsp_strat")
         
         c3, c4 = st.columns(2)
-        ira_b = c3.number_input("Trad. IRA Balance ($)", value=0.0)
-        ira_strat = c4.selectbox("Trad. IRA Strategy", list(PORTFOLIOS.keys()), index=1)
+        ira_b = c3.number_input("Trad. IRA Balance ($)", value=0.0, key="ira_b")
+        ira_strat = c4.selectbox("Trad. IRA Strategy", list(PORTFOLIOS.keys()), index=1, key="ira_strat")
         
         c5, c6 = st.columns(2)
-        roth_b = c5.number_input("Roth IRA Balance ($)", value=0.0)
-        roth_strat = c6.selectbox("Roth IRA Strategy", list(PORTFOLIOS.keys()), index=2)
+        roth_b = c5.number_input("Roth IRA Balance ($)", value=0.0, key="roth_b")
+        roth_strat = c6.selectbox("Roth IRA Strategy", list(PORTFOLIOS.keys()), index=2, key="roth_strat")
         
         c7, c8, c9 = st.columns(3)
-        tax_b = c7.number_input("Taxable Balance ($)", value=0.0)
-        tax_basis = c8.number_input("Taxable Cost Basis ($)", min_value=0.0, value=tax_b)
-        tax_strat = c9.selectbox("Taxable Strategy", list(PORTFOLIOS.keys()), index=1)
+        tax_b = c7.number_input("Taxable Balance ($)", value=0.0, key="tax_b")
+        tax_basis = c8.number_input("Taxable Cost Basis ($)", min_value=0.0, value=None, key="tax_basis")
+        tax_strat = c9.selectbox("Taxable Strategy", list(PORTFOLIOS.keys()), index=1, key="tax_strat")
         
         c10, c11 = st.columns(2)
-        hsa_b = c10.number_input("HSA Balance (Optional)", min_value=0, value=None)
-        hsa_strat = c11.selectbox("HSA Strategy", list(PORTFOLIOS.keys()), index=1)
+        hsa_b = c10.number_input("HSA Balance (Optional)", min_value=0, value=None, key="hsa_b")
+        hsa_strat = c11.selectbox("HSA Strategy", list(PORTFOLIOS.keys()), index=1, key="hsa_strat")
         
         c12, c13 = st.columns(2)
-        cash_b = c12.number_input("Money Market Balance ($)", value=0.0)
-        cash_r = c13.number_input("Money Market Yield %", value=4.0)
+        cash_b = c12.number_input("Money Market Balance ($)", value=0.0, key="cash_b")
+        cash_r = c13.number_input("Money Market Yield %", value=4.0, key="cash_r")
         
         st.markdown("---")
-        pay_taxes_from_cash = st.checkbox("Pay Roth Conversion Taxes from Cash Buffer?", value=True)
+        pay_taxes_from_cash = st.checkbox("Pay Roth Conversion Taxes from Cash Buffer?", value=True, key="pay_taxes_from_cash")
     
     # Big Teal Submit Button
     submit = st.form_submit_button("Run Projection Engine", type="primary")
 
 if submit:
+    # Handle the fact that tax_basis defaults to tax_b if empty
+    final_tax_basis = tax_basis if tax_basis is not None else tax_b
+    
     vital_checks = {"Current Age": cur_age, "Retirement Age": ret_age, "Life Expectancy": life_exp, "Target Legacy Floor": target_floor}
     if filing_status == 'MFJ':
         vital_checks["Spouse Age"] = spouse_age
         vital_checks["Spouse Life Exp"] = spouse_life_exp
         
-    missing_vitals = [name for name, val in vital_checks.items() if val is None]
+    missing_vitals = [name for name, val in vital_checks.items() if val is None or val == 0]
     if missing_vitals:
         st.error(f"SYSTEM HALTED: You must explicitly provide values for: {', '.join(missing_vitals)}")
         st.stop()
@@ -188,7 +194,7 @@ if submit:
         'current_age': int(cur_age), 'ret_age': int(ret_age), 'life_expectancy': int(life_exp),
         'spouse_age': int(spouse_age) if spouse_age else int(cur_age), 
         'spouse_life_exp': int(spouse_life_exp) if spouse_life_exp else int(life_exp),
-        'filing_status': filing_status, 'state': state, 'county': county, 
+        'filing_status': filing_status, 'state': state_in, 'county': county_in, 
         'current_salary': safe_float(current_salary), 'annual_savings': safe_float(annual_savings),
         'phased_ret_active': phased_ret_active, 'phased_ret_age': int(phased_ret_age or ret_age),
         'pension_est': safe_float(pension_est), 'ss_fra': safe_float(ss_fra), 'ss_claim_age': int(ss_claim_age),
@@ -201,7 +207,7 @@ if submit:
         'tsp_bal': safe_float(tsp_b), 'tsp_strat': tsp_strat,
         'ira_bal': safe_float(ira_b), 'ira_strat': ira_strat,
         'roth_bal': safe_float(roth_b), 'roth_strat': roth_strat,
-        'taxable_bal': safe_float(tax_b), 'taxable_basis': safe_float(tax_basis), 'taxable_strat': tax_strat,
+        'taxable_bal': safe_float(tax_b), 'taxable_basis': safe_float(final_tax_basis), 'taxable_strat': tax_strat,
         'hsa_bal': safe_float(hsa_b), 'hsa_strat': hsa_strat,
         'cash_bal': safe_float(cash_b), 'cash_ret': safe_float(cash_r)/100,
         'pay_taxes_from_cash': pay_taxes_from_cash
@@ -214,19 +220,16 @@ if submit:
         roth_results, winner, history = engine.analyze_roth_strategies(opt_iwr)
         port_analysis = engine.analyze_portfolios(opt_iwr, roth_strategy=1) 
     
-    st.success(f"Simulation Complete. Optimized Initial Portfolio Withdrawal Rate: **{opt_iwr*100:.2f}%**")
-
     years_arr = np.arange(datetime.datetime.now().year, datetime.datetime.now().year + engine.years)
     age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine.years)
     median_paths = np.median(history['total_bal'], axis=0)
     prob_success = np.mean(history['total_bal'][:, -1] >= inputs['target_floor']) * 100
     df_median = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
 
-# --- STEP 4: BOLDIN-STYLE KPI DASHBOARD ---
+    # --- STEP 4: BOLDIN-STYLE KPI DASHBOARD ---
     st.markdown("---")
     st.subheader("Plan Insights")
     
-    # Extract the Year 1 Burn Rate for the KPI
     ret_idx = max(0, inputs['ret_age'] - inputs['current_age'])
     yr1_burn = (df_median['Total Expenses'].iloc[ret_idx] + 
                 df_median['Net Spendable Annual'].iloc[ret_idx] - 
@@ -234,7 +237,6 @@ if submit:
                 df_median['Pension'].iloc[ret_idx] - 
                 df_median['Salary Income'].iloc[ret_idx])
     
-    # Build the 3 Floating Cards
     kpi1, kpi2, kpi3 = st.columns(3)
     
     with kpi1.container(border=True):
@@ -246,7 +248,7 @@ if submit:
     with kpi3.container(border=True):
         st.metric("Estimated Year 1 Portfolio Burn", f"${yr1_burn:,.0f}")
         
-    st.markdown("<br>", unsafe_allow_html=True) # Adds a little clean spacing before the tabs
+    st.markdown("<br>", unsafe_allow_html=True) 
 
     t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11 = st.tabs([
         "📊 Projections", "💵 Cash Flow", "📉 Guardrails", "📈 Net Worth", "🏛️ Taxes", 
@@ -274,10 +276,11 @@ if submit:
             "Median Terminal Wealth": "${:,.0f}", 
             "Probability of Guardrail Pay Cuts": "{:.1f}%"
         }))
+        st.success(f"**Current Selection:** You are evaluating **'Your Custom Mix'**. The optimal portfolio provides a balance between high terminal wealth and protecting against devastating pay-cuts early in retirement.")
 
     with t2:
         st.subheader("Integrated Cash Flow & Simulation Execution")
-        st.info(f"**How the Model Reaches the Target Legacy:** The mathematical engine utilizes a 1-Dimensional Root-Finding Algorithm (Brent's Method). It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) up and down until it successfully forces the Median Terminal Wealth to land exactly at your declared Target Legacy Floor. *(If you inputted a Minimum Spending Floor, the algorithm protected that baseline).*")
+        st.info(f"**How the Model Reaches the Target Legacy:** The mathematical engine utilizes a 1-Dimensional Root-Finding Algorithm (Brent's Method). It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) up and down until it successfully forces the Median Terminal Wealth to land exactly at your declared Target Legacy Floor. *(If you inputted a Maximum Spending Cap, the Terminal Wealth may artificially exceed the floor because your spending was capped).*")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -304,15 +307,13 @@ if submit:
         st.subheader("Net Worth Forecast & Asset Liquidity Profile")
         st.plotly_chart(plot_liquidity_timeline(history, years_arr), use_container_width=True)
         
-        ret_idx = max(0, inputs['ret_age'] - inputs['current_age'])
         total_cash_short_term = df_median['Money Market Balance'].iloc[ret_idx] + df_median['Taxable ETF Balance'].iloc[ret_idx]
-        yr1_portfolio_burn = df_median['Total Expenses'].iloc[ret_idx] + df_median['Net Spendable Annual'].iloc[ret_idx] - df_median['Social Security'].iloc[ret_idx] - df_median['Pension'].iloc[ret_idx] - df_median['Salary Income'].iloc[ret_idx]
-        safe_years = total_cash_short_term / max(yr1_portfolio_burn, 1)
+        safe_years = total_cash_short_term / max(yr1_burn, 1)
         
         st.markdown("### Asset Liquidity Profile (Year 1 of Retirement)")
         c1, c2, c3 = st.columns(3)
         c1.metric("Highly Liquid Assets (Cash + Taxable)", f"${total_cash_short_term:,.0f}")
-        c2.metric("Year 1 Est. Portfolio Burn Rate", f"${yr1_portfolio_burn:,.0f}")
+        c2.metric("Year 1 Est. Portfolio Burn Rate", f"${yr1_burn:,.0f}")
         c3.metric("Years of Safe Liquidity Buffer", f"{safe_years:.1f} Years")
 
     with t5:
