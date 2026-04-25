@@ -20,18 +20,31 @@ st.set_page_config(page_title="Advanced Retirement Simulator", layout="wide")
 # --- INJECT BOLDIN-STYLE UI/CSS ---
 ui_styling = """
     <style>
+    /* Completely hide all Streamlit Headers & Footers */
     #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
+    footer {display: none !important;}
     [data-testid="stHeader"] {visibility: hidden;}
+    .stAppBottom {display: none !important;}
+    
     .block-container {
         padding-top: 2rem;
         padding-bottom: 2rem;
     }
+    
+    /* Enlarge Top Metric Text */
     [data-testid="stMetricValue"] {
         font-size: 2.2rem !important;
         font-weight: 700 !important;
         color: #00837B !important; 
     }
+    
+    /* Enlarge and Space Tabs for a Premium Feel */
+    button[data-baseweb="tab"] {
+        font-size: 1.2rem !important;
+        padding: 1rem 1.5rem !important;
+    }
+    
+    /* Float Containers to look like modern Cards */
     [data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 12px !important;
         border: 1px solid #E5E7EB !important;
@@ -45,7 +58,6 @@ st.markdown(ui_styling, unsafe_allow_html=True)
 st.title("Advanced Quantitative Retirement Planner")
 st.markdown("Institution-Grade Monte Carlo Simulator | Constant Amortization Spending Model (CASAM)")
 
-# Helper to extract current inputs for saving
 def get_current_state():
     keys_to_save = [
         'cur_age', 'ret_age', 'life_exp', 'filing_status', 'spouse_age', 'spouse_life_exp',
@@ -57,7 +69,6 @@ def get_current_state():
     ]
     return {k: st.session_state[k] for k in keys_to_save if k in st.session_state}
 
-# --- SAVE / LOAD PROFILE FEATURE (MOVED TO MAIN BODY) ---
 with st.expander("💾 Client Profile Management (Save / Load)", expanded=False):
     st.write("Save your current inputs to your computer, or load a previously saved profile to instantly fill out the form.")
     col_load, col_save = st.columns(2)
@@ -74,7 +85,7 @@ with st.expander("💾 Client Profile Management (Save / Load)", expanded=False)
                 st.error("Error loading profile.")
                 
     with col_save:
-        st.write("") # Alignment spacing
+        st.write("") 
         st.write("")
         st.download_button(
             label="⬇️ Save Current Profile to Computer",
@@ -84,7 +95,6 @@ with st.expander("💾 Client Profile Management (Save / Load)", expanded=False)
             use_container_width=True
         )
 
-# --- THE MAIN ACCORDION FORM ---
 with st.form("input_form"):
     st.markdown("### Step 1: Build Your Profile")
     
@@ -216,22 +226,20 @@ if submit:
         'pay_taxes_from_cash': pay_taxes_from_cash
     }
 
-    with st.spinner("Executing 10,000 Iteration Monte Carlo & Brent Optimization..."):
+    with st.spinner("Executing 10,000 Iteration Monte Carlo & RAM Optimization..."):
         engine = StochasticRetirementEngine(inputs)
         opt_iwr = engine.optimize_iwr()
         
         roth_results, winner, history = engine.analyze_roth_strategies(opt_iwr)
         port_analysis = engine.analyze_portfolios(opt_iwr, roth_strategy=1) 
     
-    st.success(f"Simulation Complete. Optimized Initial Portfolio Withdrawal Rate: **{opt_iwr*100:.2f}%**")
-
     years_arr = np.arange(datetime.datetime.now().year, datetime.datetime.now().year + engine.years)
     age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine.years)
     median_paths = np.median(history['total_bal'], axis=0)
     prob_success = np.mean(history['total_bal'][:, -1] >= inputs['target_floor']) * 100
     df_median = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
 
-    # --- BOLDIN-STYLE KPI DASHBOARD ---
+    # --- BOLDIN-STYLE KPI DASHBOARD WITH TOOLTIPS ---
     st.markdown("---")
     st.subheader("Plan Insights")
     
@@ -245,13 +253,27 @@ if submit:
     kpi1, kpi2, kpi3 = st.columns(3)
     
     with kpi1.container(border=True):
-        st.metric("Probability of Success", f"{prob_success:.1f}%", delta="On Track" if prob_success >= 85 else "At Risk", delta_color="normal" if prob_success >= 85 else "inverse")
+        st.metric(
+            "Probability of Success", 
+            f"{prob_success:.1f}%", 
+            delta="On Track" if prob_success >= 85 else "At Risk", 
+            delta_color="normal" if prob_success >= 85 else "inverse",
+            help="The percentage of the 10,000 simulated market paths where your portfolio successfully lasts until your Life Expectancy without dropping to $0. Example: 90% means 9,000 out of 10,000 scenarios succeeded."
+        )
         
     with kpi2.container(border=True):
-        st.metric("Median Terminal Legacy", f"${median_paths[-1]:,.0f}")
+        st.metric(
+            "Median Terminal Legacy", 
+            f"${median_paths[-1]:,.0f}",
+            help="The estimated total value of your estate (portfolios + home value) at your life expectancy age, assuming 50th percentile (average) market performance."
+        )
         
     with kpi3.container(border=True):
-        st.metric("Estimated Year 1 Portfolio Burn", f"${yr1_burn:,.0f}")
+        st.metric(
+            "Estimated Year 1 Portfolio Burn", 
+            f"${yr1_burn:,.0f}",
+            help="The actual amount of cash physically withdrawn from your investment portfolios in your first year of retirement to fund your lifestyle, taxes, and medical costs, after accounting for guaranteed income like Social Security and Pensions."
+        )
         
     st.markdown("<br>", unsafe_allow_html=True) 
 
@@ -289,8 +311,10 @@ if submit:
         
         col1, col2 = st.columns(2)
         with col1:
+            st.subheader("Sequence of Return Risk (SORR)", help="The risk of experiencing a severe market downturn early in retirement. If you sell stocks while they are down, your portfolio may never recover. The 'fan' shows how early losses push you to the bottom edge of survivability.")
             st.plotly_chart(plot_fan_chart(history, years_arr), use_container_width=True)
         with col2:
+            st.subheader("Income Gap Mapping", help="The visual difference (the white space) between your locked-in guaranteed income (blue) and your total life expenses (red). Your investment portfolio must bridge this exact gap every year.")
             st.plotly_chart(plot_income_gap(history, years_arr), use_container_width=True)
             
         st.markdown("### Integrated Year-by-Year Cash Flow Projections")
@@ -317,9 +341,9 @@ if submit:
         
         st.markdown("### Asset Liquidity Profile (Year 1 of Retirement)")
         c1, c2, c3 = st.columns(3)
-        c1.metric("Highly Liquid Assets (Cash + Taxable)", f"${total_cash_short_term:,.0f}")
-        c2.metric("Year 1 Est. Portfolio Burn Rate", f"${yr1_burn:,.0f}")
-        c3.metric("Years of Safe Liquidity Buffer", f"{safe_years:.1f} Years")
+        c1.metric("Highly Liquid Assets (Cash + Taxable)", f"${total_cash_short_term:,.0f}", help="The total combined value of your Money Market and Taxable brokerage accounts. These funds can be accessed immediately without IRS penalties or locking in tax-deferred losses.")
+        c2.metric("Year 1 Est. Portfolio Burn Rate", f"${yr1_burn:,.0f}", help="The actual amount of cash withdrawn from your investment portfolios in the first year of retirement to fund your lifestyle, taxes, and medical costs, after accounting for guaranteed income like Social Security and Pensions.")
+        c3.metric("Years of Safe Liquidity Buffer", f"{safe_years:.1f} Years", help="How many years you can survive strictly off your cash and taxable accounts without selling a single share of your TSP or IRA. Example: A 3.0 ratio means you can outlast a 3-year market crash without touching your tax-deferred stocks.")
 
     with t5:
         st.subheader("Taxes & Dynamic Withdrawals")
@@ -404,7 +428,9 @@ if submit:
             st.write(f"- **Net Increase to Legacy:** ${wealth_increase:,.0f}")
             
             st.markdown("#### Step-by-Step Conversion Schedule")
-            conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_results[winner]['conv_path'], "Est. IRS Taxable Income": roth_results[winner]['taxable_inc_path']})
+            # --- THE BUG FIX: Use mean() to ensure Monte Carlo volumes render perfectly ---
+            roth_amts = np.mean(roth_results[winner]['hist']['roth_conversion'], axis=0)
+            conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_amts, "Est. IRS Taxable Income": np.median(roth_results[winner]['hist']['taxable_income'], axis=0)})
             st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}", "Est. IRS Taxable Income": "${:,.0f}"}))
 
     with t9:

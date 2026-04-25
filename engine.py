@@ -134,7 +134,7 @@ class StochasticRetirementEngine:
             'medicare_cost': np.zeros((self.iterations, self.years)),
             'health_cost': np.zeros((self.iterations, self.years)),
             'mortgage_cost': np.zeros((self.iterations, self.years)),
-            'additional_expenses': np.zeros((self.iterations, self.years)), # NEW: Smile Curve Track
+            'additional_expenses': np.zeros((self.iterations, self.years)),
             'net_spendable': np.zeros((self.iterations, self.years)),
             'salary_income': np.zeros((self.iterations, self.years)),
             'port_return': np.zeros((self.iterations, self.years)),
@@ -162,6 +162,7 @@ class StochasticRetirementEngine:
         
         min_spending = self.inputs.get('min_spending', 0.0)
         max_spending = self.inputs.get('max_spending', 0.0)
+        base_add_exp = self.inputs.get('additional_expenses', 0.0)
         user_max_bracket = float(self.inputs.get('max_tax_bracket', '0.24'))
         
         base_health_premium = self.inputs.get('health_cost', 0.0)
@@ -170,7 +171,6 @@ class StochasticRetirementEngine:
         
         mortgage_pmt = self.inputs.get('mortgage_pmt', 0.0)
         mortgage_yrs = self.inputs.get('mortgage_yrs', 0)
-        base_add_exp = self.inputs.get('additional_expenses', 0.0)
         annual_savings = self.inputs.get('annual_savings', 0.0)
 
         state_str = self.inputs.get('state', '').strip().upper()
@@ -411,16 +411,14 @@ class StochasticRetirementEngine:
             if roth_strategy > 0 and age >= ret_age and age < 75:
                 space = np.zeros(self.iterations)
                 
-                if roth_strategy in [1, 4]: 
+                if roth_strategy == 1: 
                     for limit, rate in brackets:
                         mask = (taxable_income < limit) & (space == 0)
                         space[mask] = limit - taxable_income[mask] - 1
                     space = np.where(space > 1e6, 0, space)
-                    
-                    if roth_strategy == 1:
-                        for irmaa_limit, surcharge in irmaa_brackets:
-                            crosses_cliff = (magi < irmaa_limit) & ((magi + space) >= irmaa_limit)
-                            space = np.where(crosses_cliff, irmaa_limit - magi - 1, space)
+                    for irmaa_limit, surcharge in irmaa_brackets:
+                        crosses_cliff = (magi < irmaa_limit) & ((magi + space) >= irmaa_limit)
+                        space = np.where(crosses_cliff, irmaa_limit - magi - 1, space)
                         
                 elif roth_strategy == 2: 
                     irmaa_tier_1 = irmaa_brackets[0][0]
@@ -429,7 +427,12 @@ class StochasticRetirementEngine:
                 elif roth_strategy == 3:
                     irmaa_tier_2 = irmaa_brackets[1][0]
                     space = np.maximum(0, irmaa_tier_2 - magi - 1)
+                    
+                elif roth_strategy == 4:
+                    # FIX: Safely target the exact max allowable user bracket directly
+                    space = np.maximum(0, limit_max_pct - taxable_income - 1)
                 
+                # Absolute override: Strategy can never exceed the user's explicit drop-down maximum
                 max_allowable_space = np.maximum(0, limit_max_pct - taxable_income - 1)
                 space = np.minimum(space, max_allowable_space)
                 
@@ -504,17 +507,16 @@ class StochasticRetirementEngine:
             oop_remainder = inflated_oop - w_hsa
             
             history['health_cost'][:, yr] = current_health_premium + oop_remainder
+            
             current_mortgage = np.full(self.iterations, mortgage_pmt if yr < mortgage_yrs else 0.0)
             history['mortgage_cost'][:, yr] = current_mortgage
             
-            # --- RETIREMENT SMILE CURVE (ADDITIONAL EXPENSES) ---
             if age >= ret_age:
                 years_in_ret = age - ret_age
                 smile_mult = 1.0 - (0.015 * years_in_ret) + (0.0005 * (years_in_ret ** 2))
                 current_add_exp = base_add_exp * cum_inf * smile_mult
             else:
                 current_add_exp = np.zeros(self.iterations)
-            
             history['additional_expenses'][:, yr] = current_add_exp
             
             history['total_bal'][:, yr] = tsp + ira + roth + taxable + cash
