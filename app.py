@@ -2,7 +2,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import datetime
-import json # NEW: Required for saving/loading profiles
+import json
 
 from engine import StochasticRetirementEngine
 from exports import build_csv_dataframe
@@ -45,7 +45,7 @@ st.markdown(ui_styling, unsafe_allow_html=True)
 st.title("Advanced Quantitative Retirement Planner")
 st.markdown("Institution-Grade Monte Carlo Simulator | Constant Amortization Spending Model (CASAM)")
 
-# --- NEW: SAVE / LOAD PROFILE FEATURE ---
+# --- SAVE / LOAD PROFILE FEATURE ---
 st.sidebar.header("💾 Client Profiles")
 uploaded_profile = st.sidebar.file_uploader("Load Saved Profile (.json)", type="json")
 
@@ -58,9 +58,7 @@ if uploaded_profile is not None:
     except Exception as e:
         st.sidebar.error("Error loading profile.")
 
-# Helper to extract current inputs for saving
 def get_current_state():
-    # Only save the specific input keys we care about
     keys_to_save = [
         'cur_age', 'ret_age', 'life_exp', 'filing_status', 'spouse_age', 'spouse_life_exp',
         'state', 'county', 'current_salary', 'annual_savings', 'phased_ret_active', 'phased_ret_age',
@@ -79,7 +77,6 @@ st.sidebar.download_button(
 )
 st.sidebar.markdown("---")
 
-# --- THE MAIN ACCORDION FORM ---
 with st.form("input_form"):
     st.markdown("### Step 1: Build Your Profile")
     
@@ -97,7 +94,7 @@ with st.form("input_form"):
         
         c_sp1, c_sp2 = st.columns(2)
         spouse_age = c_sp1.number_input("Spouse Current Age (If MFJ)", min_value=18, max_value=100, value=None, key="spouse_age")
-        spouse_life_exp = c_sp2.number_input("Spouse Life Expectancy", min_value=50, max_value=120, value=None, key="spouse_life_exp")
+        spouse_life_exp = c_sp2.number_input("Spouse Life Expectancy (If MFJ)", min_value=50, max_value=120, value=None, key="spouse_life_exp")
 
     with st.expander("💼 Income & Social Security", expanded=False):
         st.markdown("**Pre-Retirement & Phased Transition**")
@@ -170,11 +167,9 @@ with st.form("input_form"):
         st.markdown("---")
         pay_taxes_from_cash = st.checkbox("Pay Roth Conversion Taxes from Cash Buffer?", value=True, key="pay_taxes_from_cash")
     
-    # Big Teal Submit Button
     submit = st.form_submit_button("Run Projection Engine", type="primary")
 
 if submit:
-    # Handle the fact that tax_basis defaults to tax_b if empty
     final_tax_basis = tax_basis if tax_basis is not None else tax_b
     
     vital_checks = {"Current Age": cur_age, "Retirement Age": ret_age, "Life Expectancy": life_exp, "Target Legacy Floor": target_floor}
@@ -226,7 +221,7 @@ if submit:
     prob_success = np.mean(history['total_bal'][:, -1] >= inputs['target_floor']) * 100
     df_median = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
 
-    # --- STEP 4: BOLDIN-STYLE KPI DASHBOARD ---
+    # --- BOLDIN-STYLE KPI DASHBOARD ---
     st.markdown("---")
     st.subheader("Plan Insights")
     
@@ -280,7 +275,7 @@ if submit:
 
     with t2:
         st.subheader("Integrated Cash Flow & Simulation Execution")
-        st.info(f"**How the Model Reaches the Target Legacy:** The mathematical engine utilizes a 1-Dimensional Root-Finding Algorithm (Brent's Method). It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) up and down until it successfully forces the Median Terminal Wealth to land exactly at your declared Target Legacy Floor. *(If you inputted a Maximum Spending Cap, the Terminal Wealth may artificially exceed the floor because your spending was capped).*")
+        st.info(f"**How the Model Reaches the Target Legacy:** The mathematical engine utilizes a 1-Dimensional Root-Finding Algorithm (Brent's Method). It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) up and down until it successfully forces the Median Terminal Wealth to land exactly at your declared Target Legacy Floor. *(If you inputted a Minimum Spending Floor, the algorithm protected that baseline).*")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -306,9 +301,6 @@ if submit:
     with t4:
         st.subheader("Net Worth Forecast & Asset Liquidity Profile")
         st.plotly_chart(plot_liquidity_timeline(history, years_arr), use_container_width=True)
-        
-        total_cash_short_term = df_median['Money Market Balance'].iloc[ret_idx] + df_median['Taxable ETF Balance'].iloc[ret_idx]
-        safe_years = total_cash_short_term / max(yr1_burn, 1)
         
         st.markdown("### Asset Liquidity Profile (Year 1 of Retirement)")
         c1, c2, c3 = st.columns(3)
@@ -399,8 +391,9 @@ if submit:
             st.write(f"- **Net Increase to Legacy:** ${wealth_increase:,.0f}")
             
             st.markdown("#### Step-by-Step Conversion Schedule")
-            roth_amts = np.median(roth_results[winner]['hist']['roth_conversion'], axis=0)
-            conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_amts, "Est. IRS Taxable Income": np.median(roth_results[winner]['hist']['taxable_income'], axis=0)})
+            # --- THE FIX: Extracting correctly from the 'history' array ---
+            roth_amts = np.median(history['roth_conversion'], axis=0)
+            conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_amts, "Est. IRS Taxable Income": np.median(history['taxable_income'], axis=0)})
             st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}", "Est. IRS Taxable Income": "${:,.0f}"}))
 
     with t9:
