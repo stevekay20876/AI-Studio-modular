@@ -16,90 +16,159 @@ from visuals import (
 
 st.set_page_config(page_title="Advanced Retirement Simulator", layout="wide")
 
+# --- INJECT BOLDIN-STYLE UI/CSS ---
+ui_styling = """
+    <style>
+    /* Hide Streamlit Branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Adjust top padding */
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+    
+    /* Make metric text look like Boldin Dashboards */
+    [data-testid="stMetricValue"] {
+        font-size: 2.2rem !important;
+        font-weight: 700 !important;
+        color: #00837B !important; /* Teal Numbers */
+    }
+    
+    /* Style Containers to look like floating Cards */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius: 12px !important;
+        border: 1px solid #E5E7EB !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important;
+        background-color: #FFFFFF !important;
+    }
+    </style>
+"""
+st.markdown(ui_styling, unsafe_allow_html=True)
+
 st.title("Advanced Quantitative Retirement Planner")
 st.markdown("Institution-Grade Monte Carlo Simulator | Constant Amortization Spending Model (CASAM)")
 
-with st.sidebar.form("input_form"):
-    st.header("Client Parameters")
+# --- INJECT BOLDIN-STYLE UI/CSS ---
+ui_styling = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 2.2rem !important;
+        font-weight: 700 !important;
+        color: #00837B !important; 
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius: 12px !important;
+        border: 1px solid #E5E7EB !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important;
+        background-color: #FFFFFF !important;
+    }
+    </style>
+"""
+st.markdown(ui_styling, unsafe_allow_html=True)
+
+# --- THE NEW ACCORDION FORM (MAIN BODY) ---
+with st.form("input_form"):
+    st.markdown("### Step 1: Build Your Profile")
     
-    c1, c2 = st.columns(2)
-    cur_age = c1.number_input("Current Age", min_value=18, max_value=100, value=None)
-    ret_age = c2.number_input("Full Retirement Age", min_value=18, max_value=100, value=None)
-    life_exp = st.number_input("Life Expectancy Age", min_value=50, max_value=120, value=None)
+    with st.expander("👤 Personal & Tax Details", expanded=True):
+        c1, c2, c3 = st.columns(3)
+        cur_age = c1.number_input("Current Age", min_value=18, max_value=100, value=None)
+        ret_age = c2.number_input("Full Retirement Age", min_value=18, max_value=100, value=None)
+        life_exp = c3.number_input("Life Expectancy Age", min_value=50, max_value=120, value=None)
+        
+        st.markdown("**Tax & Spouse Details**")
+        c4, c5, c6 = st.columns(3)
+        filing_status = c4.selectbox("Tax Filing Status", ["Single", "MFJ"])
+        state = c5.text_input("State of Residence")
+        county = c6.text_input("County of Residence")
+        
+        c_sp1, c_sp2 = st.columns(2)
+        spouse_age = c_sp1.number_input("Spouse Current Age (If MFJ)", min_value=18, max_value=100, value=None)
+        spouse_life_exp = c_sp2.number_input("Spouse Life Expectancy", min_value=50, max_value=120, value=None)
+
+    with st.expander("💼 Income & Social Security", expanded=False):
+        st.markdown("**Pre-Retirement & Phased Transition**")
+        c1, c2 = st.columns(2)
+        current_salary = c1.number_input("Current Annual Salary ($)", min_value=0, value=None)
+        annual_savings = c2.number_input("Total Annual Savings (Until Ret.) ($)", min_value=0, value=None)
+        
+        c3, c4 = st.columns(2)
+        phased_ret_active = c3.checkbox("Enable FERS Phased Retirement?")
+        phased_ret_age = c4.number_input("Phased Retirement Start Age", min_value=50, max_value=70, value=None)
+        
+        st.markdown("**Federal Details & Guaranteed Income**")
+        c5, c6, c7 = st.columns(3)
+        pension_est = c5.number_input("Full Pension Est. ($)", min_value=0, value=None)
+        ss_fra = c6.number_input("Social Security at FRA ($/yr)", min_value=0, value=None)
+        ss_claim_age = c7.number_input("Target SS Claiming Age", min_value=62, max_value=70, value=67)
+
+    with st.expander("📉 Expenses & Goals", expanded=False):
+        st.markdown("**Spending Limits & Legacy Goals**")
+        c1, c2, c3 = st.columns(3)
+        target_floor = c1.number_input("Target Legacy Floor ($)", min_value=0, value=None)
+        min_spending = c2.number_input("Minimum Spending Floor ($)", min_value=0, value=None)
+        max_spending = c3.number_input("Maximum Spending Cap ($)", min_value=0, value=None)
+        
+        c4, c5 = st.columns(2)
+        add_exp = c4.number_input("Additional Expenses (Retirement Smile) ($)", min_value=0, value=None)
+        max_tax_bracket = c5.selectbox("Maximum Target Tax Bracket (Roth Cap)", ["12%", "22%", "24%", "32%", "35%", "37%"], index=2)
+        
+        st.markdown("**Property & Debt**")
+        c6, c7, c8 = st.columns(3)
+        home_value = c6.number_input("Current Home Value ($)", min_value=0, value=None)
+        mortgage_pmt = c7.number_input("Annual Mortgage Payment ($)", min_value=0, value=None)
+        mortgage_yrs = c8.number_input("Mortgage Years Remaining", min_value=0, value=None)
+        
+        st.markdown("**Healthcare**")
+        c9, c10, c11 = st.columns(3)
+        health_options = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard", "Aetna Open Access", "Aetna Direct", "Aetna Advantage", "Cigna", "TRICARE for Life", "None/Self-Insure"]
+        health_plan = c9.selectbox("Retiree Health Coverage", health_options)
+        health_cost = c10.number_input("Annual Health Premium ($)", min_value=0, value=None)
+        oop_cost = c11.number_input("Typical Out-of-Pocket Medical ($)", min_value=0, value=None)
+
+    with st.expander("🏛️ Savings & Assets", expanded=False):
+        st.markdown("**Current Portfolios & Strategies**")
+        
+        c1, c2 = st.columns(2)
+        tsp_b = c1.number_input("TSP Balance ($)", value=0.0)
+        tsp_strat = c2.selectbox("TSP Strategy", list(PORTFOLIOS.keys()), index=1)
+        
+        c3, c4 = st.columns(2)
+        ira_b = c3.number_input("Trad. IRA Balance ($)", value=0.0)
+        ira_strat = c4.selectbox("Trad. IRA Strategy", list(PORTFOLIOS.keys()), index=1)
+        
+        c5, c6 = st.columns(2)
+        roth_b = c5.number_input("Roth IRA Balance ($)", value=0.0)
+        roth_strat = c6.selectbox("Roth IRA Strategy", list(PORTFOLIOS.keys()), index=2)
+        
+        c7, c8, c9 = st.columns(3)
+        tax_b = c7.number_input("Taxable Balance ($)", value=0.0)
+        tax_basis = c8.number_input("Taxable Cost Basis ($)", min_value=0.0, value=tax_b)
+        tax_strat = c9.selectbox("Taxable Strategy", list(PORTFOLIOS.keys()), index=1)
+        
+        c10, c11 = st.columns(2)
+        hsa_b = c10.number_input("HSA Balance (Optional)", min_value=0, value=None)
+        hsa_strat = c11.selectbox("HSA Strategy", list(PORTFOLIOS.keys()), index=1)
+        
+        c12, c13 = st.columns(2)
+        cash_b = c12.number_input("Money Market Balance ($)", value=0.0)
+        cash_r = c13.number_input("Money Market Yield %", value=4.0)
+        
+        st.markdown("---")
+        pay_taxes_from_cash = st.checkbox("Pay Roth Conversion Taxes from Cash Buffer?", value=True)
     
-    filing_status = st.selectbox("Tax Filing Status", ["Single", "MFJ"])
-    st.markdown("**Spouse Details (Required if MFJ)**")
-    c_sp1, c_sp2 = st.columns(2)
-    spouse_age = c_sp1.number_input("Spouse Current Age", min_value=18, max_value=100, value=None)
-    spouse_life_exp = c_sp2.number_input("Spouse Life Expectancy", min_value=50, max_value=120, value=None)
-    
-    c3, c4 = st.columns(2)
-    state = c3.text_input("State of Residence")
-    county = c4.text_input("County of Residence")
-    
-    st.subheader("Pre-Retirement & Phased Transition")
-    current_salary = st.number_input("Current Annual Salary ($)", min_value=0, value=None)
-    annual_savings = st.number_input("Total Annual Savings (Until Ret.) ($)", min_value=0, value=None)
-    phased_ret_active = st.checkbox("Enable FERS Phased Retirement?")
-    phased_ret_age = st.number_input("Phased Retirement Start Age", min_value=50, max_value=70, value=None)
-    
-    st.subheader("Federal Details & Guaranteed Income")
-    pension_est = st.number_input("Full Pension Estimate at Retirement ($)", min_value=0, value=None)
-    ss_fra = st.number_input("Social Security at FRA ($/yr)", min_value=0, value=None)
-    ss_claim_age = st.number_input("Target SS Claiming Age", min_value=62, max_value=70, value=67)
-    
-    st.subheader("Expenses & Target Floors")
-    target_floor = st.number_input("Target Legacy (Floor) at Life Exp ($)", min_value=0, value=None)
-    min_spending = st.number_input("Minimum Annual Spending Amount ($)", min_value=0, value=None)
-    max_spending = st.number_input("Maximum Annual Spending Cap ($)", min_value=0, value=None)
-    
-    # --- NEW ADDITIONAL EXPENSE INPUT ---
-    add_exp = st.number_input("Additional Expenses (Retirement Smile) ($)", min_value=0, value=None)
-    
-    max_tax_bracket = st.selectbox("Maximum Target Tax Bracket (Roth Cap)", ["12%", "22%", "24%", "32%", "35%", "37%"], index=2)
-    mortgage_pmt = st.number_input("Annual Mortgage Payment ($)", min_value=0, value=None)
-    mortgage_yrs = st.number_input("Mortgage Years Remaining", min_value=0, value=None)
-    home_value = st.number_input("Current Home Value ($)", min_value=0, value=None)
-    
-    health_options = [
-        "FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", 
-        "GEHA High", "GEHA Standard", "Aetna Open Access", 
-        "Aetna Direct", "Aetna Advantage", "Cigna", "TRICARE for Life", "None/Self-Insure"
-    ]
-    health_plan = st.selectbox("Retiree Health Coverage", health_options)
-    health_cost = st.number_input("Current Annual Health Premium ($)", min_value=0, value=None)
-    oop_cost = st.number_input("Today's Typical Out-of-Pocket Medical ($)", min_value=0, value=None)
-    
-    st.subheader("Current Portfolios & Strategies")
-    
-    cb1, cb2 = st.columns(2)
-    tsp_b = cb1.number_input("TSP Balance ($)", value=0.0)
-    tsp_strat = cb2.selectbox("TSP Strategy", list(PORTFOLIOS.keys()), index=1)
-    
-    cb3, cb4 = st.columns(2)
-    ira_b = cb3.number_input("Trad. IRA Balance ($)", value=0.0)
-    ira_strat = cb4.selectbox("Trad. IRA Strategy", list(PORTFOLIOS.keys()), index=1)
-    
-    cb5, cb6 = st.columns(2)
-    roth_b = cb5.number_input("Roth IRA Balance ($)", value=0.0)
-    roth_strat = cb6.selectbox("Roth IRA Strategy", list(PORTFOLIOS.keys()), index=2)
-    
-    cb7, cb8 = st.columns(2)
-    tax_b = cb7.number_input("Taxable Balance ($)", value=0.0)
-    tax_strat = cb8.selectbox("Taxable Strategy", list(PORTFOLIOS.keys()), index=1)
-    tax_basis = st.number_input("Taxable Cost Basis ($)", min_value=0.0, value=tax_b)
-    
-    cb9, cb10 = st.columns(2)
-    hsa_b = cb9.number_input("HSA Balance ($)", value=0.0)
-    hsa_strat = cb10.selectbox("HSA Strategy", list(PORTFOLIOS.keys()), index=1)
-    
-    cb11, cb12 = st.columns(2)
-    cash_b = cb11.number_input("Money Market Balance ($)", value=0.0)
-    cash_r = cb12.number_input("Money Market Yield %", value=4.0)
-    
-    pay_taxes_from_cash = st.checkbox("Pay Roth Conversion Taxes from Cash Buffer?", value=True)
-    
-    submit = st.form_submit_button("Run Optimization Engine")
+    # Big Teal Submit Button
+    submit = st.form_submit_button("Run Projection Engine", type="primary")
 
 if submit:
     vital_checks = {"Current Age": cur_age, "Retirement Age": ret_age, "Life Expectancy": life_exp, "Target Legacy Floor": target_floor}
@@ -153,6 +222,32 @@ if submit:
     prob_success = np.mean(history['total_bal'][:, -1] >= inputs['target_floor']) * 100
     df_median = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
 
+# --- STEP 4: BOLDIN-STYLE KPI DASHBOARD ---
+    st.markdown("---")
+    st.subheader("Plan Insights")
+    
+    # Extract the Year 1 Burn Rate for the KPI
+    ret_idx = max(0, inputs['ret_age'] - inputs['current_age'])
+    yr1_burn = (df_median['Total Expenses'].iloc[ret_idx] + 
+                df_median['Net Spendable Annual'].iloc[ret_idx] - 
+                df_median['Social Security'].iloc[ret_idx] - 
+                df_median['Pension'].iloc[ret_idx] - 
+                df_median['Salary Income'].iloc[ret_idx])
+    
+    # Build the 3 Floating Cards
+    kpi1, kpi2, kpi3 = st.columns(3)
+    
+    with kpi1.container(border=True):
+        st.metric("Probability of Success", f"{prob_success:.1f}%", delta="On Track" if prob_success >= 85 else "At Risk", delta_color="normal" if prob_success >= 85 else "inverse")
+        
+    with kpi2.container(border=True):
+        st.metric("Median Terminal Legacy", f"${median_paths[-1]:,.0f}")
+        
+    with kpi3.container(border=True):
+        st.metric("Estimated Year 1 Portfolio Burn", f"${yr1_burn:,.0f}")
+        
+    st.markdown("<br>", unsafe_allow_html=True) # Adds a little clean spacing before the tabs
+
     t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11 = st.tabs([
         "📊 Projections", "💵 Cash Flow", "📉 Guardrails", "📈 Net Worth", "🏛️ Taxes", 
         "🏛️ Legacy", "💡 Coach Alerts", "🔄 Roth Opt.", "🦅 Social Sec", "🏥 Medicare", "💾 Exports"
@@ -160,10 +255,6 @@ if submit:
 
     with t1:
         st.subheader("Lifetime Projections & Monte Carlo Analysis")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Probability of Success", f"{prob_success:.1f}%")
-        col2.metric("Median Terminal Wealth", f"${median_paths[-1]:,.0f}")
-        col3.metric("10th Percentile Wealth", f"${np.percentile(history['total_bal'], 10, axis=0)[-1]:,.0f}")
         st.plotly_chart(plot_wealth_trajectory(history, inputs['target_floor'], years_arr), use_container_width=True)
         
         st.markdown("---")
