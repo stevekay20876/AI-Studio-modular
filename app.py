@@ -15,7 +15,7 @@ from visuals import (
     plot_fan_chart, plot_income_gap
 )
 
-st.set_page_config(page_title="Advanced Retirement Simulator", layout="wide")
+st.set_page_config(page_title="Dashboard", page_icon="📊", layout="wide")
 
 # --- INJECT BOLDIN-STYLE UI/CSS ---
 ui_styling = """
