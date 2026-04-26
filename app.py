@@ -20,6 +20,7 @@ st.set_page_config(page_title="Advanced Retirement Simulator", layout="wide")
 # --- INJECT BOLDIN-STYLE UI/CSS ---
 ui_styling = """
     <style>
+    /* Completely hide all Streamlit Headers & Footers */
     #MainMenu {visibility: hidden;}
     footer {display: none !important;}
     [data-testid="stHeader"] {visibility: hidden;}
@@ -30,17 +31,20 @@ ui_styling = """
         padding-bottom: 2rem;
     }
     
+    /* Enlarge Top Metric Text */
     [data-testid="stMetricValue"] {
         font-size: 2.2rem !important;
         font-weight: 700 !important;
         color: #00837B !important; 
     }
     
+    /* Enlarge and Space Tabs for a Premium Feel */
     button[data-baseweb="tab"] {
         font-size: 1.2rem !important;
         padding: 1rem 1.5rem !important;
     }
     
+    /* Add a bold box/border around Tabs container */
     [data-testid="stTabs"] {
         border: 2px solid #E5E7EB;
         border-radius: 12px;
@@ -49,6 +53,7 @@ ui_styling = """
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     }
     
+    /* Float Containers to look like modern Cards */
     [data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 12px !important;
         border: 1px solid #E5E7EB !important;
@@ -435,8 +440,9 @@ if submit:
             st.write(f"- **Net Increase to Legacy:** ${wealth_increase:,.0f}")
             
             st.markdown("#### Step-by-Step Conversion Schedule")
-            roth_amts = np.mean(roth_results[winner]['hist']['roth_conversion'], axis=0)
-            conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_amts, "Est. IRS Taxable Income": np.median(roth_results[winner]['hist']['taxable_income'], axis=0)})
+            # --- THE FIX: Point safely to the saved 'history' array ---
+            roth_amts = np.mean(history['roth_conversion'], axis=0)
+            conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_amts, "Est. IRS Taxable Income": np.median(history['taxable_income'], axis=0)})
             st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}", "Est. IRS Taxable Income": "${:,.0f}"}))
 
     with t9:
