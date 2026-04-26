@@ -20,7 +20,6 @@ st.set_page_config(page_title="Advanced Retirement Simulator", layout="wide")
 # --- INJECT BOLDIN-STYLE UI/CSS ---
 ui_styling = """
     <style>
-    /* Completely hide all Streamlit Headers & Footers */
     #MainMenu {visibility: hidden;}
     footer {display: none !important;}
     [data-testid="stHeader"] {visibility: hidden;}
@@ -31,20 +30,17 @@ ui_styling = """
         padding-bottom: 2rem;
     }
     
-    /* Enlarge Top Metric Text */
     [data-testid="stMetricValue"] {
         font-size: 2.2rem !important;
         font-weight: 700 !important;
         color: #00837B !important; 
     }
     
-    /* Enlarge and Space Tabs for a Premium Feel */
     button[data-baseweb="tab"] {
         font-size: 1.2rem !important;
         padding: 1rem 1.5rem !important;
     }
     
-    /* NEW: Add a bold box/border specifically around the Tabs container to make it pop */
     [data-testid="stTabs"] {
         border: 2px solid #E5E7EB;
         border-radius: 12px;
@@ -53,7 +49,6 @@ ui_styling = """
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     }
     
-    /* Float Containers to look like modern Cards */
     [data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 12px !important;
         border: 1px solid #E5E7EB !important;
@@ -235,7 +230,7 @@ if submit:
         'pay_taxes_from_cash': pay_taxes_from_cash
     }
 
-    with st.spinner("Executing 10,000 Iteration Monte Carlo & Brent Optimization..."):
+    with st.spinner("Executing 10,000 Iteration Monte Carlo & RAM Optimization..."):
         engine = StochasticRetirementEngine(inputs)
         opt_iwr = engine.optimize_iwr()
         
@@ -250,16 +245,20 @@ if submit:
     prob_success = np.mean(history['total_bal'][:, -1] >= inputs['target_floor']) * 100
     df_median = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
 
-    # --- BOLDIN-STYLE KPI DASHBOARD WITH TOOLTIPS ---
-    st.markdown("---")
-    st.subheader("Plan Insights")
-    
+    # --- DEFINE VARIABLES EARLY TO PREVENT NAME_ERRORS ---
     ret_idx = max(0, inputs['ret_age'] - inputs['current_age'])
     yr1_burn = (df_median['Total Expenses'].iloc[ret_idx] + 
                 df_median['Net Spendable Annual'].iloc[ret_idx] - 
                 df_median['Social Security'].iloc[ret_idx] - 
                 df_median['Pension'].iloc[ret_idx] - 
                 df_median['Salary Income'].iloc[ret_idx])
+    
+    total_cash_short_term = df_median['Money Market Balance'].iloc[ret_idx] + df_median['Taxable ETF Balance'].iloc[ret_idx]
+    safe_years = total_cash_short_term / max(yr1_burn, 1)
+
+    # --- BOLDIN-STYLE KPI DASHBOARD WITH TOOLTIPS ---
+    st.markdown("---")
+    st.subheader("Plan Insights")
     
     kpi1, kpi2, kpi3 = st.columns(3)
     
@@ -314,9 +313,11 @@ if submit:
             "Median Terminal Wealth": "${:,.0f}", 
             "Probability of Guardrail Pay Cuts": "{:.1f}%"
         }))
+        st.success(f"**Current Selection:** You are evaluating **'Your Custom Mix'**. The optimal portfolio provides a balance between high terminal wealth and protecting against devastating pay-cuts early in retirement.")
 
     with t2:
         st.subheader("Integrated Cash Flow & Simulation Execution")
+        st.info(f"**How the Model Reaches the Target Legacy:** The mathematical engine utilizes a 1-Dimensional Root-Finding Algorithm (Brent's Method). It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) up and down until it successfully forces the Median Terminal Wealth to land exactly at your declared Target Legacy Floor. *(If you inputted a Minimum Spending Floor, the algorithm protected that baseline).*")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -434,7 +435,6 @@ if submit:
             st.write(f"- **Net Increase to Legacy:** ${wealth_increase:,.0f}")
             
             st.markdown("#### Step-by-Step Conversion Schedule")
-            # --- BUG FIX: Computes the Statistical Mean conversion amount over 10,000 paths ---
             roth_amts = np.mean(roth_results[winner]['hist']['roth_conversion'], axis=0)
             conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_amts, "Est. IRS Taxable Income": np.median(roth_results[winner]['hist']['taxable_income'], axis=0)})
             st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}", "Est. IRS Taxable Income": "${:,.0f}"}))
@@ -464,6 +464,12 @@ if submit:
             st.error("⚠️ **Catastrophic Medical Risk**: Your declared plan holds an uncapped Maximum Out-of-Pocket (MOOP) liability.")
         else:
             st.info(f"🛡️ **Plan Protection Active**: Your {health_plan} correctly caps out-of-pocket medical tail-risk at **${moop_cap:,.0f}** per year (inflation adjusted).")
+            
+        fed_plans = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard"]
+        if inputs['health_plan'] in fed_plans or "TRICARE" in inputs['health_plan']:
+            st.success("Verdict: **Waive Part B & Rely on Retiree Coverage**")
+        else:
+            st.warning("Verdict: **Enroll in Medicare Part B**")
 
     with t11:
         st.subheader("Strict-Format CSV Data Exports")
