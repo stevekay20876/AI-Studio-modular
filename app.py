@@ -200,6 +200,7 @@ with nav1:
         
         submit = st.form_submit_button("Run Projection Engine", type="primary")
 
+    # --- EXECUTION LOGIC ---
     if submit:
         final_tax_basis = tax_basis if tax_basis is not None else tax_b
         
@@ -245,11 +246,33 @@ with nav1:
             
             roth_results, winner, history = engine.analyze_roth_strategies(opt_iwr)
             port_analysis = engine.analyze_portfolios(opt_iwr, roth_strategy=1) 
+            
+            # --- FIX: SAVE TO SESSION STATE TO PREVENT REFRESH DELETION ---
+            st.session_state['sim_data'] = {
+                'inputs': inputs,
+                'opt_iwr': opt_iwr,
+                'roth_results': roth_results,
+                'winner': winner,
+                'history': history,
+                'port_analysis': port_analysis,
+                'engine_years': engine.years
+            }
+
+    # --- RENDER UI IF DATA EXISTS IN MEMORY ---
+    if 'sim_data' in st.session_state:
+        data = st.session_state['sim_data']
+        inputs = data['inputs']
+        opt_iwr = data['opt_iwr']
+        roth_results = data['roth_results']
+        winner = data['winner']
+        history = data['history']
+        port_analysis = data['port_analysis']
+        engine_years = data['engine_years']
         
         st.success(f"Simulation Complete. Optimized Initial Portfolio Withdrawal Rate: **{opt_iwr*100:.2f}%**")
 
-        years_arr = np.arange(datetime.datetime.now().year, datetime.datetime.now().year + engine.years)
-        age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine.years)
+        years_arr = np.arange(datetime.datetime.now().year, datetime.datetime.now().year + engine_years)
+        age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine_years)
         median_paths = np.median(history['total_bal'], axis=0)
         prob_success = np.mean(history['total_bal'][:, -1] >= inputs['target_floor']) * 100
         df_median = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
@@ -324,7 +347,6 @@ with nav1:
 
         with t2:
             st.subheader("Integrated Cash Flow & Simulation Execution")
-            st.info(f"**How the Model Reaches the Target Legacy:** The mathematical engine utilizes a 1-Dimensional Root-Finding Algorithm (Brent's Method). It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) up and down until it successfully forces the Median Terminal Wealth to land exactly at your declared Target Legacy Floor. *(If you inputted a Minimum Spending Floor, the algorithm protected that baseline).*")
             
             col1, col2 = st.columns(2)
             with col1:
@@ -361,12 +383,12 @@ with nav1:
 
         with t5:
             st.subheader("Taxes & Dynamic Withdrawals")
-            limit_24 = TAX_BRACKETS_MFJ[3][0] if filing_status == 'MFJ' else TAX_BRACKETS_SINGLE[3][0]
+            limit_24 = TAX_BRACKETS_MFJ[3][0] if inputs['filing_status'] == 'MFJ' else TAX_BRACKETS_SINGLE[3][0]
             
             if df_median['IRS Taxable Income'].iloc[ret_idx] > limit_24:
-                st.error(f"🚨 **Lifestyle Exceeds {max_tax_bracket} Bracket**: Your baseline spending needs naturally push your IRS Taxable Income to **${df_median['IRS Taxable Income'].iloc[ret_idx]:,.0f}**, which is above your {max_tax_bracket} ceiling. The Roth Optimizer disabled itself to prevent pushing you even higher.")
+                st.error(f"🚨 **Lifestyle Exceeds {inputs['max_tax_bracket']} Bracket**: Your baseline spending needs naturally push your IRS Taxable Income to **${df_median['IRS Taxable Income'].iloc[ret_idx]:,.0f}**, which is above your {inputs['max_tax_bracket']} ceiling. The Roth Optimizer disabled itself to prevent pushing you even higher.")
             else:
-                st.info(f"**Tax Diagnostic Check:** The model strictly respected your request to cap all Roth conversions at the {max_tax_bracket} bracket.")
+                st.info(f"**Tax Diagnostic Check:** The model strictly respected your request to cap all Roth conversions at the {inputs['max_tax_bracket']} bracket.")
                 
             col1, col2 = st.columns(2)
             with col1:
@@ -403,7 +425,7 @@ with nav1:
             
             if med_taxes[-1] > med_taxes[0] * 2.5:
                 st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Execute Roth Conversions.")
-            if filing_status == 'MFJ':
+            if inputs['filing_status'] == 'MFJ':
                 st.error("⚠️ **Widow(er) Tax Penalty**: Upon the first spouse's mortality, your tax filing status shifts to Single, shrinking your brackets and drastically increasing your vulnerability to IRMAA surcharges. Roth conversions are critical while you are still MFJ.")
             if prob_success >= 85:
                 st.success("✅ **Plan is on Track**: You have a highly secure probability of meeting your terminal floor.")
@@ -419,7 +441,7 @@ with nav1:
 
         with t8:
             st.subheader("Roth Conversion Optimizer")
-            st.info(f"**Target Ceiling Parameter:** The Roth optimizer rigorously evaluated all tax strategies strictly capped up to your selected maximum target bracket of **{max_tax_bracket}**.")
+            st.info(f"**Target Ceiling Parameter:** The Roth optimizer rigorously evaluated all tax strategies strictly capped up to your selected maximum target bracket of **{inputs['max_tax_bracket']}**.")
             
             col1, col2 = st.columns(2)
             with col1:
@@ -468,11 +490,11 @@ with nav1:
             total_medicare_cost = np.sum(np.median(history['medicare_cost'], axis=0))
             st.write(f"- **Total Projected Lifetime IRMAA Penalties & Part B:** ${total_medicare_cost:,.0f}")
             
-            moop_cap = MOOP_LIMITS.get(health_plan, (999999, 999999))[1 if filing_status == 'MFJ' else 0]
+            moop_cap = MOOP_LIMITS.get(inputs['health_plan'], (999999, 999999))[1 if inputs['filing_status'] == 'MFJ' else 0]
             if moop_cap == 999999:
                 st.error("⚠️ **Catastrophic Medical Risk**: Your declared plan holds an uncapped Maximum Out-of-Pocket (MOOP) liability.")
             else:
-                st.info(f"🛡️ **Plan Protection Active**: Your {health_plan} correctly caps out-of-pocket medical tail-risk at **${moop_cap:,.0f}** per year (inflation adjusted).")
+                st.info(f"🛡️ **Plan Protection Active**: Your {inputs['health_plan']} correctly caps out-of-pocket medical tail-risk at **${moop_cap:,.0f}** per year (inflation adjusted).")
                 
             fed_plans = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard"]
             if inputs['health_plan'] in fed_plans or "TRICARE" in inputs['health_plan']:
