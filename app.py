@@ -20,6 +20,7 @@ st.set_page_config(page_title="Advanced Retirement Simulator", layout="wide")
 # --- INJECT BOLDIN-STYLE UI/CSS ---
 ui_styling = """
     <style>
+    /* Completely hide all Streamlit Headers & Footers */
     #MainMenu {visibility: hidden;}
     footer {display: none !important;}
     [data-testid="stHeader"] {visibility: hidden;}
@@ -30,17 +31,20 @@ ui_styling = """
         padding-bottom: 2rem;
     }
     
+    /* Enlarge Top Metric Text */
     [data-testid="stMetricValue"] {
         font-size: 2.2rem !important;
         font-weight: 700 !important;
         color: #00837B !important; 
     }
     
+    /* Enlarge and Space Tabs for a Premium Feel */
     button[data-baseweb="tab"] {
         font-size: 1.2rem !important;
         padding: 1rem 1.5rem !important;
     }
     
+    /* Add a bold box/border around Tabs container */
     [data-testid="stTabs"] {
         border: 2px solid #E5E7EB;
         border-radius: 12px;
@@ -49,6 +53,7 @@ ui_styling = """
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     }
     
+    /* Float Containers to look like modern Cards */
     [data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 12px !important;
         border: 1px solid #E5E7EB !important;
@@ -230,7 +235,8 @@ if submit:
         'pay_taxes_from_cash': pay_taxes_from_cash
     }
 
-    with st.spinner("Executing 10,000 Iteration Monte Carlo & RAM Optimization..."):
+    # --- TEXT UPDATED HERE ---
+    with st.spinner("Evaluating your portfolio's resilience across 10,000 potential futures..."):
         engine = StochasticRetirementEngine(inputs)
         opt_iwr = engine.optimize_iwr()
         
@@ -255,6 +261,7 @@ if submit:
     total_cash_short_term = df_median['Money Market Balance'].iloc[ret_idx] + df_median['Taxable ETF Balance'].iloc[ret_idx]
     safe_years = total_cash_short_term / max(yr1_burn, 1)
 
+    # --- BOLDIN-STYLE KPI DASHBOARD WITH TOOLTIPS ---
     st.markdown("---")
     st.subheader("Plan Insights")
     
@@ -311,6 +318,7 @@ if submit:
             "Median Terminal Wealth": "${:,.0f}", 
             "Probability of Guardrail Pay Cuts": "{:.1f}%"
         }))
+        st.success(f"**Current Selection:** You are evaluating **'Your Custom Mix'**. The optimal portfolio provides a balance between high terminal wealth and protecting against devastating pay-cuts early in retirement.")
 
     with t2:
         st.subheader("Integrated Cash Flow & Simulation Execution")
@@ -426,26 +434,17 @@ if submit:
             st.warning("**Verdict: No Conversions Recommended.**")
         else:
             st.success(f"Verdict: **Execute the '{winner}' Strategy**")
+            
             st.write(f"- **Real Lifetime Tax Savings:** ${max(0, tax_savings):,.0f}")
             st.write(f"- **Reduction in Lifetime RMDs:** ${rmd_reduction:,.0f}")
             st.write(f"- **Net Increase to Legacy:** ${wealth_increase:,.0f}")
             
             st.markdown("#### Step-by-Step Conversion Schedule")
-            
-            # --- THE FIX: ADD ACTUARIAL DISCLAIMER AND USE MEAN ---
             st.info("📊 **Actuarial Note on 'Phantom Bracket Breaches':** The table below displays the mathematical average (mean) conversion amount and average taxable income across all 10,000 realities. Because the optimizer dynamically converts heavily in crash years and stops in boom years, the flattened average may occasionally *appear* to push your income above the bracket limit. Rest assured, the engine strictly capped every single individual simulation perfectly at your chosen limit.")
             
             roth_amts = np.mean(history['roth_conversion'], axis=0)
-            conv_df = pd.DataFrame({
-                "Year": years_arr, 
-                "Age": age_arr, 
-                "Average Conversion Amount": roth_amts, 
-                "Average IRS Taxable Income": np.mean(history['taxable_income'], axis=0)
-            })
-            st.table(conv_df[conv_df['Average Conversion Amount'] > 0].style.format({
-                "Average Conversion Amount": "${:,.0f}", 
-                "Average IRS Taxable Income": "${:,.0f}"
-            }))
+            conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_amts, "Est. IRS Taxable Income": np.median(history['taxable_income'], axis=0)})
+            st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}", "Est. IRS Taxable Income": "${:,.0f}"}))
 
     with t9:
         st.subheader("Social Security Claiming Strategy")
@@ -459,6 +458,7 @@ if submit:
         }
         st.table(pd.DataFrame(ss_data))
         st.success("**Verdict: Delay Claiming until Age 70**")
+        st.write("**Why delay to 70? The 'Longevity Insurance' Concept:** Actuarially, Social Security is the only guaranteed, inflation-adjusted, market-immune income stream you will ever possess. By delaying to Age 70, your payout permanently increases by 8% per year. This creates massive 'Longevity Insurance.' If you live deep into your 90s, this vastly inflated SS paycheck drastically reduces the withdrawal pressure placed on your TSP/Roth, virtually guaranteeing you will not outlive your portfolio.")
 
     with t10:
         st.subheader("Medicare Part B & Actuarial Healthcare OOP")
