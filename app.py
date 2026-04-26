@@ -44,6 +44,15 @@ ui_styling = """
         padding: 1rem 1.5rem !important;
     }
     
+    /* NEW: Add a bold box/border specifically around the Tabs container to make it pop */
+    [data-testid="stTabs"] {
+        border: 2px solid #E5E7EB;
+        border-radius: 12px;
+        padding: 15px;
+        background-color: #FFFFFF;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+    
     /* Float Containers to look like modern Cards */
     [data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 12px !important;
@@ -226,13 +235,15 @@ if submit:
         'pay_taxes_from_cash': pay_taxes_from_cash
     }
 
-    with st.spinner("Executing 10,000 Iteration Monte Carlo & RAM Optimization..."):
+    with st.spinner("Executing 10,000 Iteration Monte Carlo & Brent Optimization..."):
         engine = StochasticRetirementEngine(inputs)
         opt_iwr = engine.optimize_iwr()
         
         roth_results, winner, history = engine.analyze_roth_strategies(opt_iwr)
         port_analysis = engine.analyze_portfolios(opt_iwr, roth_strategy=1) 
     
+    st.success(f"Simulation Complete. Optimized Initial Portfolio Withdrawal Rate: **{opt_iwr*100:.2f}%**")
+
     years_arr = np.arange(datetime.datetime.now().year, datetime.datetime.now().year + engine.years)
     age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine.years)
     median_paths = np.median(history['total_bal'], axis=0)
@@ -258,21 +269,21 @@ if submit:
             f"{prob_success:.1f}%", 
             delta="On Track" if prob_success >= 85 else "At Risk", 
             delta_color="normal" if prob_success >= 85 else "inverse",
-            help="The percentage of the 10,000 simulated market paths where your portfolio successfully lasts until your Life Expectancy without dropping to $0. Example: 90% means 9,000 out of 10,000 scenarios succeeded."
+            help="Definition: The percentage of 10,000 simulated market paths where your portfolio successfully lasts until your Life Expectancy without dropping to $0.\n\nExample: '90%' means 9,000 out of 10,000 scenarios successfully funded your lifestyle."
         )
         
     with kpi2.container(border=True):
         st.metric(
             "Median Terminal Legacy", 
             f"${median_paths[-1]:,.0f}",
-            help="The estimated total value of your estate (portfolios + home value) at your life expectancy age, assuming 50th percentile (average) market performance."
+            help="Definition: The estimated total value of your estate (portfolios + home value) at your life expectancy age, assuming 50th percentile (average) market performance."
         )
         
     with kpi3.container(border=True):
         st.metric(
             "Estimated Year 1 Portfolio Burn", 
             f"${yr1_burn:,.0f}",
-            help="The actual amount of cash physically withdrawn from your investment portfolios in your first year of retirement to fund your lifestyle, taxes, and medical costs, after accounting for guaranteed income like Social Security and Pensions."
+            help="Definition: The actual amount of cash physically withdrawn from your investment portfolios in your first year of retirement to fund your lifestyle, taxes, and medical costs, after accounting for guaranteed income.\n\nExample: If your lifestyle costs $100k and your pension is $60k, your 'Burn' is $40k."
         )
         
     st.markdown("<br>", unsafe_allow_html=True) 
@@ -303,18 +314,16 @@ if submit:
             "Median Terminal Wealth": "${:,.0f}", 
             "Probability of Guardrail Pay Cuts": "{:.1f}%"
         }))
-        st.success(f"**Current Selection:** You are evaluating **'Your Custom Mix'**. The optimal portfolio provides a balance between high terminal wealth and protecting against devastating pay-cuts early in retirement.")
 
     with t2:
         st.subheader("Integrated Cash Flow & Simulation Execution")
-        st.info(f"**How the Model Reaches the Target Legacy:** The mathematical engine utilizes a 1-Dimensional Root-Finding Algorithm (Brent's Method). It iteratively executes 10,000 parallel market simulations, adjusting your exact Initial Withdrawal Rate (IWR) up and down until it successfully forces the Median Terminal Wealth to land exactly at your declared Target Legacy Floor. *(If you inputted a Minimum Spending Floor, the algorithm protected that baseline).*")
         
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader("Sequence of Return Risk (SORR)", help="The risk of experiencing a severe market downturn early in retirement. If you sell stocks while they are down, your portfolio may never recover. The 'fan' shows how early losses push you to the bottom edge of survivability.")
+            st.subheader("Sequence of Return Risk (SORR)", help="Definition: The risk of experiencing a severe market downturn early in retirement.\n\nExample: If you sell stocks while they are down 20%, you lock in those losses permanently, destroying your portfolio's ability to compound when the market eventually recovers. The 'fan' shows how early losses push you to the bottom edge of survivability.")
             st.plotly_chart(plot_fan_chart(history, years_arr), use_container_width=True)
         with col2:
-            st.subheader("Income Gap Mapping", help="The visual difference (the white space) between your locked-in guaranteed income (blue) and your total life expenses (red). Your investment portfolio must bridge this exact gap every year.")
+            st.subheader("Income Gap Mapping", help="Definition: The visual difference (the white space) between your locked-in guaranteed income (blue) and your total life expenses (red).\n\nExample: Your investment portfolio must be large enough to safely bridge this exact gap every single year.")
             st.plotly_chart(plot_income_gap(history, years_arr), use_container_width=True)
             
         st.markdown("### Integrated Year-by-Year Cash Flow Projections")
@@ -336,14 +345,11 @@ if submit:
         st.subheader("Net Worth Forecast & Asset Liquidity Profile")
         st.plotly_chart(plot_liquidity_timeline(history, years_arr), use_container_width=True)
         
-        total_cash_short_term = df_median['Money Market Balance'].iloc[ret_idx] + df_median['Taxable ETF Balance'].iloc[ret_idx]
-        safe_years = total_cash_short_term / max(yr1_burn, 1)
-        
         st.markdown("### Asset Liquidity Profile (Year 1 of Retirement)")
         c1, c2, c3 = st.columns(3)
-        c1.metric("Highly Liquid Assets (Cash + Taxable)", f"${total_cash_short_term:,.0f}", help="The total combined value of your Money Market and Taxable brokerage accounts. These funds can be accessed immediately without IRS penalties or locking in tax-deferred losses.")
-        c2.metric("Year 1 Est. Portfolio Burn Rate", f"${yr1_burn:,.0f}", help="The actual amount of cash withdrawn from your investment portfolios in the first year of retirement to fund your lifestyle, taxes, and medical costs, after accounting for guaranteed income like Social Security and Pensions.")
-        c3.metric("Years of Safe Liquidity Buffer", f"{safe_years:.1f} Years", help="How many years you can survive strictly off your cash and taxable accounts without selling a single share of your TSP or IRA. Example: A 3.0 ratio means you can outlast a 3-year market crash without touching your tax-deferred stocks.")
+        c1.metric("Highly Liquid Assets (Cash + Taxable)", f"${total_cash_short_term:,.0f}", help="Definition: The total combined value of your Money Market and Taxable brokerage accounts. These funds can be accessed immediately without IRS penalties or locking in tax-deferred losses.")
+        c2.metric("Year 1 Est. Portfolio Burn Rate", f"${yr1_burn:,.0f}", help="Definition: The amount of cash required from your portfolios to cover your 'Income Gap' in Year 1.")
+        c3.metric("Years of Safe Liquidity Buffer", f"{safe_years:.1f} Years", help="Definition: How many years you can survive strictly off your cash and taxable accounts without selling a single share of your TSP or IRA.\n\nExample: A 3.0 ratio means you can comfortably outlast a 3-year market crash without touching your tax-deferred stocks.")
 
     with t5:
         st.subheader("Taxes & Dynamic Withdrawals")
@@ -428,7 +434,7 @@ if submit:
             st.write(f"- **Net Increase to Legacy:** ${wealth_increase:,.0f}")
             
             st.markdown("#### Step-by-Step Conversion Schedule")
-            # --- THE BUG FIX: Use mean() to ensure Monte Carlo volumes render perfectly ---
+            # --- BUG FIX: Computes the Statistical Mean conversion amount over 10,000 paths ---
             roth_amts = np.mean(roth_results[winner]['hist']['roth_conversion'], axis=0)
             conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": roth_amts, "Est. IRS Taxable Income": np.median(roth_results[winner]['hist']['taxable_income'], axis=0)})
             st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}", "Est. IRS Taxable Income": "${:,.0f}"}))
@@ -458,12 +464,6 @@ if submit:
             st.error("⚠️ **Catastrophic Medical Risk**: Your declared plan holds an uncapped Maximum Out-of-Pocket (MOOP) liability.")
         else:
             st.info(f"🛡️ **Plan Protection Active**: Your {health_plan} correctly caps out-of-pocket medical tail-risk at **${moop_cap:,.0f}** per year (inflation adjusted).")
-            
-        fed_plans = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard"]
-        if inputs['health_plan'] in fed_plans or "TRICARE" in inputs['health_plan']:
-            st.success("Verdict: **Waive Part B & Rely on Retiree Coverage**")
-        else:
-            st.warning("Verdict: **Enroll in Medicare Part B**")
 
     with t11:
         st.subheader("Strict-Format CSV Data Exports")
