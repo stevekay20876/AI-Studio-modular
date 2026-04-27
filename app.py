@@ -19,7 +19,6 @@ from visuals import (
 
 st.set_page_config(page_title="Advanced Retirement Simulator", layout="wide")
 
-# --- FORCE iPAD/MOBILE TO SCROLL TO TOP ON LOAD ---
 components.html(
     """
     <script>
@@ -31,7 +30,6 @@ components.html(
     width=0,
 )
 
-# --- INJECT BOLDIN-STYLE UI/CSS ---
 ui_styling = """
     <style>
     #MainMenu {visibility: hidden;}
@@ -39,42 +37,16 @@ ui_styling = """
     [data-testid="stHeader"] {visibility: hidden;}
     .stAppBottom {display: none !important;}
     
-    .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-    }
-    
-    [data-testid="stMetricValue"] {
-        font-size: 2.2rem !important;
-        font-weight: 700 !important;
-        color: #00837B !important; 
-    }
-    
-    button[data-baseweb="tab"] {
-        font-size: 1.2rem !important;
-        padding: 1rem 1.5rem !important;
-    }
-    
-    [data-testid="stTabs"] {
-        border: 2px solid #E5E7EB;
-        border-radius: 12px;
-        padding: 15px;
-        background-color: #FFFFFF;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-    }
-    
-    [data-testid="stVerticalBlockBorderWrapper"] {
-        border-radius: 12px !important;
-        border: 1px solid #E5E7EB !important;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important;
-        background-color: #FFFFFF !important;
-    }
+    .block-container { padding-top: 2rem; padding-bottom: 2rem; }
+    [data-testid="stMetricValue"] { font-size: 2.0rem !important; font-weight: 700 !important; color: #00837B !important; }
+    button[data-baseweb="tab"] { font-size: 1.2rem !important; padding: 1rem 1.5rem !important; }
+    [data-testid="stTabs"] { border: 2px solid #E5E7EB; border-radius: 12px; padding: 15px; background-color: #FFFFFF; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+    [data-testid="stVerticalBlockBorderWrapper"] { border-radius: 12px !important; border: 1px solid #E5E7EB !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important; background-color: #FFFFFF !important; }
     </style>
 """
 st.markdown(ui_styling, unsafe_allow_html=True)
 
-# --- TOP NAVIGATION BAR ---
-nav1, nav2, nav3 = st.tabs(["📊 Main Dashboard", "⚙️ Background & Methodology", "ℹ️ About"])
+nav1, nav2, nav3, nav4 = st.tabs(["📊 Main Dashboard", "📝 Instructions", "⚙️ Background & Methodology", "ℹ️ About"])
 
 # ==========================================
 # PAGE 1: MAIN DASHBOARD
@@ -298,8 +270,8 @@ with nav1:
         age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine_years)
         median_paths = np.median(history['total_bal'], axis=0)
         
-        # --- THE FIX: Standardized Probability of Success Math (> $0) ---
         prob_success = np.mean(history['total_bal'][:, -1] > 0) * 100
+        prob_legacy = np.mean(history['total_bal'][:, -1] >= inputs['target_floor']) * 100
         
         df_median = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
 
@@ -330,7 +302,7 @@ with nav1:
             st.subheader("Plan Insights & Executive Summary")
         with colB:
             pdf_data = {
-                'prob_success': prob_success, 'terminal_wealth': median_paths[-1], 'yr1_burn': yr1_burn,
+                'prob_success': prob_success, 'prob_legacy': prob_legacy, 'terminal_wealth': median_paths[-1], 'yr1_burn': yr1_burn,
                 'safe_years': safe_years, 'roth_winner': winner, 'tax_savings': tax_savings,
                 'rmd_reduction': rmd_reduction, 'wealth_increase': wealth_increase, 'health_plan': inputs['health_plan'],
                 'total_medicare': total_medicare_cost, 'medicare_verdict': med_verdict
@@ -338,18 +310,19 @@ with nav1:
             pdf_bytes = generate_pdf(pdf_data)
             st.download_button(label="📄 Download Executive Summary PDF", data=pdf_bytes, file_name="Retirement_Plan_Summary.pdf", mime="application/pdf", use_container_width=True)
         
-        st.info("💡 **Actuarial Note on Probability of Success:** This model calculates your withdrawal rate by mathematically forcing the *Median* (50th percentile) outcome to exactly hit your Target Legacy Floor. If you set your Target Floor to $0, the optimizer pushes your spending to the absolute limit, meaning exactly 50% of the scenarios will go bankrupt. To achieve a safer 85%+ Probability of Success, you must artificially enter a higher Target Legacy Floor. This acts as a cash buffer against bad market conditions.")
-        
-        kpi1, kpi2, kpi3 = st.columns(3)
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
         
         with kpi1.container(border=True):
-            st.metric("Probability of Success", f"{prob_success:.1f}%", delta="On Track" if prob_success >= 85 else "At Risk", delta_color="normal" if prob_success >= 85 else "inverse", help="Definition: The percentage of 10,000 simulated market paths where your portfolio successfully lasted until your Life Expectancy without dropping to $0.")
+            st.metric("Prob. of Survival (> $0)", f"{prob_success:.1f}%", delta="On Track" if prob_success >= 85 else "At Risk", delta_color="normal" if prob_success >= 85 else "inverse", help="Definition: The percentage of 10,000 simulated market paths where your portfolio successfully lasted until your Life Expectancy without dropping to $0.")
             
         with kpi2.container(border=True):
-            st.metric("Median Terminal Legacy", f"${median_paths[-1]:,.0f}", help="Definition: The estimated total value of your estate (portfolios + home value) at your life expectancy age, assuming 50th percentile (average) market performance.")
+            st.metric("Prob. of Reaching Target Legacy", f"{prob_legacy:.1f}%", help="Definition: The percentage of simulations where your final estate value met or exceeded the exact Target Legacy Floor you inputted.")
             
         with kpi3.container(border=True):
-            st.metric("Estimated Year 1 Portfolio Burn", f"${yr1_burn:,.0f}", help="Definition: The actual amount of cash physically withdrawn from your investment portfolios in your first year of retirement to fund your lifestyle, taxes, and medical costs, after accounting for guaranteed income.\n\nExample: If your lifestyle costs $100k and your pension is $60k, your 'Burn' is $40k.")
+            st.metric("Median Terminal Legacy", f"${median_paths[-1]:,.0f}", help="Definition: The estimated total value of your estate (portfolios + home value) at your life expectancy age, assuming 50th percentile (average) market performance.")
+            
+        with kpi4.container(border=True):
+            st.metric("Est. Year 1 Portfolio Burn", f"${yr1_burn:,.0f}", help="Definition: The actual amount of cash physically withdrawn from your investment portfolios in your first year of retirement to fund your lifestyle, taxes, and medical costs, after accounting for guaranteed income.\n\nExample: If your lifestyle costs $100k and your pension is $60k, your 'Burn' is $40k.")
             
         st.markdown("<br>", unsafe_allow_html=True) 
 
@@ -477,6 +450,10 @@ with nav1:
             with col2:
                 st.plotly_chart(plot_roth_tax_impact(roth_results, winner, years_arr), use_container_width=True)
                 
+            tax_savings = roth_results['Baseline (None)']['taxes'] - roth_results[winner]['taxes']
+            rmd_reduction = roth_results['Baseline (None)']['rmds'] - roth_results[winner]['rmds']
+            wealth_increase = roth_results[winner]['wealth'] - roth_results['Baseline (None)']['wealth']
+            
             st.markdown("### Recommended Action Plan")
             if "Baseline" in winner:
                 st.warning("**Verdict: No Conversions Recommended.**")
@@ -506,7 +483,6 @@ with nav1:
             }
             st.table(pd.DataFrame(ss_data))
             st.success("**Verdict: Delay Claiming until Age 70**")
-            st.write("**Why delay to 70? The 'Longevity Insurance' Concept:** Actuarially, Social Security is one of the few guaranteed, inflation-adjusted, market-immune income streams you possess alongside your FERS pension. By delaying to Age 70, your payout permanently increases by 8% per year. This creates massive 'Longevity Insurance.' If you live deep into your 90s, this vastly inflated SS paycheck drastically reduces the withdrawal pressure placed on your TSP/Roth, virtually guaranteeing you will not outlive your portfolio.")
 
         with t10:
             st.subheader("Medicare Part B & Actuarial Healthcare OOP")
@@ -535,9 +511,29 @@ with nav1:
             colB.download_button("📄 Download Pessimistic (10th) CSV", df_pess.to_csv(index=False), "Retirement_Pess.csv", "text/csv")
 
 # ==========================================
-# PAGE 2: BACKGROUND & METHODOLOGY
+# PAGE 2: INSTRUCTIONS
 # ==========================================
 with nav2:
+    st.title("How to Use the Retirement Planner")
+    st.markdown("---")
+    st.write("""
+    **Step 1: Build Your Profile**  
+    On the left side of the dashboard, fill out all applicable boxes in the 'Client Parameters' menu. Ensure you accurately enter your current ages, target retirement age, and expected income. If a field does not apply to you (e.g., 'Mortgage'), leave it blank or at 0.
+    
+    **Step 2: Define Your Guardrails**  
+    Under 'Expenses & Goals', input your absolute Minimum Survival Spending and your Target Legacy Floor. The engine will mathematically solve for a withdrawal rate that respects these boundaries.
+    
+    **Step 3: Run the Engine**  
+    Click the large Teal **'Run Projection Engine'** button at the bottom of the form. The system will freeze your inputs and generate 10,000 distinct market realities in the background.
+    
+    **Step 4: Save Your Work**  
+    Once you have built a profile, use the 'Save / Load' expander at the very top of the page to download your profile as a secure `.json` file to your computer. Next time you visit, simply drag and drop that file to instantly reload all your numbers.
+    """)
+
+# ==========================================
+# PAGE 3: BACKGROUND & METHODOLOGY
+# ==========================================
+with nav3:
     st.title("Under the Hood: The Quantitative Methodology")
     st.markdown("---")
     st.write("""The Advanced Retirement Simulator is not a traditional "straight-line" calculator. Traditional calculators assume your portfolio grows by a flat 7% every year and inflation is a flat 3%. In the real world, average returns don't matter as much as the sequence of those returns.\n\nTo evaluate your retirement survivability, I built an **Institution-Grade Stochastic Engine** that tests your financial profile against 10,000 parallel realities. Here is exactly how the mathematical models work:""")
@@ -580,9 +576,9 @@ with nav2:
     """)
 
 # ==========================================
-# PAGE 3: ABOUT
+# PAGE 4: ABOUT
 # ==========================================
-with nav3:
+with nav4:
     st.title("About the Advanced Quantitative Retirement Planner")
     st.markdown("---")
 
