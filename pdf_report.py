@@ -50,7 +50,7 @@ def generate_pdf(data):
     pdf.cell(0, 10, '3. Social Security Strategy', 0, 1)
     pdf.set_font('Arial', '', 12)
     pdf.multi_cell(0, 8, "Actuarial Verdict: Delay Claiming until Age 70\n"
-                         "Reasoning: Social Security is the only guaranteed, inflation-adjusted, market-immune income stream. Delaying to 70 maximizes this 'Longevity Insurance', drastically reducing the withdrawal pressure placed on your TSP/Roth deep into retirement.")
+                         "Reasoning: Alongside your FERS Pension, Social Security is one of the few guaranteed, inflation-adjusted, market-immune income streams you possess. Delaying to 70 maximizes this 'Longevity Insurance', drastically reducing the withdrawal pressure placed on your TSP/Roth deep into retirement.")
     pdf.ln(5)
 
     # 4. HEALTHCARE & MEDICARE
