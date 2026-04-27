@@ -18,7 +18,6 @@ from visuals import (
 
 st.set_page_config(page_title="Advanced Retirement Simulator", layout="wide")
 
-# --- THE FIX: FORCE iPAD/MOBILE TO SCROLL TO TOP ON LOAD ---
 components.html(
     """
     <script>
@@ -30,7 +29,6 @@ components.html(
     width=0,
 )
 
-# --- INJECT BOLDIN-STYLE UI/CSS ---
 ui_styling = """
     <style>
     #MainMenu {visibility: hidden;}
@@ -75,12 +73,12 @@ st.markdown(ui_styling, unsafe_allow_html=True)
 st.title("Advanced Quantitative Retirement Planner")
 st.markdown("Institution-Grade Monte Carlo Simulator | Constant Amortization Spending Model (CASAM)")
 
-# --- THE FIX: ESTABLISH MEMORY STATE TO PREVENT DATA ERASURE ---
 DEFAULT_STATE = {
     'cur_age': None, 'ret_age': None, 'life_exp': None, 'filing_status': "Single",
     'spouse_age': None, 'spouse_life_exp': None, 'state': "", 'county': "",
     'current_salary': None, 'annual_savings': None, 'phased_ret_active': False,
-    'phased_ret_age': None, 'pension_est': None, 'ss_fra': None, 'ss_claim_age': 67,
+    'phased_ret_age': None, 'pension_est': None, 'survivor_benefit': "Full Survivor Benefit", 
+    'ss_fra': None, 'ss_claim_age': 67,
     'target_floor': None, 'min_spending': None, 'max_spending': None, 'add_exp': None,
     'max_tax_bracket': "24%", 'mortgage_pmt': None, 'mortgage_yrs': None, 'home_value': None,
     'health_plan': "None/Self-Insure", 'health_cost': None, 'oop_cost': None,
@@ -106,7 +104,6 @@ with st.expander("💾 Client Profile Management (Save / Load)", expanded=False)
     with col_load:
         uploaded_profile = st.file_uploader("Load Saved Profile (.json)", type="json")
         if uploaded_profile is not None:
-            # Prevents infinite reloading loop
             if "loaded_file" not in st.session_state or st.session_state.loaded_file != uploaded_profile.name:
                 try:
                     loaded_data = json.load(uploaded_profile)
@@ -114,7 +111,7 @@ with st.expander("💾 Client Profile Management (Save / Load)", expanded=False)
                         st.session_state[key] = value
                     st.session_state.loaded_file = uploaded_profile.name
                     st.success("Profile Loaded Successfully!")
-                    st.rerun() # --- THE FIX: INSTANTLY POPULATES FORM BEFORE SUBMIT ---
+                    st.rerun() 
                 except Exception as e:
                     st.error("Error loading profile.")
                 
@@ -132,13 +129,11 @@ with st.expander("💾 Client Profile Management (Save / Load)", expanded=False)
 with st.form("input_form"):
     st.markdown("### Step 1: Build Your Profile")
     
-    # By omitting the 'value=' argument here and strictly using 'key=', 
-    # Streamlit flawlessly syncs the visual form to your uploaded json memory state.
     with st.expander("👤 Personal & Tax Details", expanded=True):
         c1, c2, c3 = st.columns(3)
         cur_age = c1.number_input("Current Age", min_value=18, max_value=100, key="cur_age")
         ret_age = c2.number_input("Full Retirement Age", min_value=18, max_value=100, key="ret_age")
-        life_exp = c3.number_input("Life Expectancy Age", min_value=50, max_value=120, key="life_exp")
+        life_exp = c3.number_input("Primary Life Expectancy Age", min_value=50, max_value=120, key="life_exp")
         
         st.markdown("**Tax & Spouse Details**")
         c4, c5, c6 = st.columns(3)
@@ -161,10 +156,13 @@ with st.form("input_form"):
         phased_ret_age = c4.number_input("Phased Retirement Start Age", min_value=50, max_value=70, key="phased_ret_age")
         
         st.markdown("**Federal Details & Guaranteed Income**")
-        c5, c6, c7 = st.columns(3)
-        pension_est = c5.number_input("Full Pension Est. ($)", min_value=0, key="pension_est")
-        ss_fra = c6.number_input("Social Security at FRA ($/yr)", min_value=0, key="ss_fra")
-        ss_claim_age = c7.number_input("Target SS Claiming Age", min_value=62, max_value=70, key="ss_claim_age")
+        c5, c6 = st.columns(2)
+        pension_est = c5.number_input("Full (Unreduced) Pension Est. ($)", min_value=0, key="pension_est")
+        survivor_benefit = c6.selectbox("FERS Survivor Benefit Option", ["Full Survivor Benefit", "Partial Survivor Benefit", "No Survivor Benefit"], key="survivor_benefit")
+        
+        c7, c8 = st.columns(2)
+        ss_fra = c7.number_input("Social Security at FRA ($/yr)", min_value=0, key="ss_fra")
+        ss_claim_age = c8.number_input("Target SS Claiming Age", min_value=62, max_value=70, key="ss_claim_age")
 
     with st.expander("📉 Expenses & Goals", expanded=False):
         st.markdown("**Spending Limits & Legacy Goals**")
@@ -224,7 +222,6 @@ with st.form("input_form"):
     submit = st.form_submit_button("Run Projection Engine", type="primary")
 
 if submit:
-    # Handle logic where basis defaults to balance if not declared
     final_tax_basis = st.session_state.tax_basis if st.session_state.tax_basis is not None else st.session_state.tax_b
     
     vital_checks = {"Current Age": st.session_state.cur_age, "Retirement Age": st.session_state.ret_age, "Life Expectancy": st.session_state.life_exp, "Target Legacy Floor": st.session_state.target_floor}
@@ -247,7 +244,8 @@ if submit:
         'filing_status': st.session_state.filing_status, 'state': st.session_state.state, 'county': st.session_state.county, 
         'current_salary': safe_float(st.session_state.current_salary), 'annual_savings': safe_float(st.session_state.annual_savings),
         'phased_ret_active': st.session_state.phased_ret_active, 'phased_ret_age': int(st.session_state.phased_ret_age or st.session_state.ret_age),
-        'pension_est': safe_float(st.session_state.pension_est), 'ss_fra': safe_float(st.session_state.ss_fra), 'ss_claim_age': int(st.session_state.ss_claim_age),
+        'pension_est': safe_float(st.session_state.pension_est), 'survivor_benefit': st.session_state.survivor_benefit,
+        'ss_fra': safe_float(st.session_state.ss_fra), 'ss_claim_age': int(st.session_state.ss_claim_age),
         'min_spending': safe_float(st.session_state.min_spending), 'max_spending': safe_float(st.session_state.max_spending),
         'additional_expenses': safe_float(st.session_state.add_exp),
         'max_tax_bracket': float(st.session_state.max_tax_bracket.strip('%'))/100,
@@ -270,7 +268,6 @@ if submit:
         roth_results, winner, history = engine.analyze_roth_strategies(opt_iwr)
         port_analysis = engine.analyze_portfolios(opt_iwr, roth_strategy=1) 
         
-        # Save to session state to survive tab changes
         st.session_state['sim_data'] = {
             'inputs': inputs, 'opt_iwr': opt_iwr, 'roth_results': roth_results,
             'winner': winner, 'history': history, 'port_analysis': port_analysis,
@@ -444,7 +441,7 @@ if 'sim_data' in st.session_state:
         if med_taxes[-1] > med_taxes[0] * 2.5:
             st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Execute Roth Conversions.")
         if inputs['filing_status'] == 'MFJ':
-            st.error("⚠️ **Widow(er) Tax Penalty**: Upon the first spouse's mortality, your tax filing status shifts to Single, shrinking your brackets and drastically increasing your vulnerability to IRMAA surcharges. Roth conversions are critical while you are still MFJ.")
+            st.warning("⚠️ **Widow(er) Tax Penalty**: Upon the first spouse's mortality, your tax filing status shifts to Single, shrinking your brackets and drastically increasing your vulnerability to IRMAA surcharges. Roth conversions are critical while you are still MFJ.")
         if prob_success >= 85:
             st.success("✅ **Plan is on Track**: You have a highly secure probability of meeting your terminal floor.")
 
@@ -500,6 +497,7 @@ if 'sim_data' in st.session_state:
         }
         st.table(pd.DataFrame(ss_data))
         st.success("**Verdict: Delay Claiming until Age 70**")
+        st.write("**Why delay to 70? The 'Longevity Insurance' Concept:** Actuarially, Social Security is the only guaranteed, inflation-adjusted, market-immune income stream you will ever possess. By delaying to Age 70, your payout permanently increases by 8% per year. This creates massive 'Longevity Insurance.' If you live deep into your 90s, this vastly inflated SS paycheck drastically reduces the withdrawal pressure placed on your TSP/Roth, virtually guaranteeing you will not outlive your portfolio.")
 
     with t10:
         st.subheader("Medicare Part B & Actuarial Healthcare OOP")

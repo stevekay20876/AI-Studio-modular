@@ -99,8 +99,9 @@ class StochasticRetirementEngine:
         home_value = np.full(self.iterations, self.inputs.get('home_value', 0.0))
         
         taxable_basis = np.full(self.iterations, self.inputs.get('taxable_basis', self.inputs['taxable_bal']))
-        base_pension = np.full(self.iterations, self.inputs['pension_est'])
         
+        # Base Income Streams (Pre-COLA and Pre-Penalty)
+        base_pension = np.full(self.iterations, self.inputs['pension_est'])
         ss_claim_age = self.inputs.get('ss_claim_age', 67)
         months_early = max(0, (67 - ss_claim_age) * 12)
         months_late = max(0, (ss_claim_age - 67) * 12)
@@ -159,6 +160,7 @@ class StochasticRetirementEngine:
         phased_ret_active = self.inputs.get('phased_ret_active', False)
         phased_age = self.inputs.get('phased_ret_age', ret_age)
         pay_taxes_from_cash = self.inputs.get('pay_taxes_from_cash', True)
+        survivor_benefit_choice = self.inputs.get('survivor_benefit', "No Survivor Benefit")
         
         min_spending = self.inputs.get('min_spending', 0.0)
         max_spending = self.inputs.get('max_spending', 0.0)
@@ -186,14 +188,55 @@ class StochasticRetirementEngine:
             spouse_age += 1
             current_year += 1
             
-            if base_filing_status == 'MFJ' and (age > primary_life_exp or spouse_age > spouse_life_exp):
+            # --- DYNAMIC MORTALITY LOGIC (Filing Status, SS, and Pension Multipliers) ---
+            primary_alive = age <= primary_life_exp
+            spouse_alive = spouse_age <= spouse_life_exp if base_filing_status == 'MFJ' else False
+            
+            if base_filing_status == 'MFJ':
+                if primary_alive and spouse_alive:
+                    current_filing_status = 'MFJ'
+                    moop_idx = 1
+                    ss_mult = 1.0
+                    # Primary is alive: apply the cost of the selected survivor benefit
+                    if survivor_benefit_choice == 'Full Survivor Benefit':
+                        pension_mult = 0.90
+                    elif survivor_benefit_choice == 'Partial Survivor Benefit':
+                        pension_mult = 0.95
+                    else:
+                        pension_mult = 1.0
+                elif not primary_alive and spouse_alive:
+                    # Widow(er) phase
+                    current_filing_status = 'Single'
+                    moop_idx = 0
+                    ss_mult = 0.50 # Generic Widow proxy
+                    # Spouse receives the elected benefit based on the *unreduced* pension
+                    if survivor_benefit_choice == 'Full Survivor Benefit':
+                        pension_mult = 0.50
+                    elif survivor_benefit_choice == 'Partial Survivor Benefit':
+                        pension_mult = 0.25
+                    else:
+                        pension_mult = 0.0
+                elif primary_alive and not spouse_alive:
+                    # Spouse passes first. The "Pop-Up" Provision restores pension to 100%
+                    current_filing_status = 'Single'
+                    moop_idx = 0
+                    ss_mult = 0.50
+                    pension_mult = 1.0
+                else:
+                    # Both deceased
+                    current_filing_status = 'Single'
+                    moop_idx = 0
+                    ss_mult = 0.0
+                    pension_mult = 0.0
+            else:
                 current_filing_status = 'Single'
                 moop_idx = 0
-                survivor_penalty = 0.50 
-            else:
-                current_filing_status = base_filing_status
-                moop_idx = 1 if current_filing_status == 'MFJ' else 0
-                survivor_penalty = 1.0
+                if primary_alive:
+                    ss_mult = 1.0
+                    pension_mult = 1.0
+                else:
+                    ss_mult = 0.0
+                    pension_mult = 0.0
                 
             deduction = STD_DED_MFJ if current_filing_status == 'MFJ' else STD_DED_SINGLE
             brackets = TAX_BRACKETS_MFJ if current_filing_status == 'MFJ' else TAX_BRACKETS_SINGLE
@@ -227,8 +270,9 @@ class StochasticRetirementEngine:
                 if phased_ret_active and age >= phased_age:
                     current_salary_income = inflated_salary * 0.50
                     fers_cola = np.where(inf_paths[:, yr] <= 0.02, inf_paths[:, yr], np.where(inf_paths[:, yr] <= 0.03, 0.02, inf_paths[:, yr] - 0.01))
+                    # Compounding tracks the base unreduced pension
                     base_pension *= (1 + np.maximum(0, fers_cola))
-                    current_pension = base_pension * 0.50 * survivor_penalty
+                    current_pension = base_pension * 0.50 * pension_mult
                 else:
                     current_salary_income = inflated_salary
                     current_pension = np.zeros(self.iterations)
@@ -236,7 +280,7 @@ class StochasticRetirementEngine:
                 current_salary_income = np.zeros(self.iterations)
                 fers_cola = np.where(inf_paths[:, yr] <= 0.02, inf_paths[:, yr], np.where(inf_paths[:, yr] <= 0.03, 0.02, inf_paths[:, yr] - 0.01))
                 base_pension *= (1 + np.maximum(0, fers_cola))
-                current_pension = base_pension * survivor_penalty
+                current_pension = base_pension * pension_mult
                 
             history['salary_income'][:, yr] = current_salary_income
             history['pension_income'][:, yr] = current_pension
@@ -255,7 +299,7 @@ class StochasticRetirementEngine:
             
             ss_haircut = 0.79 if current_year >= 2035 else 1.0
             base_ss *= (1 + np.maximum(0, inf_paths[:, yr]))
-            ss = np.where(age >= ss_claim_age, base_ss * ss_haircut * survivor_penalty, 0)
+            ss = np.where(age >= ss_claim_age, base_ss * ss_haircut * ss_mult, 0)
             history['ss_income'][:, yr] = ss
             
             w_needed = np.zeros(self.iterations)
@@ -411,14 +455,16 @@ class StochasticRetirementEngine:
             if roth_strategy > 0 and age >= ret_age and age < 75:
                 space = np.zeros(self.iterations)
                 
-                if roth_strategy == 1: 
+                if roth_strategy in [1, 4]: 
                     for limit, rate in brackets:
                         mask = (taxable_income < limit) & (space == 0)
                         space[mask] = limit - taxable_income[mask] - 1
                     space = np.where(space > 1e6, 0, space)
-                    for irmaa_limit, surcharge in irmaa_brackets:
-                        crosses_cliff = (magi < irmaa_limit) & ((magi + space) >= irmaa_limit)
-                        space = np.where(crosses_cliff, irmaa_limit - magi - 1, space)
+                    
+                    if roth_strategy == 1:
+                        for irmaa_limit, surcharge in irmaa_brackets:
+                            crosses_cliff = (magi < irmaa_limit) & ((magi + space) >= irmaa_limit)
+                            space = np.where(crosses_cliff, irmaa_limit - magi - 1, space)
                         
                 elif roth_strategy == 2: 
                     irmaa_tier_1 = irmaa_brackets[0][0]
@@ -427,12 +473,7 @@ class StochasticRetirementEngine:
                 elif roth_strategy == 3:
                     irmaa_tier_2 = irmaa_brackets[1][0]
                     space = np.maximum(0, irmaa_tier_2 - magi - 1)
-                    
-                elif roth_strategy == 4:
-                    # FIX: Safely target the exact max allowable user bracket directly
-                    space = np.maximum(0, limit_max_pct - taxable_income - 1)
                 
-                # Absolute override: Strategy can never exceed the user's explicit drop-down maximum
                 max_allowable_space = np.maximum(0, limit_max_pct - taxable_income - 1)
                 space = np.minimum(space, max_allowable_space)
                 
