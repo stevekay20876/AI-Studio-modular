@@ -19,6 +19,7 @@ from visuals import (
 
 st.set_page_config(page_title="Advanced Retirement Simulator", layout="wide")
 
+# --- FORCE iPAD/MOBILE TO SCROLL TO TOP ON LOAD ---
 components.html(
     """
     <script>
@@ -30,6 +31,7 @@ components.html(
     width=0,
 )
 
+# --- INJECT BOLDIN-STYLE UI/CSS ---
 ui_styling = """
     <style>
     #MainMenu {visibility: hidden;}
@@ -427,7 +429,7 @@ with nav1:
             if med_taxes[-1] > med_taxes[0] * 2.5:
                 st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Execute Roth Conversions.")
             if inputs['filing_status'] == 'MFJ':
-                st.error("⚠️ **Widow(er) Tax Penalty**: Upon the first spouse's mortality, your tax filing status shifts to Single, shrinking your brackets and drastically increasing your vulnerability to IRMAA surcharges. Roth conversions are critical while you are still MFJ.")
+                st.warning("⚠️ **Widow(er) Tax Penalty**: Upon the first spouse's mortality, your tax filing status shifts to Single, shrinking your brackets and drastically increasing your vulnerability to IRMAA surcharges. Roth conversions are critical while you are still MFJ.")
             if prob_success >= 85:
                 st.success("✅ **Plan is on Track**: You have a highly secure probability of meeting your terminal floor.")
 
@@ -483,6 +485,7 @@ with nav1:
             }
             st.table(pd.DataFrame(ss_data))
             st.success("**Verdict: Delay Claiming until Age 70**")
+            st.write("**Why delay to 70? The 'Longevity Insurance' Concept:** Actuarially, Social Security is one of the few guaranteed, inflation-adjusted, market-immune income streams you possess alongside your FERS pension. By delaying to Age 70, your payout permanently increases by 8% per year. This creates massive 'Longevity Insurance.' If you live deep into your 90s, this vastly inflated SS paycheck drastically reduces the withdrawal pressure placed on your TSP/Roth, virtually guaranteeing you will not outlive your portfolio.")
 
         with t10:
             st.subheader("Medicare Part B & Actuarial Healthcare OOP")
@@ -516,22 +519,72 @@ with nav1:
 with nav2:
     st.title("How to Use the Retirement Planner")
     st.markdown("---")
-    st.write("""
-    **Step 1: Build Your Profile**  
-    On the left side of the dashboard, fill out all applicable boxes in the 'Client Parameters' menu. Ensure you accurately enter your current ages, target retirement age, and expected income. If a field does not apply to you (e.g., 'Mortgage'), leave it blank or at 0.
+    st.write("This guide is designed to help you navigate the Advanced Quantitative Retirement Planner. Unlike standard calculators, this system uses institution-grade modeling to test your plan against 10,000 different market scenarios.")
+    st.write("To get the most accurate 'Stress Test' for your retirement, please follow these steps to input your data.")
+
+    st.header("Profile Initialization")
+    st.write("Before entering data, look at the **Client Profile Management** section at the top.")
+    st.markdown("- **Recommendation:** If this is your first time, you will fill out the form manually. Once finished, use the 'Save Current Profile' button. This downloads a small file to your computer so you can 'Load' your data instantly next time without re-typing everything.")
+
+    st.header("Step 1 - Build Your Profile")
     
-    **Step 2: Define Your Guardrails**  
-    Under 'Expenses & Goals', input your absolute Minimum Survival Spending and your Target Legacy Floor. The engine will mathematically solve for a withdrawal rate that respects these boundaries.
-    
-    **Step 3: Run the Engine**  
-    Click the large Teal **'Run Projection Engine'** button at the bottom of the form. The system will freeze your inputs and generate 10,000 distinct market realities in the background.
-    
-    **Step 4: Save Your Work**  
-    Once you have built a profile, use the 'Save / Load' expander at the very top of the page to download your profile as a secure `.json` file to your computer. Next time you visit, simply drag and drop that file to instantly reload all your numbers.
+    st.subheader("1. Personal & Tax Details")
+    st.markdown("""
+    - **Age Inputs:** Enter your current age and the age you plan to fully retire.
+    - **Life Expectancy:** Be conservative. We recommend setting this to 90 or 95. The engine will ensure your money lasts at least until this age.
+    - **Filing Status:** This is critical for tax modeling. If you select MFJ (Married Filing Jointly), ensure you also fill out the Spouse age and life expectancy.
+    - **Location:** Enter your State and County. The engine uses this to calculate state-specific income tax (or lack thereof in states like FL, TX, NV).
     """)
 
+    st.subheader("2. Income & Social Security")
+    st.markdown("""
+    - **Current Salary & Savings:** Enter what you earn and save today. The engine assumes you continue this habit until the day you retire.
+    - **FERS/Pension Details:** If you are a Federal Employee, enter your estimated unreduced pension.
+      - **Survivor Benefit:** Select the option you plan to choose. This automatically models the 5% or 10% reduction in your retirement "paycheck."
+    - **Social Security:** Use the numbers from your latest SSA.gov statement for the Full Retirement Age (FRA).
+      - **Claiming Age:** Even if you retire at 62, you might wait until 70 to claim Social Security. Enter your intended claiming age here.
+    """)
+
+    st.subheader("3. Expenses & Goals")
+    st.markdown("""
+    - **Target Legacy Floor:** How much do you want to leave to your heirs in today's dollars? If you want to spend every last cent, set this to $0.
+    - **Spending Floors & Caps (optional):**
+      - **Minimum:** The absolute lowest "survival" budget you could live on if the markets crashed.
+      - **Maximum:** The most you would realistically want to spend even if you became incredibly wealthy.
+    - **Retiree Healthcare:** Select your specific health plan. This allows the engine to model your Maximum Out-of-Pocket (MOOP) risk and Medicare Part B/IRMAA costs.
+    """)
+
+    st.subheader("4. Savings & Assets")
+    st.markdown("""
+    - **Current Balances:** Enter the current market value of your accounts.
+    - **Strategies:** Choose a strategy for each account.
+      - **Conservative:** 20% Stocks / 80% Bonds.
+      - **Moderate:** 60% Stocks / 40% Bonds.
+      - **Aggressive:** 100% Stocks.
+    - **Money Market (Cash):** This is your "Safety Net." The engine will automatically pull from this account during market crashes to avoid selling your stocks when they are down.
+    """)
+
+    st.header("Run the Engine")
+    st.write("Once your data is entered, click the **Run Projection Engine** button.")
+    st.write("**What happens next?**")
+    st.write("The screen will pause for a few seconds. In the background, the 'Brain' of the system is running 10,000 lifetimes for you. It is looking for the 'Optimized Withdrawal Rate'…the highest amount you can spend without falling below your Legacy Floor in the average market scenario.")
+
+    st.header("Reviewing Your Results")
+    st.write("Once the dashboard populates, focus on these three areas:")
+    st.markdown("""
+    1. **Probability of Success:** You want this number to be 85% or higher. If it is lower, you may need to reduce your spending goals or work a few years longer.
+    2. **The "Coach Alerts" Tab:** Read this first. It provides a prioritized "To-Do List" based on your specific risks (e.g., "You have a high risk of RMD tax spikes").
+    3. **The Roth Optimizer Tab:** This shows you exactly how much money to convert from your TSP/IRA to a Roth IRA each year to pay the lowest amount of lifetime tax possible.
+    """)
+
+    st.header("Final Step: Export Your Plan")
+    st.write("At the top of the dashboard, click **Download Executive Summary PDF**. This provides a formal, 2-page summary of your results that you can keep for your records.")
+
+    st.markdown("---")
+    st.caption("*Stochastic modeling (Monte Carlo simulations) generates hypothetical market returns based on statistical probability; it does not predict actual future stock market performance. The projections generated by this tool regarding the likelihood of various investment outcomes are hypothetical in nature, do not reflect actual investment results, and are not guarantees of future results. Always consult with a licensed fiduciary, Certified Financial Planner (CFP®), or CPA before executing Roth conversions, claiming Social Security, or making irrevocable retirement decisions.*")
+
 # ==========================================
-# PAGE 3: BACKGROUND & METHODOLOGY
+# PAGE 4: BACKGROUND & METHODOLOGY
 # ==========================================
 with nav3:
     st.title("Under the Hood: The Quantitative Methodology")
@@ -576,7 +629,7 @@ with nav3:
     """)
 
 # ==========================================
-# PAGE 4: ABOUT
+# PAGE 5: ABOUT
 # ==========================================
 with nav4:
     st.title("About the Advanced Quantitative Retirement Planner")
