@@ -50,7 +50,7 @@ class StochasticRetirementEngine:
         if seed is not None:
             np.random.seed(seed)
             
-        # FIX 2: Multiply by sqrt(3/5) to normalize Student's t-distribution variance back to 1.0
+        # Multiply by sqrt(3/5) to normalize Student's t-distribution variance back to 1.0
         variance_scalar = np.sqrt(3.0 / 5.0)
         shocks = t.rvs(df=5, size=(self.iterations, self.years, self.n_assets)) * variance_scalar
         correlated_shocks = np.einsum('ij,kyj->kyi', L, shocks)
@@ -248,7 +248,6 @@ class StochasticRetirementEngine:
                 cum_inf *= (1 + np.maximum(0, inf_paths[:, yr]))
             history['cum_inf'][:, yr] = cum_inf
             
-            # FIX 1: Max bracket check with dynamic inflation mapping
             limit_max_pct = np.full(self.iterations, np.inf)
             for i in range(len(brackets)):
                 if np.isclose(brackets[i][1], user_max_bracket, atol=0.01):
@@ -424,7 +423,6 @@ class StochasticRetirementEngine:
             magi = gross_income.copy() 
             taxable_income = np.maximum(0, gross_income - (deduction * cum_inf)) 
             
-            # FIX 1: Ordinary Income Tax Bracket Inflation
             base_tax_fed = np.zeros(self.iterations)
             for i in range(len(brackets)):
                 prev_limit = (brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
@@ -432,7 +430,6 @@ class StochasticRetirementEngine:
                 rate = brackets[i][1]
                 base_tax_fed += np.clip(taxable_income - prev_limit, 0, limit - prev_limit) * rate
                 
-            # FIX 1: LTCG Bracket Inflation
             ltcg_tax = np.zeros(self.iterations)
             for i in range(len(ltcg_brackets)):
                 limit = ltcg_brackets[i][0] * cum_inf
@@ -440,7 +437,6 @@ class StochasticRetirementEngine:
                 applicable_gains = np.clip(taxable_income + realized_gains - limit, 0, realized_gains)
                 ltcg_tax += applicable_gains * rate
                 
-            # FIX 1: NIIT Threshold Inflation
             niit_tax = np.where(magi > (niit_threshold * cum_inf), realized_gains * 0.038, 0.0)
             base_tax_fed += (ltcg_tax + niit_tax)
             
@@ -497,7 +493,6 @@ class StochasticRetirementEngine:
                 final_taxable_income = taxable_income + conv_amt
                 final_magi = magi + conv_amt
                 
-                # Recalculate Ordinary Income Tax
                 new_tax_fed = np.zeros(self.iterations)
                 for i in range(len(brackets)):
                     prev_limit = (brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
@@ -505,7 +500,6 @@ class StochasticRetirementEngine:
                     rate = brackets[i][1]
                     new_tax_fed += np.clip(final_taxable_income - prev_limit, 0, limit - prev_limit) * rate
                 
-                # FIX 3: Recalculate LTCG and NIIT penalties based on new elevated MAGI/Taxable limits
                 new_ltcg_tax = np.zeros(self.iterations)
                 for i in range(len(ltcg_brackets)):
                     limit = ltcg_brackets[i][0] * cum_inf
@@ -556,7 +550,6 @@ class StochasticRetirementEngine:
             current_moop = base_moop * cum_inf
             inflated_oop = np.minimum(raw_oop, current_moop)
             
-            # FIX 1: Medicare IRMAA Bracket Inflation
             medicare_cost = np.zeros(self.iterations)
             if age >= 65 and "FEHB" not in health_plan and "TRICARE" not in health_plan:
                 medicare_cost += MEDICARE_PART_B_BASE
@@ -603,22 +596,16 @@ class StochasticRetirementEngine:
             
         return history
 
-def objective_function(self, iwr_test):
+    def objective_function(self, iwr_test):
         history = self.run_mc(iwr_test, seed=42, roth_strategy=0)
         median_real_path = np.median(history['total_bal_real'], axis=0)
         target_floor = self.inputs.get('target_floor', 0.0)
         
         terminal_wealth = median_real_path[-1]
         
-        # FIX: Create a smooth, continuous mathematical gradient for early depletion.
-        # This prevents Brent's Method from crashing when the Target Floor is set to $0.
-        if terminal_wealth <= 1.0:  # Using 1.0 to account for floating point near-zeros
-            # Count exactly how many years the median path was bankrupt
+        if terminal_wealth <= 1.0:
             years_bankrupt = np.sum(median_real_path <= 1.0)
             initial_wealth = median_real_path[0]
-            
-            # Create a smooth artificial negative trajectory (falling short by 5% per bankrupt year)
-            # This gives the root-finder a perfect mathematical slope to follow back up to 0
             artificial_terminal = -(years_bankrupt * initial_wealth * 0.05)
             return artificial_terminal - target_floor
             
@@ -626,10 +613,8 @@ def objective_function(self, iwr_test):
 
     def optimize_iwr(self):
         try:
-            # Widened bounds and changed except block to catch all optimizer convergence failures
             return optimize.brentq(self.objective_function, a=0.001, b=0.40, xtol=1e-4, maxiter=40)
         except Exception:
-            # Fallback only triggers if user is massively over-funded beyond a 40% initial withdrawal
             return 0.04
             
     def analyze_portfolios(self, opt_iwr, roth_strategy=0):
