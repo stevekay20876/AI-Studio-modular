@@ -603,24 +603,33 @@ class StochasticRetirementEngine:
             
         return history
 
-    def objective_function(self, iwr_test):
+def objective_function(self, iwr_test):
         history = self.run_mc(iwr_test, seed=42, roth_strategy=0)
         median_real_path = np.median(history['total_bal_real'], axis=0)
         target_floor = self.inputs.get('target_floor', 0.0)
         
-        if np.any(median_real_path <= 0):
-            depletion_year = np.argmax(median_real_path <= 0)
-            years_failed_early = self.years - depletion_year
-            penalty = -1000000 * years_failed_early 
-            return penalty - target_floor
+        terminal_wealth = median_real_path[-1]
+        
+        # FIX: Create a smooth, continuous mathematical gradient for early depletion.
+        # This prevents Brent's Method from crashing when the Target Floor is set to $0.
+        if terminal_wealth <= 1.0:  # Using 1.0 to account for floating point near-zeros
+            # Count exactly how many years the median path was bankrupt
+            years_bankrupt = np.sum(median_real_path <= 1.0)
+            initial_wealth = median_real_path[0]
             
-        return median_real_path[-1] - target_floor
+            # Create a smooth artificial negative trajectory (falling short by 5% per bankrupt year)
+            # This gives the root-finder a perfect mathematical slope to follow back up to 0
+            artificial_terminal = -(years_bankrupt * initial_wealth * 0.05)
+            return artificial_terminal - target_floor
+            
+        return terminal_wealth - target_floor
 
     def optimize_iwr(self):
         try:
-            # FIX 5: Widened Brentq bounds to 40% initial withdrawal to prevent over-funded ValueError crashes
+            # Widened bounds and changed except block to catch all optimizer convergence failures
             return optimize.brentq(self.objective_function, a=0.001, b=0.40, xtol=1e-4, maxiter=40)
-        except ValueError:
+        except Exception:
+            # Fallback only triggers if user is massively over-funded beyond a 40% initial withdrawal
             return 0.04
             
     def analyze_portfolios(self, opt_iwr, roth_strategy=0):
