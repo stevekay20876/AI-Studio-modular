@@ -269,7 +269,6 @@ with nav1:
         years_arr = np.arange(datetime.datetime.now().year, datetime.datetime.now().year + engine_years)
         age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine_years)
         
-        # PROBABILITIES
         median_real_terminal = np.median(history['total_bal_real'][:, -1])
         prob_success = np.mean(history['total_bal_real'][:, -1] > 0) * 100
         prob_legacy = np.mean(history['total_bal_real'][:, -1] >= inputs['target_floor']) * 100
@@ -322,7 +321,7 @@ with nav1:
             st.metric("Prob. of Reaching Target Legacy", f"{prob_legacy:.1f}%", help="Definition: The percentage of simulations where your final estate value met or exceeded the exact Target Legacy Floor you inputted.")
             
         with kpi3.container(border=True):
-            st.metric("Median Terminal Legacy (Today's $)", f"${median_real_terminal:,.0f}", help="Definition: The estimated total value of your estate (portfolios + home value) at your life expectancy age, calculated in Today's purchasing power (discounted for inflation), assuming 50th percentile (average) market performance.")
+            st.metric("Median Terminal Legacy (Today's $)", f"${median_real_terminal:,.0f}", help="Definition: The estimated total value of your estate at life expectancy, discounted for inflation back into Today's Dollars to match your Target Legacy Floor.")
             
         with kpi4.container(border=True):
             st.metric("Est. Year 1 Portfolio Burn", f"${yr1_burn:,.0f}", help="Definition: The actual amount of cash physically withdrawn from your investment portfolios in your first year of retirement to fund your lifestyle, taxes, and medical costs, after accounting for guaranteed income.\n\nExample: If your lifestyle costs $100k and your pension is $60k, your 'Burn' is $40k.")
@@ -346,8 +345,8 @@ with nav1:
             port_wealths = [port_analysis[p]['wealth'] for p in port_names]
             port_cuts = [port_analysis[p]['cut_prob'] for p in port_names]
             
-            p_df = pd.DataFrame({"Portfolio Strategy": port_names, "Median Real Terminal Wealth": port_wealths, "Probability of Guardrail Pay Cuts": port_cuts})
-            st.table(p_df.style.format({"Median Real Terminal Wealth": "${:,.0f}", "Probability of Guardrail Pay Cuts": "{:.1f}%"}))
+            p_df = pd.DataFrame({"Portfolio Strategy": port_names, "Median Terminal Legacy (Today's $)": port_wealths, "Probability of Guardrail Pay Cuts": port_cuts})
+            st.table(p_df.style.format({"Median Terminal Legacy (Today's $)": "${:,.0f}", "Probability of Guardrail Pay Cuts": "{:.1f}%"}))
 
         with t2:
             st.subheader("Integrated Cash Flow & Simulation Execution")
@@ -430,7 +429,7 @@ with nav1:
             if med_taxes[-1] > med_taxes[0] * 2.5:
                 st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Execute Roth Conversions.")
             if inputs['filing_status'] == 'MFJ':
-                st.error("⚠️ **Widow(er) Tax Penalty**: Upon the first spouse's mortality, your tax filing status shifts to Single, shrinking your brackets and drastically increasing your vulnerability to IRMAA surcharges. Roth conversions are critical while you are still MFJ.")
+                st.warning("⚠️ **Widow(er) Tax Penalty**: Upon the first spouse's mortality, your tax filing status shifts to Single, shrinking your brackets and drastically increasing your vulnerability to IRMAA surcharges. Roth conversions are critical while you are still MFJ.")
             if prob_success >= 85:
                 st.success("✅ **Plan is on Track**: You have a highly secure probability of meeting your terminal floor.")
 
@@ -465,7 +464,7 @@ with nav1:
                 
                 st.write(f"- **Real Lifetime Tax Savings:** ${max(0, tax_savings):,.0f}")
                 st.write(f"- **Reduction in Lifetime RMDs:** ${rmd_reduction:,.0f}")
-                st.write(f"- **Net Increase to Legacy:** ${wealth_increase:,.0f}")
+                st.write(f"- **Net Increase to Legacy (Today's $):** ${wealth_increase:,.0f}")
                 
                 st.markdown("#### Step-by-Step Conversion Schedule")
                 st.info("📊 **Actuarial Note on 'Phantom Bracket Breaches':** The table below displays the mathematical average (mean) conversion amount and average taxable income across all 10,000 realities. Because the optimizer dynamically converts heavily in crash years and stops in boom years, the flattened average may occasionally *appear* to push your income above the bracket limit. Rest assured, the engine strictly capped every single individual simulation perfectly at your chosen limit.")
@@ -585,7 +584,7 @@ with nav2:
     st.caption("*Stochastic modeling (Monte Carlo simulations) generates hypothetical market returns based on statistical probability; it does not predict actual future stock market performance. The projections generated by this tool regarding the likelihood of various investment outcomes are hypothetical in nature, do not reflect actual investment results, and are not guarantees of future results. Always consult with a licensed fiduciary, Certified Financial Planner (CFP®), or CPA before executing Roth conversions, claiming Social Security, or making irrevocable retirement decisions.*")
 
 # ==========================================
-# PAGE 4: BACKGROUND & METHODOLOGY
+# PAGE 3: BACKGROUND & METHODOLOGY
 # ==========================================
 with nav3:
     st.title("Under the Hood: The Quantitative Methodology")
@@ -630,7 +629,7 @@ with nav3:
     """)
 
 # ==========================================
-# PAGE 5: ABOUT
+# PAGE 4: ABOUT
 # ==========================================
 with nav4:
     st.title("About the Advanced Quantitative Retirement Planner")
