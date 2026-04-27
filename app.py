@@ -19,7 +19,6 @@ from visuals import (
 
 st.set_page_config(page_title="Advanced Retirement Simulator", layout="wide")
 
-# --- FORCE iPAD/MOBILE TO SCROLL TO TOP ON LOAD ---
 components.html(
     """
     <script>
@@ -31,7 +30,6 @@ components.html(
     width=0,
 )
 
-# --- INJECT BOLDIN-STYLE UI/CSS ---
 ui_styling = """
     <style>
     #MainMenu {visibility: hidden;}
@@ -149,11 +147,11 @@ with nav1:
             ss_claim_age = c8.number_input("Target SS Claiming Age", min_value=62, max_value=70, key="ss_claim_age")
 
         with st.expander("📉 Expenses & Goals", expanded=False):
-            st.markdown("**Spending Limits & Legacy Goals**")
+            st.markdown("**Spending Limits & Legacy Goals (In Today's Dollars)**")
             c1, c2, c3 = st.columns(3)
-            target_floor = c1.number_input("Target Legacy Floor ($)", min_value=0, key="target_floor")
-            min_spending = c2.number_input("Minimum Spending Floor ($)", min_value=0, key="min_spending")
-            max_spending = c3.number_input("Maximum Spending Cap ($)", min_value=0, key="max_spending")
+            target_floor = c1.number_input("Target Legacy Floor (Today's $) ($)", min_value=0, key="target_floor")
+            min_spending = c2.number_input("Minimum Spending Floor (Today's $) ($)", min_value=0, key="min_spending")
+            max_spending = c3.number_input("Maximum Spending Cap (Today's $) ($)", min_value=0, key="max_spending")
             
             c4, c5 = st.columns(2)
             add_exp = c4.number_input("Additional Expenses (Retirement Smile) ($)", min_value=0, key="add_exp")
@@ -270,10 +268,11 @@ with nav1:
         
         years_arr = np.arange(datetime.datetime.now().year, datetime.datetime.now().year + engine_years)
         age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine_years)
-        median_paths = np.median(history['total_bal'], axis=0)
         
-        prob_success = np.mean(history['total_bal'][:, -1] > 0) * 100
-        prob_legacy = np.mean(history['total_bal'][:, -1] >= inputs['target_floor']) * 100
+        # PROBABILITIES
+        median_real_terminal = np.median(history['total_bal_real'][:, -1])
+        prob_success = np.mean(history['total_bal_real'][:, -1] > 0) * 100
+        prob_legacy = np.mean(history['total_bal_real'][:, -1] >= inputs['target_floor']) * 100
         
         df_median = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
 
@@ -304,13 +303,15 @@ with nav1:
             st.subheader("Plan Insights & Executive Summary")
         with colB:
             pdf_data = {
-                'prob_success': prob_success, 'prob_legacy': prob_legacy, 'terminal_wealth': median_paths[-1], 'yr1_burn': yr1_burn,
+                'prob_success': prob_success, 'prob_legacy': prob_legacy, 'terminal_wealth': median_real_terminal, 'yr1_burn': yr1_burn,
                 'safe_years': safe_years, 'roth_winner': winner, 'tax_savings': tax_savings,
                 'rmd_reduction': rmd_reduction, 'wealth_increase': wealth_increase, 'health_plan': inputs['health_plan'],
                 'total_medicare': total_medicare_cost, 'medicare_verdict': med_verdict
             }
             pdf_bytes = generate_pdf(pdf_data)
             st.download_button(label="📄 Download Executive Summary PDF", data=pdf_bytes, file_name="Retirement_Plan_Summary.pdf", mime="application/pdf", use_container_width=True)
+        
+        st.info("💡 **Actuarial Note on Probability of Success:** This model calculates your withdrawal rate by mathematically forcing the *Median* (50th percentile) outcome to exactly hit your Target Legacy Floor. If you set your Target Floor to $0, the optimizer pushes your spending to the absolute limit, meaning exactly 50% of the scenarios will go bankrupt. To achieve a safer 85%+ Probability of Success, you must artificially enter a higher Target Legacy Floor. This acts as a cash buffer against bad market conditions.")
         
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
         
@@ -321,7 +322,7 @@ with nav1:
             st.metric("Prob. of Reaching Target Legacy", f"{prob_legacy:.1f}%", help="Definition: The percentage of simulations where your final estate value met or exceeded the exact Target Legacy Floor you inputted.")
             
         with kpi3.container(border=True):
-            st.metric("Median Terminal Legacy", f"${median_paths[-1]:,.0f}", help="Definition: The estimated total value of your estate (portfolios + home value) at your life expectancy age, assuming 50th percentile (average) market performance.")
+            st.metric("Median Terminal Legacy (Today's $)", f"${median_real_terminal:,.0f}", help="Definition: The estimated total value of your estate (portfolios + home value) at your life expectancy age, calculated in Today's purchasing power (discounted for inflation), assuming 50th percentile (average) market performance.")
             
         with kpi4.container(border=True):
             st.metric("Est. Year 1 Portfolio Burn", f"${yr1_burn:,.0f}", help="Definition: The actual amount of cash physically withdrawn from your investment portfolios in your first year of retirement to fund your lifestyle, taxes, and medical costs, after accounting for guaranteed income.\n\nExample: If your lifestyle costs $100k and your pension is $60k, your 'Burn' is $40k.")
@@ -345,8 +346,8 @@ with nav1:
             port_wealths = [port_analysis[p]['wealth'] for p in port_names]
             port_cuts = [port_analysis[p]['cut_prob'] for p in port_names]
             
-            p_df = pd.DataFrame({"Portfolio Strategy": port_names, "Median Terminal Wealth": port_wealths, "Probability of Guardrail Pay Cuts": port_cuts})
-            st.table(p_df.style.format({"Median Terminal Wealth": "${:,.0f}", "Probability of Guardrail Pay Cuts": "{:.1f}%"}))
+            p_df = pd.DataFrame({"Portfolio Strategy": port_names, "Median Real Terminal Wealth": port_wealths, "Probability of Guardrail Pay Cuts": port_cuts})
+            st.table(p_df.style.format({"Median Real Terminal Wealth": "${:,.0f}", "Probability of Guardrail Pay Cuts": "{:.1f}%"}))
 
         with t2:
             st.subheader("Integrated Cash Flow & Simulation Execution")
@@ -429,7 +430,7 @@ with nav1:
             if med_taxes[-1] > med_taxes[0] * 2.5:
                 st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Execute Roth Conversions.")
             if inputs['filing_status'] == 'MFJ':
-                st.warning("⚠️ **Widow(er) Tax Penalty**: Upon the first spouse's mortality, your tax filing status shifts to Single, shrinking your brackets and drastically increasing your vulnerability to IRMAA surcharges. Roth conversions are critical while you are still MFJ.")
+                st.error("⚠️ **Widow(er) Tax Penalty**: Upon the first spouse's mortality, your tax filing status shifts to Single, shrinking your brackets and drastically increasing your vulnerability to IRMAA surcharges. Roth conversions are critical while you are still MFJ.")
             if prob_success >= 85:
                 st.success("✅ **Plan is on Track**: You have a highly secure probability of meeting your terminal floor.")
 

@@ -8,7 +8,11 @@ def plot_wealth_trajectory(history, target_floor, years_arr):
     fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['total_bal'], axis=0), mode='lines', name='Median (50th)', line=dict(color='blue', width=3)))
     fig.add_trace(go.Scatter(x=years_arr, y=np.percentile(history['total_bal'], 90, axis=0), mode='lines', name='Optimistic (90th)', line=dict(color='green', dash='dash')))
     fig.add_trace(go.Scatter(x=years_arr, y=np.percentile(history['total_bal'], 10, axis=0), mode='lines', name='Pessimistic (10th)', line=dict(color='red', dash='dash')))
-    fig.add_hline(y=target_floor, line_dash="dot", line_color="black", annotation_text="Target Legacy Floor")
+    
+    median_inf = np.median(history['cum_inf'], axis=0)
+    inflated_floor = target_floor * median_inf
+    fig.add_trace(go.Scatter(x=years_arr, y=inflated_floor, mode='lines', name='Target Legacy Floor (Inflated)', line=dict(color='black', dash='dot')))
+    
     fig.update_layout(
         title="Stochastic Portfolio Projections", 
         hovermode="x unified",
@@ -170,9 +174,9 @@ def plot_roth_strategy_comparison(roth_results):
     wealths = [roth_results[s]['wealth'] for s in strategies]
     winner_idx = np.argmax(wealths)
     colors = ['gray'] * len(strategies)
-    colors[winner_idx] = '#00837B' # Highlight winner in Boldin Teal
+    colors[winner_idx] = '#00837B'
     
-    fig = px.bar(x=wealths, y=strategies, orientation='h', title="Strategic Scenario Comparison (Median Terminal Wealth)")
+    fig = px.bar(x=wealths, y=strategies, orientation='h', title="Strategic Scenario Comparison (Median Real Terminal Wealth)")
     fig.update_traces(marker_color=colors)
     fig.update_layout(
         xaxis_title="", 

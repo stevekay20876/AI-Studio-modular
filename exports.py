@@ -9,13 +9,14 @@ def build_csv_dataframe(history, years_arr, age_arr, percentile=50):
         "Rate of Return": np.percentile(history['port_return'], percentile, axis=0),
         "Inflation Rate": np.percentile(history['inflation'], percentile, axis=0),
         "Real Rate of Return": np.percentile(history['real_return'], percentile, axis=0),
+        "Cumulative Inflation Multiplier": np.percentile(history['cum_inf'], percentile, axis=0), 
         "Home Value": np.percentile(history['home_value'], percentile, axis=0),
         "Taxable ETF Balance": np.percentile(history['taxable_bal'], percentile, axis=0),
         "Roth IRA Balance": np.percentile(history['roth_bal'], percentile, axis=0),
         "Trad IRA Balance": np.percentile(history['ira_bal'], percentile, axis=0),
         "HSA Balance": np.percentile(history['hsa_bal'], percentile, axis=0),
         "Money Market Balance": np.percentile(history['cash_bal'], percentile, axis=0),
-        "Remaining TSP Account": np.percentile(history['tsp_bal'], percentile, axis=0), # --- FIX: RENAMED COLUMN ---
+        "Remaining TSP Account": np.percentile(history['tsp_bal'], percentile, axis=0), 
         "TSP Withdrawal": np.percentile(history['tsp_withdrawal'], percentile, axis=0), 
         "Trad IRA Withdrawal": np.percentile(history['ira_withdrawal'], percentile, axis=0), 
         "Annual Roth IRA Withdrawal": np.percentile(history['roth_withdrawal'], percentile, axis=0),    
@@ -38,7 +39,8 @@ def build_csv_dataframe(history, years_arr, age_arr, percentile=50):
         "Total Expenses": np.percentile(history['taxes_fed'] + history['taxes_state'] + history['medicare_cost'] + history['health_cost'] + history['mortgage_cost'] + history['additional_expenses'], percentile, axis=0),
         "Net Spendable Annual": np.percentile(history['net_spendable'], percentile, axis=0),
         "Total Income": np.percentile(history['net_spendable'] + history['taxes_fed'] + history['taxes_state'] + history['medicare_cost'] + history['health_cost'] + history['mortgage_cost'] + history['additional_expenses'], percentile, axis=0),
-        "Ending Total Balance (excluding HSA)": np.percentile(history['total_bal'], percentile, axis=0),
+        "Ending Total Balance (Nominal $)": np.percentile(history['total_bal'], percentile, axis=0),
+        "Ending Total Balance (Today's $)": np.percentile(history['total_bal_real'], percentile, axis=0), 
         "Withdrawal Constraint Active": ["Yes" if flag > 0 else "No" for flag in np.percentile(history['constraint_active'], percentile, axis=0)]
     }
     return pd.DataFrame(data)

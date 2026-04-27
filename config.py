@@ -28,7 +28,6 @@ IRMAA_BRACKETS_SINGLE = [(103000, 0), (129000, 838.8), (161000, 2101.2), (193000
 IRMAA_BRACKETS_MFJ = [(206000, 0), (258000, 838.8), (322000, 2101.2), (386000, 3362.4), (749999, 4624.8), (np.inf, 5043.6)]
 
 # --- STATE RETIREMENT EXEMPTIONS ---
-# States that fully exempt Retirement Income (TSP, Pensions, SS) or have NO income tax
 RETIREMENT_TAX_FREE_STATES = ["FL", "TX", "NV", "WA", "SD", "WY", "AK", "TN", "NH", "IL", "PA", "MS"]
 
 # --- STATUTORY HEALTH INSURANCE MOOP LIMITS (Single, MFJ) ---

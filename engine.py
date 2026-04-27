@@ -100,8 +100,8 @@ class StochasticRetirementEngine:
         
         taxable_basis = np.full(self.iterations, self.inputs.get('taxable_basis', self.inputs['taxable_bal']))
         
-        # Base Income Streams (Pre-COLA and Pre-Penalty)
         base_pension = np.full(self.iterations, self.inputs['pension_est'])
+        
         ss_claim_age = self.inputs.get('ss_claim_age', 67)
         months_early = max(0, (67 - ss_claim_age) * 12)
         months_late = max(0, (ss_claim_age - 67) * 12)
@@ -114,6 +114,8 @@ class StochasticRetirementEngine:
         
         history = {
             'total_bal': np.zeros((self.iterations, self.years)),
+            'total_bal_real': np.zeros((self.iterations, self.years)), 
+            'cum_inf': np.zeros((self.iterations, self.years)),        
             'tsp_bal': np.zeros((self.iterations, self.years)),
             'ira_bal': np.zeros((self.iterations, self.years)),
             'roth_bal': np.zeros((self.iterations, self.years)),
@@ -155,6 +157,7 @@ class StochasticRetirementEngine:
         spouse_life_exp = self.inputs.get('spouse_life_exp', 95)
         
         current_year = datetime.datetime.now().year
+        
         base_filing_status = self.inputs['filing_status']
         base_salary = self.inputs.get('current_salary', 0.0)
         phased_ret_active = self.inputs.get('phased_ret_active', False)
@@ -188,7 +191,6 @@ class StochasticRetirementEngine:
             spouse_age += 1
             current_year += 1
             
-            # --- DYNAMIC MORTALITY LOGIC (Filing Status, SS, and Pension Multipliers) ---
             primary_alive = age <= primary_life_exp
             spouse_alive = spouse_age <= spouse_life_exp if base_filing_status == 'MFJ' else False
             
@@ -197,7 +199,6 @@ class StochasticRetirementEngine:
                     current_filing_status = 'MFJ'
                     moop_idx = 1
                     ss_mult = 1.0
-                    # Primary is alive: apply the cost of the selected survivor benefit
                     if survivor_benefit_choice == 'Full Survivor Benefit':
                         pension_mult = 0.90
                     elif survivor_benefit_choice == 'Partial Survivor Benefit':
@@ -205,11 +206,9 @@ class StochasticRetirementEngine:
                     else:
                         pension_mult = 1.0
                 elif not primary_alive and spouse_alive:
-                    # Widow(er) phase
                     current_filing_status = 'Single'
                     moop_idx = 0
-                    ss_mult = 0.50 # Generic Widow proxy
-                    # Spouse receives the elected benefit based on the *unreduced* pension
+                    ss_mult = 0.50 
                     if survivor_benefit_choice == 'Full Survivor Benefit':
                         pension_mult = 0.50
                     elif survivor_benefit_choice == 'Partial Survivor Benefit':
@@ -217,13 +216,11 @@ class StochasticRetirementEngine:
                     else:
                         pension_mult = 0.0
                 elif primary_alive and not spouse_alive:
-                    # Spouse passes first. The "Pop-Up" Provision restores pension to 100%
                     current_filing_status = 'Single'
                     moop_idx = 0
                     ss_mult = 0.50
                     pension_mult = 1.0
                 else:
-                    # Both deceased
                     current_filing_status = 'Single'
                     moop_idx = 0
                     ss_mult = 0.0
@@ -253,6 +250,7 @@ class StochasticRetirementEngine:
 
             if yr > 0:
                 cum_inf *= (1 + np.maximum(0, inf_paths[:, yr]))
+            history['cum_inf'][:, yr] = cum_inf
             
             home_value *= 1.035
             history['home_value'][:, yr] = home_value
@@ -270,7 +268,6 @@ class StochasticRetirementEngine:
                 if phased_ret_active and age >= phased_age:
                     current_salary_income = inflated_salary * 0.50
                     fers_cola = np.where(inf_paths[:, yr] <= 0.02, inf_paths[:, yr], np.where(inf_paths[:, yr] <= 0.03, 0.02, inf_paths[:, yr] - 0.01))
-                    # Compounding tracks the base unreduced pension
                     base_pension *= (1 + np.maximum(0, fers_cola))
                     current_pension = base_pension * 0.50 * pension_mult
                 else:
@@ -561,6 +558,8 @@ class StochasticRetirementEngine:
             history['additional_expenses'][:, yr] = current_add_exp
             
             history['total_bal'][:, yr] = tsp + ira + roth + taxable + cash
+            history['total_bal_real'][:, yr] = history['total_bal'][:, yr] / cum_inf
+            
             history['tsp_bal'][:, yr] = tsp
             history['ira_bal'][:, yr] = ira
             history['roth_bal'][:, yr] = roth
@@ -580,16 +579,16 @@ class StochasticRetirementEngine:
 
     def objective_function(self, iwr_test):
         history = self.run_mc(iwr_test, seed=42, roth_strategy=0)
-        median_path = np.median(history['total_bal'], axis=0)
+        median_real_path = np.median(history['total_bal_real'], axis=0)
         target_floor = self.inputs.get('target_floor', 0.0)
         
-        if np.any(median_path <= 0):
-            depletion_year = np.argmax(median_path <= 0)
+        if np.any(median_real_path <= 0):
+            depletion_year = np.argmax(median_real_path <= 0)
             years_failed_early = self.years - depletion_year
             penalty = -1000000 * years_failed_early 
             return penalty - target_floor
             
-        return median_path[-1] - target_floor
+        return median_real_path[-1] - target_floor
 
     def optimize_iwr(self):
         try:
@@ -601,7 +600,7 @@ class StochasticRetirementEngine:
         results = {}
         hist_custom = self.run_mc(opt_iwr, seed=42, roth_strategy=roth_strategy, override_port=None)
         results["Your Custom Mix"] = {
-            'wealth': np.median(hist_custom['total_bal'][:, -1]), 
+            'wealth': np.median(hist_custom['total_bal_real'][:, -1]), 
             'cut_prob': np.mean(np.any(hist_custom['constraint_active'] == 1, axis=1)) * 100
         }
         del hist_custom
@@ -610,7 +609,7 @@ class StochasticRetirementEngine:
         for port in ["Conservative (20% Stock / 80% Bond)", "Moderate (60% Stock / 40% Bond)", "Aggressive (100% Stock)"]:
             hist = self.run_mc(opt_iwr, seed=42, roth_strategy=roth_strategy, override_port=port)
             results[port] = {
-                'wealth': np.median(hist['total_bal'][:, -1]), 
+                'wealth': np.median(hist['total_bal_real'][:, -1]), 
                 'cut_prob': np.mean(np.any(hist['constraint_active'] == 1, axis=1)) * 100
             }
             del hist
@@ -635,7 +634,7 @@ class StochasticRetirementEngine:
         
         for s_idx, s_name in strats:
             hist = self.run_mc(opt_iwr, seed=42, roth_strategy=s_idx)
-            wealth = np.median(hist['total_bal'][:, -1])
+            wealth = np.median(hist['total_bal_real'][:, -1])
             
             results[s_name] = {
                 'wealth': wealth,

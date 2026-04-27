@@ -5,7 +5,7 @@ import datetime
 class PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 16)
-        self.set_text_color(0, 131, 123) # Boldin Teal
+        self.set_text_color(0, 131, 123) 
         self.cell(0, 10, 'Advanced Quantitative Retirement Plan', 0, 1, 'C')
         self.set_font('Arial', 'I', 11)
         self.set_text_color(100, 100, 100)
@@ -31,7 +31,7 @@ def generate_pdf(data):
     status = "ON TRACK" if data['prob_success'] >= 85 else "AT RISK"
     pdf.multi_cell(0, 8, f"Probability of Survival (> $0): {data['prob_success']:.1f}% ({status})\n"
                          f"Probability of Meeting Target Legacy: {data['prob_legacy']:.1f}%\n"
-                         f"Median Terminal Legacy (at Life Expectancy): ${data['terminal_wealth']:,.0f}\n"
+                         f"Median Terminal Legacy (Today's Dollars): ${data['terminal_wealth']:,.0f}\n"
                          f"Estimated Year 1 Portfolio Burn Rate: ${data['yr1_burn']:,.0f}\n"
                          f"Years of Safe Liquidity Buffer: {data['safe_years']:.1f} Years")
     pdf.ln(5)
