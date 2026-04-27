@@ -5,7 +5,7 @@ import datetime
 class PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 16)
-        self.set_text_color(0, 131, 123) 
+        self.set_text_color(0, 131, 123) # Boldin Teal
         self.cell(0, 10, 'Advanced Quantitative Retirement Plan', 0, 1, 'C')
         self.set_font('Arial', 'I', 11)
         self.set_text_color(100, 100, 100)
@@ -41,9 +41,9 @@ def generate_pdf(data):
     pdf.cell(0, 10, '2. Roth Conversion Optimizer', 0, 1)
     pdf.set_font('Arial', '', 12)
     pdf.multi_cell(0, 8, f"Recommended Strategy: {data['roth_winner']}\n"
-                         f"Projected Lifetime Tax Savings: ${max(0, data['tax_savings']):,.0f}\n"
+                         f"Projected Nominal Lifetime Tax Savings (Un-discounted): ${max(0, data['tax_savings']):,.0f}\n"
                          f"Projected RMD Reduction: ${data['rmd_reduction']:,.0f}\n"
-                         f"Net Increase to Terminal Legacy: ${data['wealth_increase']:,.0f}")
+                         f"Net Increase to Terminal Legacy (Today's $): ${data['wealth_increase']:,.0f}")
     pdf.ln(5)
 
     # 3. SOCIAL SECURITY

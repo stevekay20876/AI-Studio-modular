@@ -5,16 +5,17 @@ import plotly.express as px
 
 def plot_wealth_trajectory(history, target_floor, years_arr):
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['total_bal'], axis=0), mode='lines', name='Median (50th)', line=dict(color='blue', width=3)))
-    fig.add_trace(go.Scatter(x=years_arr, y=np.percentile(history['total_bal'], 90, axis=0), mode='lines', name='Optimistic (90th)', line=dict(color='green', dash='dash')))
-    fig.add_trace(go.Scatter(x=years_arr, y=np.percentile(history['total_bal'], 10, axis=0), mode='lines', name='Pessimistic (10th)', line=dict(color='red', dash='dash')))
     
-    median_inf = np.median(history['cum_inf'], axis=0)
-    inflated_floor = target_floor * median_inf
-    fig.add_trace(go.Scatter(x=years_arr, y=inflated_floor, mode='lines', name='Target Legacy Floor (Inflated)', line=dict(color='black', dash='dot')))
+    # Plot using 'total_bal_real' (Today's Dollars) instead of nominal 'total_bal'
+    fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['total_bal_real'], axis=0), mode='lines', name='Median (50th)', line=dict(color='blue', width=3)))
+    fig.add_trace(go.Scatter(x=years_arr, y=np.percentile(history['total_bal_real'], 90, axis=0), mode='lines', name='Optimistic (90th)', line=dict(color='green', dash='dash')))
+    fig.add_trace(go.Scatter(x=years_arr, y=np.percentile(history['total_bal_real'], 10, axis=0), mode='lines', name='Pessimistic (10th)', line=dict(color='red', dash='dash')))
+    
+    # Plot the Target Legacy Floor as a straight flat line (since the chart is now in Today's $)
+    fig.add_trace(go.Scatter(x=years_arr, y=[target_floor] * len(years_arr), mode='lines', name='Target Legacy Floor', line=dict(color='black', dash='dot')))
     
     fig.update_layout(
-        title="Stochastic Portfolio Projections", 
+        title="Stochastic Portfolio Projections (In Today's Dollars)", 
         hovermode="x unified",
         template="plotly_white",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
@@ -176,7 +177,7 @@ def plot_roth_strategy_comparison(roth_results):
     colors = ['gray'] * len(strategies)
     colors[winner_idx] = '#00837B'
     
-    fig = px.bar(x=wealths, y=strategies, orientation='h', title="Strategic Scenario Comparison (Median Real Terminal Wealth)")
+    fig = px.bar(x=wealths, y=strategies, orientation='h', title="Strategic Scenario Comparison (Terminal Legacy in Today's $)")
     fig.update_traces(marker_color=colors)
     fig.update_layout(
         xaxis_title="", 

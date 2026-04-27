@@ -462,7 +462,7 @@ with nav1:
             else:
                 st.success(f"Verdict: **Execute the '{winner}' Strategy**")
                 
-                st.write(f"- **Real Lifetime Tax Savings:** ${max(0, tax_savings):,.0f}")
+                st.write(f"- **Nominal Lifetime Tax Savings (Un-discounted):** ${max(0, tax_savings):,.0f}")
                 st.write(f"- **Reduction in Lifetime RMDs:** ${rmd_reduction:,.0f}")
                 st.write(f"- **Net Increase to Legacy (Today's $):** ${wealth_increase:,.0f}")
                 

@@ -50,7 +50,9 @@ class StochasticRetirementEngine:
         if seed is not None:
             np.random.seed(seed)
             
-        shocks = t.rvs(df=5, size=(self.iterations, self.years, self.n_assets))
+        # FIX 2: Multiply by sqrt(3/5) to normalize Student's t-distribution variance back to 1.0
+        variance_scalar = np.sqrt(3.0 / 5.0)
+        shocks = t.rvs(df=5, size=(self.iterations, self.years, self.n_assets)) * variance_scalar
         correlated_shocks = np.einsum('ij,kyj->kyi', L, shocks)
         
         r_tsp, v_tsp = self.get_port_params('tsp_strat', override_port)
@@ -241,16 +243,17 @@ class StochasticRetirementEngine:
             ltcg_brackets = LTCG_BRACKETS_MFJ if current_filing_status == 'MFJ' else LTCG_BRACKETS_SINGLE
             niit_threshold = NIIT_THRESHOLD_MFJ if current_filing_status == 'MFJ' else NIIT_THRESHOLD_SINGLE
             base_moop = MOOP_LIMITS.get(health_plan, (999999, 999999))[moop_idx]
-            
-            limit_max_pct = np.inf
-            for limit, rate in brackets:
-                if np.isclose(rate, user_max_bracket, atol=0.01):
-                    limit_max_pct = limit
-                    break
 
             if yr > 0:
                 cum_inf *= (1 + np.maximum(0, inf_paths[:, yr]))
             history['cum_inf'][:, yr] = cum_inf
+            
+            # FIX 1: Max bracket check with dynamic inflation mapping
+            limit_max_pct = np.full(self.iterations, np.inf)
+            for i in range(len(brackets)):
+                if np.isclose(brackets[i][1], user_max_bracket, atol=0.01):
+                    limit_max_pct = brackets[i][0] * cum_inf
+                    break
             
             home_value *= 1.035
             history['home_value'][:, yr] = home_value
@@ -419,20 +422,26 @@ class StochasticRetirementEngine:
             
             gross_income = rmds + w_tsp + w_ira + current_pension + (ss * 0.85) + current_salary_income
             magi = gross_income.copy() 
-            taxable_income = np.maximum(0, gross_income - deduction) 
+            taxable_income = np.maximum(0, gross_income - (deduction * cum_inf)) 
             
+            # FIX 1: Ordinary Income Tax Bracket Inflation
             base_tax_fed = np.zeros(self.iterations)
             for i in range(len(brackets)):
-                prev_limit = brackets[i-1][0] if i > 0 else 0
-                limit, rate = brackets[i]
+                prev_limit = (brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
+                limit = brackets[i][0] * cum_inf
+                rate = brackets[i][1]
                 base_tax_fed += np.clip(taxable_income - prev_limit, 0, limit - prev_limit) * rate
                 
+            # FIX 1: LTCG Bracket Inflation
             ltcg_tax = np.zeros(self.iterations)
-            for limit, rate in ltcg_brackets:
+            for i in range(len(ltcg_brackets)):
+                limit = ltcg_brackets[i][0] * cum_inf
+                rate = ltcg_brackets[i][1]
                 applicable_gains = np.clip(taxable_income + realized_gains - limit, 0, realized_gains)
                 ltcg_tax += applicable_gains * rate
                 
-            niit_tax = np.where(magi > niit_threshold, realized_gains * 0.038, 0.0)
+            # FIX 1: NIIT Threshold Inflation
+            niit_tax = np.where(magi > (niit_threshold * cum_inf), realized_gains * 0.038, 0.0)
             base_tax_fed += (ltcg_tax + niit_tax)
             
             state_taxable_base = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), 
@@ -453,22 +462,24 @@ class StochasticRetirementEngine:
                 space = np.zeros(self.iterations)
                 
                 if roth_strategy in [1, 4]: 
-                    for limit, rate in brackets:
+                    for i in range(len(brackets)):
+                        limit = brackets[i][0] * cum_inf
                         mask = (taxable_income < limit) & (space == 0)
-                        space[mask] = limit - taxable_income[mask] - 1
+                        space[mask] = limit[mask] - taxable_income[mask] - 1
                     space = np.where(space > 1e6, 0, space)
                     
                     if roth_strategy == 1:
-                        for irmaa_limit, surcharge in irmaa_brackets:
+                        for i in range(len(irmaa_brackets)):
+                            irmaa_limit = irmaa_brackets[i][0] * cum_inf
                             crosses_cliff = (magi < irmaa_limit) & ((magi + space) >= irmaa_limit)
                             space = np.where(crosses_cliff, irmaa_limit - magi - 1, space)
                         
                 elif roth_strategy == 2: 
-                    irmaa_tier_1 = irmaa_brackets[0][0]
+                    irmaa_tier_1 = irmaa_brackets[0][0] * cum_inf
                     space = np.maximum(0, irmaa_tier_1 - magi - 1)
                     
                 elif roth_strategy == 3:
-                    irmaa_tier_2 = irmaa_brackets[1][0]
+                    irmaa_tier_2 = irmaa_brackets[1][0] * cum_inf
                     space = np.maximum(0, irmaa_tier_2 - magi - 1)
                 
                 max_allowable_space = np.maximum(0, limit_max_pct - taxable_income - 1)
@@ -486,13 +497,26 @@ class StochasticRetirementEngine:
                 final_taxable_income = taxable_income + conv_amt
                 final_magi = magi + conv_amt
                 
+                # Recalculate Ordinary Income Tax
                 new_tax_fed = np.zeros(self.iterations)
                 for i in range(len(brackets)):
-                    prev_limit = brackets[i-1][0] if i > 0 else 0
-                    limit, rate = brackets[i]
+                    prev_limit = (brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
+                    limit = brackets[i][0] * cum_inf
+                    rate = brackets[i][1]
                     new_tax_fed += np.clip(final_taxable_income - prev_limit, 0, limit - prev_limit) * rate
                 
-                extra_tax_fed = new_tax_fed - (base_tax_fed - ltcg_tax - niit_tax) 
+                # FIX 3: Recalculate LTCG and NIIT penalties based on new elevated MAGI/Taxable limits
+                new_ltcg_tax = np.zeros(self.iterations)
+                for i in range(len(ltcg_brackets)):
+                    limit = ltcg_brackets[i][0] * cum_inf
+                    rate = ltcg_brackets[i][1]
+                    applicable_gains = np.clip(final_taxable_income + realized_gains - limit, 0, realized_gains)
+                    new_ltcg_tax += applicable_gains * rate
+                    
+                new_niit_tax = np.where(final_magi > (niit_threshold * cum_inf), realized_gains * 0.038, 0.0)
+                
+                extra_tax_fed = (new_tax_fed + new_ltcg_tax + new_niit_tax) - base_tax_fed
+                
                 state_conv_tax_base = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), 0.0, conv_amt)
                 extra_tax_state = state_conv_tax_base * combined_state_local_rate
                 extra_tax_total = extra_tax_fed + extra_tax_state
@@ -514,7 +538,7 @@ class StochasticRetirementEngine:
                     net_to_roth = conv_amt - extra_tax_total
                     
                 roth += net_to_roth
-                total_tax_fed = new_tax_fed + ltcg_tax + niit_tax
+                total_tax_fed = new_tax_fed + new_ltcg_tax + new_niit_tax
                 total_tax_state = base_tax_state_local + extra_tax_state
             
             history['roth_conversion'][:, yr] = conv_amt
@@ -532,12 +556,14 @@ class StochasticRetirementEngine:
             current_moop = base_moop * cum_inf
             inflated_oop = np.minimum(raw_oop, current_moop)
             
+            # FIX 1: Medicare IRMAA Bracket Inflation
             medicare_cost = np.zeros(self.iterations)
             if age >= 65 and "FEHB" not in health_plan and "TRICARE" not in health_plan:
                 medicare_cost += MEDICARE_PART_B_BASE
                 for i in range(len(irmaa_brackets)):
-                    limit, surcharge = irmaa_brackets[i]
-                    medicare_cost = np.where(final_magi > (irmaa_brackets[i-1][0] if i>0 else 0), MEDICARE_PART_B_BASE + surcharge, medicare_cost)
+                    prev_limit = (irmaa_brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
+                    surcharge = irmaa_brackets[i][1]
+                    medicare_cost = np.where(final_magi > prev_limit, MEDICARE_PART_B_BASE + surcharge, medicare_cost)
             history['medicare_cost'][:, yr] = medicare_cost
 
             w_hsa = np.minimum(hsa, inflated_oop)
@@ -592,7 +618,8 @@ class StochasticRetirementEngine:
 
     def optimize_iwr(self):
         try:
-            return optimize.brentq(self.objective_function, a=0.01, b=0.12, xtol=1e-4, maxiter=20)
+            # FIX 5: Widened Brentq bounds to 40% initial withdrawal to prevent over-funded ValueError crashes
+            return optimize.brentq(self.objective_function, a=0.001, b=0.40, xtol=1e-4, maxiter=40)
         except ValueError:
             return 0.04
             
