@@ -183,7 +183,7 @@ with nav1:
             
             c4, c5 = st.columns(2)
             add_exp = c4.number_input("Additional Expenses (Retirement Smile) ($)", min_value=0, key="add_exp")
-            max_tax_bracket = c5.selectbox("Maximum Target Tax Bracket (Roth Cap)", ["12%", "22%", "24%", "32%", "35%", "37%"], key="max_tax_bracket")
+            max_tax_bracket = c5.selectbox("Maximum Target Tax Bracket (Roth Cap)", ["12%", "22%", "24%", "32%", "35%", "37%"], index=2, key="max_tax_bracket")
             
             st.markdown("**Property & Debt**")
             c6, c7, c8 = st.columns(3)
@@ -297,7 +297,10 @@ with nav1:
         years_arr = np.arange(datetime.datetime.now().year, datetime.datetime.now().year + engine_years)
         age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine_years)
         median_paths = np.median(history['total_bal'], axis=0)
-        prob_success = np.mean(history['total_bal'][:, -1] >= inputs['target_floor']) * 100
+        
+        # --- THE FIX: Standardized Probability of Success Math (> $0) ---
+        prob_success = np.mean(history['total_bal'][:, -1] > 0) * 100
+        
         df_median = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
 
         ret_idx = max(0, inputs['ret_age'] - inputs['current_age'])
@@ -335,10 +338,12 @@ with nav1:
             pdf_bytes = generate_pdf(pdf_data)
             st.download_button(label="📄 Download Executive Summary PDF", data=pdf_bytes, file_name="Retirement_Plan_Summary.pdf", mime="application/pdf", use_container_width=True)
         
+        st.info("💡 **Actuarial Note on Probability of Success:** This model calculates your withdrawal rate by mathematically forcing the *Median* (50th percentile) outcome to exactly hit your Target Legacy Floor. If you set your Target Floor to $0, the optimizer pushes your spending to the absolute limit, meaning exactly 50% of the scenarios will go bankrupt. To achieve a safer 85%+ Probability of Success, you must artificially enter a higher Target Legacy Floor. This acts as a cash buffer against bad market conditions.")
+        
         kpi1, kpi2, kpi3 = st.columns(3)
         
         with kpi1.container(border=True):
-            st.metric("Probability of Success", f"{prob_success:.1f}%", delta="On Track" if prob_success >= 85 else "At Risk", delta_color="normal" if prob_success >= 85 else "inverse", help="Definition: The percentage of 10,000 simulated market paths where your portfolio successfully lasts until your Life Expectancy without dropping to $0.\n\nExample: '90%' means 9,000 out of 10,000 scenarios successfully funded your lifestyle.")
+            st.metric("Probability of Success", f"{prob_success:.1f}%", delta="On Track" if prob_success >= 85 else "At Risk", delta_color="normal" if prob_success >= 85 else "inverse", help="Definition: The percentage of 10,000 simulated market paths where your portfolio successfully lasted until your Life Expectancy without dropping to $0.")
             
         with kpi2.container(border=True):
             st.metric("Median Terminal Legacy", f"${median_paths[-1]:,.0f}", help="Definition: The estimated total value of your estate (portfolios + home value) at your life expectancy age, assuming 50th percentile (average) market performance.")
@@ -449,7 +454,7 @@ with nav1:
             if med_taxes[-1] > med_taxes[0] * 2.5:
                 st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Execute Roth Conversions.")
             if inputs['filing_status'] == 'MFJ':
-                st.warning("⚠️ **Widow(er) Tax Penalty**: Upon the first spouse's mortality, your tax filing status shifts to Single, shrinking your brackets and drastically increasing your vulnerability to IRMAA surcharges. Roth conversions are critical while you are still MFJ.")
+                st.error("⚠️ **Widow(er) Tax Penalty**: Upon the first spouse's mortality, your tax filing status shifts to Single, shrinking your brackets and drastically increasing your vulnerability to IRMAA surcharges. Roth conversions are critical while you are still MFJ.")
             if prob_success >= 85:
                 st.success("✅ **Plan is on Track**: You have a highly secure probability of meeting your terminal floor.")
 
@@ -507,13 +512,16 @@ with nav1:
             st.subheader("Medicare Part B & Actuarial Healthcare OOP")
             st.plotly_chart(plot_medicare_comparison(history, years_arr, inputs), use_container_width=True)
             
+            total_medicare_cost = np.sum(np.median(history['medicare_cost'], axis=0))
             st.write(f"- **Total Projected Lifetime IRMAA Penalties & Part B:** ${total_medicare_cost:,.0f}")
             
+            moop_cap = MOOP_LIMITS.get(inputs['health_plan'], (999999, 999999))[1 if inputs['filing_status'] == 'MFJ' else 0]
             if moop_cap == 999999:
                 st.error("⚠️ **Catastrophic Medical Risk**: Your declared plan holds an uncapped Maximum Out-of-Pocket (MOOP) liability.")
             else:
                 st.info(f"🛡️ **Plan Protection Active**: Your {inputs['health_plan']} correctly caps out-of-pocket medical tail-risk at **${moop_cap:,.0f}** per year (inflation adjusted).")
                 
+            fed_plans = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard"]
             if inputs['health_plan'] in fed_plans or "TRICARE" in inputs['health_plan']:
                 st.success("Verdict: **Waive Part B & Rely on Retiree Coverage**")
             else:
