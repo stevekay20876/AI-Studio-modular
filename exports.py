@@ -15,6 +15,7 @@ def build_csv_dataframe(history, years_arr, age_arr, percentile=50):
         "Trad IRA Balance": np.percentile(history['ira_bal'], percentile, axis=0),
         "HSA Balance": np.percentile(history['hsa_bal'], percentile, axis=0),
         "Money Market Balance": np.percentile(history['cash_bal'], percentile, axis=0),
+        "Remaining TSP Account": np.percentile(history['tsp_bal'], percentile, axis=0), # --- FIX: RENAMED COLUMN ---
         "TSP Withdrawal": np.percentile(history['tsp_withdrawal'], percentile, axis=0), 
         "Trad IRA Withdrawal": np.percentile(history['ira_withdrawal'], percentile, axis=0), 
         "Annual Roth IRA Withdrawal": np.percentile(history['roth_withdrawal'], percentile, axis=0),    
