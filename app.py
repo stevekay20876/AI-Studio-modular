@@ -40,7 +40,6 @@ ui_styling = """
     .block-container { padding-top: 2rem; padding-bottom: 2rem; }
     [data-testid="stMetricValue"] { font-size: 2.0rem !important; font-weight: 700 !important; color: #00837B !important; }
     
-    /* 1. Download Buttons Highlight */
     [data-testid="stDownloadButton"] button {
         background-color: #E6F7F6 !important;
         color: #00695C !important;
@@ -54,7 +53,6 @@ ui_styling = """
         border-color: #00837B !important;
     }
 
-    /* 2. Tabs Container Background */
     [data-testid="stTabs"] { 
         background-color: #F8FAFC; 
         border: 2px solid #E5E7EB; 
@@ -63,13 +61,11 @@ ui_styling = """
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); 
     }
     
-    /* Remove gap to allow borders to touch */
     div[data-baseweb="tab-list"] {
         gap: 0px;
         border-bottom: 2px solid #E5E7EB;
     }
     
-    /* 3. Inactive Tab High Contrast */
     button[data-baseweb="tab"] { 
         font-size: 1.1rem !important; 
         padding: 0.8rem 1.5rem !important; 
@@ -80,7 +76,6 @@ ui_styling = """
         margin-right: 4px !important;
     }
     
-    /* 4. Active Tab Highlight */
     button[data-baseweb="tab"][aria-selected="true"] { 
         background-color: #FFFFFF !important; 
         color: #00837B !important; 
@@ -100,9 +95,6 @@ st.markdown(ui_styling, unsafe_allow_html=True)
 
 nav1, nav2, nav3, nav4 = st.tabs(["📊 Main Dashboard", "📝 Instructions", "⚙️ Background & Methodology", "ℹ️ About"])
 
-# ==========================================
-# PAGE 1: MAIN DASHBOARD
-# ==========================================
 with nav1:
     st.title("Advanced Quantitative Retirement Planner")
     st.markdown("Institution-Grade Monte Carlo Simulator | Constant Amortization Spending Model (CASAM)")
@@ -112,7 +104,14 @@ with nav1:
         'spouse_age': None, 'spouse_life_exp': None, 'state': "", 'county': "",
         'current_salary': None, 'annual_savings': None, 'phased_ret_active': False,
         'phased_ret_age': None, 'pension_est': None, 'survivor_benefit': "Full Survivor Benefit", 
-        'mil_pension_est': 0.0, 'mil_pension_start_age': None, 'mil_survivor_benefit': "No SBP",
+        
+        # New Military Variables
+        'mil_active': False, 'mil_component': "Active Duty", 'mil_years': 0, 'mil_months': 0, 'mil_days': 0,
+        'mil_points': 0, 'mil_rank': "O-4", 'mil_discharge': "Honorable Discharge", 
+        'mil_diems': datetime.date(2005, 1, 1), 'mil_system': "High-36 (2.5%)",
+        'mil_pay_base': 0.0, 'mil_disability_rating': "0%", 'mil_special_rating': "None",
+        'mil_va_pay': 0.0, 'mil_sbp': "No SBP", 'mil_start_age': None,
+        
         'ss_fra': None, 'ss_claim_age': 67,
         'target_floor': None, 'min_spending': None, 'max_spending': None, 'add_exp': None,
         'max_tax_bracket': "24%", 'mortgage_pmt': None, 'mortgage_yrs': None, 'home_value': None,
@@ -153,9 +152,14 @@ with nav1:
         with col_save:
             st.write("") 
             st.write("")
+            # Need to handle Date serialization for JSON
+            state_dict = get_current_state()
+            if isinstance(state_dict.get('mil_diems'), datetime.date):
+                state_dict['mil_diems'] = state_dict['mil_diems'].isoformat()
+            
             st.download_button(
                 label="⬇️ Save Current Profile to Computer",
-                data=json.dumps(get_current_state(), indent=4),
+                data=json.dumps(state_dict, indent=4),
                 file_name="client_profile.json",
                 mime="application/json",
                 use_container_width=True
@@ -196,17 +200,49 @@ with nav1:
             c5, c6 = st.columns(2)
             pension_est = c5.number_input("Full (Unreduced) FERS Pension Est. ($)", min_value=0, key="pension_est")
             survivor_benefit = c6.selectbox("FERS Survivor Benefit Option", ["Full Survivor Benefit", "Partial Survivor Benefit", "No Survivor Benefit"], key="survivor_benefit")
-            
-            st.markdown("**Military Service & Pension**")
-            c_mil1, c_mil2, c_mil3 = st.columns(3)
-            mil_pension_est = c_mil1.number_input("Annual Mil. Pension Est. ($)", min_value=0, key="mil_pension_est")
-            mil_pension_start_age = c_mil2.number_input("Mil. Pension Start Age", min_value=18, max_value=100, key="mil_pension_start_age")
-            mil_survivor_benefit = c_mil3.selectbox("Survivor Benefit Plan (SBP)", ["No SBP", "Full SBP (55% Survivor / 6.5% Premium)"], key="mil_survivor_benefit")
 
             st.markdown("**Social Security Guaranteed Income**")
             c7, c8 = st.columns(2)
             ss_fra = c7.number_input("Social Security at FRA ($/yr)", min_value=0, key="ss_fra")
             ss_claim_age = c8.number_input("Target SS Claiming Age", min_value=62, max_value=70, key="ss_claim_age")
+
+        with st.expander("🎖️ Military Service & Pension (Optional)", expanded=False):
+            st.markdown("**Military Service Member Profile**")
+            mil_active = st.checkbox("Enable Military Pension Modeling?", key="mil_active")
+            
+            m1, m2 = st.columns(2)
+            mil_component = m1.selectbox("Service Component", ["Active Duty", "National Guard / Reserve"], key="mil_component")
+            mil_start_age = m2.number_input("Mil. Pension Start Age (Default 60 for Guard/Reserve)", min_value=18, max_value=100, key="mil_start_age")
+
+            st.markdown("**Creditable Service & Points**")
+            mc1, mc2, mc3, mc4 = st.columns(4)
+            mil_years = mc1.number_input("Years", min_value=0, max_value=40, key="mil_years")
+            mil_months = mc2.number_input("Months", min_value=0, max_value=11, key="mil_months")
+            mil_days = mc3.number_input("Days", min_value=0, max_value=30, key="mil_days")
+            mil_points = mc4.number_input("Total Retirement Points", min_value=0, help="Only required if Guard/Reserve", key="mil_points")
+
+            st.markdown("**Rank, System & Pay**")
+            mr1, mr2 = st.columns(2)
+            mil_rank = mr1.selectbox("Final Rank / Pay Grade", ["E-1", "E-2", "E-3", "E-4", "E-5", "E-6", "E-7", "E-8", "E-9", "W-1", "W-2", "W-3", "W-4", "W-5", "O-1", "O-2", "O-3", "O-4", "O-5", "O-6", "O-7", "O-8", "O-9"], key="mil_rank")
+            mil_discharge = mr2.selectbox("Character of Service", ["Honorable Discharge", "General Discharge (Under Honorable Conditions)", "Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge", "Uncharacterized Separation"], key="mil_discharge")
+            
+            md1, md2, md3 = st.columns(3)
+            # Try to handle string date from JSON
+            default_diems = st.session_state.mil_diems
+            if isinstance(default_diems, str):
+                default_diems = datetime.date.fromisoformat(default_diems)
+                
+            mil_diems = md1.date_input("DIEMS Date", value=default_diems, key="mil_diems")
+            mil_system = md2.selectbox("Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="mil_system")
+            mil_pay_base = md3.number_input("Pay Base (High-36 Avg or Final Base Pay $/mo)", min_value=0.0, key="mil_pay_base")
+            
+            st.markdown("**Disability & Survivor Options**")
+            mv1, mv2, mv3 = st.columns(3)
+            mil_disability_rating = mv1.selectbox("VA Disability Rating", ["0%", "10% - 20%", "30% - 40%", "50% - 60%", "70% - 90%", "100%"], key="mil_disability_rating")
+            mil_special_rating = mv2.selectbox("Special Classifications", ["None", "TDIU (Unemployability)", "SMC (Special Monthly Comp)"], key="mil_special_rating")
+            mil_va_pay = mv3.number_input("Monthly VA Disability Pay ($/mo)", min_value=0.0, help="Required to calculate CRDP vs offset limits.", key="mil_va_pay")
+            
+            mil_sbp = st.selectbox("Survivor Benefit Plan (SBP)", ["No SBP", "Full SBP (55% Survivor / 6.5% Premium)"], key="mil_sbp")
 
         with st.expander("📉 Expenses & Goals", expanded=not has_run):
             st.markdown("**Spending Limits & Legacy Goals (In Today's Dollars)**")
@@ -289,7 +325,24 @@ with nav1:
             'current_salary': safe_float(st.session_state.current_salary), 'annual_savings': safe_float(st.session_state.annual_savings),
             'phased_ret_active': st.session_state.phased_ret_active, 'phased_ret_age': int(st.session_state.phased_ret_age or st.session_state.ret_age),
             'pension_est': safe_float(st.session_state.pension_est), 'survivor_benefit': st.session_state.survivor_benefit,
-            'mil_pension_est': safe_float(st.session_state.mil_pension_est), 'mil_pension_start_age': int(st.session_state.mil_pension_start_age or st.session_state.cur_age), 'mil_survivor_benefit': st.session_state.mil_survivor_benefit,
+            
+            # MILITARY INPUTS
+            'mil_active': st.session_state.mil_active,
+            'mil_component': st.session_state.mil_component,
+            'mil_years': int(st.session_state.mil_years or 0),
+            'mil_months': int(st.session_state.mil_months or 0),
+            'mil_days': int(st.session_state.mil_days or 0),
+            'mil_points': safe_float(st.session_state.mil_points),
+            'mil_rank': st.session_state.mil_rank,
+            'mil_discharge': st.session_state.mil_discharge,
+            'mil_system': st.session_state.mil_system,
+            'mil_pay_base': safe_float(st.session_state.mil_pay_base),
+            'mil_disability_rating': st.session_state.mil_disability_rating,
+            'mil_special_rating': st.session_state.mil_special_rating,
+            'mil_va_pay': safe_float(st.session_state.mil_va_pay),
+            'mil_sbp': st.session_state.mil_sbp,
+            'mil_start_age': int(st.session_state.mil_start_age or st.session_state.cur_age),
+            
             'ss_fra': safe_float(st.session_state.ss_fra), 'ss_claim_age': int(st.session_state.ss_claim_age),
             'min_spending': safe_float(st.session_state.min_spending), 'max_spending': safe_float(st.session_state.max_spending),
             'additional_expenses': safe_float(st.session_state.add_exp),
@@ -318,7 +371,7 @@ with nav1:
                 'winner': winner, 'history': history, 'port_analysis': port_analysis,
                 'engine_years': engine.years
             }
-            st.rerun() # Refresh to instantly collapse the expanders
+            st.rerun() 
 
     if 'sim_data' in st.session_state:
         data = st.session_state['sim_data']
@@ -351,8 +404,9 @@ with nav1:
         raw_ss = np.median(history['ss_income'], axis=0)[ret_idx]
         raw_pension = np.median(history['pension_income'], axis=0)[ret_idx]
         raw_salary = np.median(history['salary_income'], axis=0)[ret_idx]
+        raw_va = np.median(history['va_income'], axis=0)[ret_idx] if 'va_income' in history else 0
         
-        yr1_burn = raw_expenses + raw_spendable - raw_ss - raw_pension - raw_salary
+        yr1_burn = raw_expenses + raw_spendable - raw_ss - raw_pension - raw_salary - raw_va
         
         raw_cash = np.median(history['cash_bal'], axis=0)[ret_idx]
         raw_taxable = np.median(history['taxable_bal'], axis=0)[ret_idx]
@@ -434,13 +488,10 @@ with nav1:
                 st.plotly_chart(plot_income_gap(history, years_arr), use_container_width=True)
                 
             st.markdown("### Integrated Year-by-Year Cash Flow Projections")
-            
-            # Fetch unformatted raw data for Streamlit's native data grid
             df_ui = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
-            desired_cols = ['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'TSP Withdrawal', 'Trad IRA Withdrawal', 'Salary Income', 'Social Security', 'Pension', 'Additional Expenses (Smile Curve)']
+            desired_cols = ['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'TSP Withdrawal', 'Trad IRA Withdrawal', 'Salary Income', 'Social Security', 'Pension', 'VA Disability Pay', 'Additional Expenses (Smile Curve)']
             display_cols = [c for c in desired_cols if c in df_ui.columns]
             
-            # Apply Pandas styling for native Streamlit presentation ($X,XXX)
             format_dict = {c: "${:,.0f}" for c in display_cols if c not in ['Calendar Year', 'Age']}
             st.dataframe(df_ui[display_cols].style.format(format_dict), use_container_width=True, hide_index=True)
 
@@ -512,6 +563,10 @@ with nav1:
                 st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Execute Roth Conversions.")
             if inputs['filing_status'] == 'MFJ':
                 st.warning("⚠️ **Widow(er) Tax Penalty**: Upon the first spouse's mortality, your tax filing status shifts to Single, shrinking your brackets and drastically increasing your vulnerability to IRMAA surcharges. Roth conversions are critical while you are still MFJ.")
+            
+            if inputs.get('mil_active') and inputs.get('mil_disability_rating') in ["0%", "10% - 20%", "30% - 40%"] and inputs.get('mil_va_pay', 0) > 0:
+                st.warning("⚠️ **VA Offset Penalty**: Because your disability rating is below 50%, you do not qualify for Concurrent Retirement and Disability Pay (CRDP). Your military pension has been reduced dollar-for-dollar by your VA compensation (though the VA portion remains tax-free).")
+                
             if prob_success >= 85:
                 st.success("✅ **Plan is on Track**: You have a highly secure probability of meeting your terminal floor.")
 
@@ -591,7 +646,6 @@ with nav1:
         with t11:
             st.subheader("Strict-Format CSV Data Exports")
             
-            # Formatter function specifically for CSV string conversion
             def format_df_for_csv(df_raw):
                 df_out = df_raw.copy()
                 pct_cols = ["Rate of Return", "Inflation Rate", "Real Rate of Return", "Cumulative Inflation Multiplier"]

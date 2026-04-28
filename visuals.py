@@ -62,6 +62,11 @@ def plot_cash_flow_sources(history, years_arr):
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['salary_income'], axis=0), name="Salary", marker_color='purple'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['ss_income'], axis=0), name="Social Security", marker_color='#1f77b4'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['pension_income'], axis=0), name="Total Pension", marker_color='#ff7f0e'))
+    
+    # NEW: Visual slice for VA Pay
+    if 'va_income' in history:
+        fig.add_trace(go.Bar(x=years_arr, y=np.median(history['va_income'], axis=0), name="VA Disability Pay", marker_color='#e377c2'))
+        
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['tsp_withdrawal'], axis=0), name="TSP Withdrawal", marker_color='#2ca02c'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['ira_withdrawal'], axis=0), name="IRA Withdrawal", marker_color='#98df8a'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['roth_withdrawal'], axis=0), name="Roth Withdrawal", marker_color='green'))
@@ -78,7 +83,9 @@ def plot_cash_flow_sources(history, years_arr):
     return fig
 
 def plot_income_gap(history, years_arr):
-    guaranteed_income = np.median(history['salary_income'] + history['ss_income'] + history['pension_income'], axis=0)
+    # Updated guaranteed income to include VA Pay
+    va_inc = np.median(history['va_income'], axis=0) if 'va_income' in history else 0
+    guaranteed_income = np.median(history['salary_income'] + history['ss_income'] + history['pension_income'], axis=0) + va_inc
     total_expenses = np.median(history['taxes_fed'] + history['health_cost'] + history['medicare_cost'] + history['mortgage_cost'] + history['additional_expenses'] + history['net_spendable'], axis=0)
     
     fig = go.Figure()

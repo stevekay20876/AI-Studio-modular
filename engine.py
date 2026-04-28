@@ -92,11 +92,60 @@ class StochasticRetirementEngine:
         home_value = np.full(self.iterations, self.inputs.get('home_value', 0.0))
         taxable_basis = np.full(self.iterations, self.inputs.get('taxable_basis', self.inputs['taxable_bal']))
         
+        # FERS
         base_pension = np.full(self.iterations, self.inputs['pension_est'])
-        base_mil_pension = np.full(self.iterations, self.inputs.get('mil_pension_est', 0.0))
-        mil_start_age = self.inputs.get('mil_pension_start_age', self.inputs['current_age'])
-        mil_survivor_benefit_choice = self.inputs.get('mil_survivor_benefit', "No SBP")
         
+        # MILITARY PENSION LOGIC
+        mil_active = self.inputs.get('mil_active', False)
+        base_mil_pension = np.zeros(self.iterations)
+        base_va_pay = np.zeros(self.iterations)
+        mil_start_age = self.inputs.get('mil_start_age', 60)
+        mil_sbp_annual = np.zeros(self.iterations)
+        mil_va_offset = np.zeros(self.iterations)
+
+        if mil_active:
+            if self.inputs['mil_discharge'] not in ["Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge"]:
+                
+                # 1. Equivalent Years
+                if self.inputs['mil_component'] == "National Guard / Reserve":
+                    eq_years = self.inputs['mil_points'] / 360.0
+                else:
+                    eq_years = self.inputs['mil_years'] + (self.inputs['mil_months'] / 12.0) + (self.inputs['mil_days'] / 360.0)
+                
+                # 2. Multiplier
+                mil_sys = self.inputs['mil_system']
+                if "BRS" in mil_sys:
+                    mult = eq_years * 0.02
+                elif "REDUX" in mil_sys:
+                    mult = (eq_years * 0.025) - max(0, 30 - eq_years) * 0.01
+                else: # Final Pay or High-36
+                    mult = eq_years * 0.025
+                
+                # 3. Base Gross
+                gross_annual = self.inputs['mil_pay_base'] * mult * 12
+                
+                # 4. SBP Deduction
+                if "Full SBP" in self.inputs['mil_sbp']:
+                    mil_sbp_annual = np.full(self.iterations, gross_annual * 0.065)
+                
+                # 5. VA Offset Logic
+                va_monthly = self.inputs['mil_va_pay']
+                va_annual = va_monthly * 12
+                base_va_pay = np.full(self.iterations, va_annual)
+                
+                # Concurrent Receipt (CRDP) legal threshold is 50%. Special ratings also waive offset.
+                crdp_eligible = False
+                if self.inputs['mil_disability_rating'] in ["50% - 60%", "70% - 90%", "100%"] or self.inputs['mil_special_rating'] in ["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]:
+                    crdp_eligible = True
+                
+                if not crdp_eligible:
+                    mil_va_offset = np.full(self.iterations, va_annual)
+                
+                net_gross_taxable = np.maximum(0, gross_annual - mil_va_offset)
+                base_mil_pension = net_gross_taxable - mil_sbp_annual
+                base_mil_pension = np.maximum(0, base_mil_pension)
+
+        # SS
         ss_claim_age = self.inputs.get('ss_claim_age', 67)
         months_early = max(0, (67 - ss_claim_age) * 12)
         months_late = max(0, (ss_claim_age - 67) * 12)
@@ -124,8 +173,8 @@ class StochasticRetirementEngine:
             'salary_income': np.zeros((self.iterations, self.years)), 'port_return': np.zeros((self.iterations, self.years)),
             'real_return': np.zeros((self.iterations, self.years)), 'inflation': inf_paths,
             'constraint_active': np.zeros((self.iterations, self.years)), 'ss_income': np.zeros((self.iterations, self.years)),
-            'pension_income': np.zeros((self.iterations, self.years)), 'roth_conversion': np.zeros((self.iterations, self.years)),
-            'roth_taxes_from_cash': np.zeros((self.iterations, self.years)), 
+            'pension_income': np.zeros((self.iterations, self.years)), 'va_income': np.zeros((self.iterations, self.years)),
+            'roth_conversion': np.zeros((self.iterations, self.years)), 'roth_taxes_from_cash': np.zeros((self.iterations, self.years)), 
         }
 
         age = self.inputs['current_age']
@@ -171,20 +220,26 @@ class StochasticRetirementEngine:
                 if primary_alive and spouse_alive:
                     current_filing_status, moop_idx, ss_mult = 'MFJ', 1, 1.0
                     pension_mult = 0.90 if survivor_benefit_choice == 'Full Survivor Benefit' else (0.95 if survivor_benefit_choice == 'Partial Survivor Benefit' else 1.0)
-                    mil_pension_mult = 0.935 if mil_survivor_benefit_choice == 'Full SBP (55% Survivor / 6.5% Premium)' else 1.0
                 elif not primary_alive and spouse_alive:
                     current_filing_status, moop_idx, ss_mult = 'Single', 0, 0.50
                     pension_mult = 0.50 if survivor_benefit_choice == 'Full Survivor Benefit' else (0.25 if survivor_benefit_choice == 'Partial Survivor Benefit' else 0.0)
-                    mil_pension_mult = 0.55 if mil_survivor_benefit_choice == 'Full SBP (55% Survivor / 6.5% Premium)' else 0.0
+                    base_mil_pension = np.where(mil_sbp_annual > 0, base_mil_pension * 0.55, np.zeros(self.iterations))
+                    base_va_pay = np.zeros(self.iterations) # VA pay ends on death
                 elif primary_alive and not spouse_alive:
-                    current_filing_status, moop_idx, ss_mult, pension_mult, mil_pension_mult = 'Single', 0, 0.50, 1.0, 1.0
+                    current_filing_status, moop_idx, ss_mult, pension_mult = 'Single', 0, 0.50, 1.0
+                    base_mil_pension += mil_sbp_annual # Premium ends when spouse dies
+                    mil_sbp_annual = np.zeros(self.iterations)
                 else:
-                    current_filing_status, moop_idx, ss_mult, pension_mult, mil_pension_mult = 'Single', 0, 0.0, 0.0, 0.0
+                    current_filing_status, moop_idx, ss_mult, pension_mult = 'Single', 0, 0.0, 0.0
+                    base_mil_pension = np.zeros(self.iterations)
+                    base_va_pay = np.zeros(self.iterations)
             else:
                 current_filing_status, moop_idx = 'Single', 0
                 ss_mult = 1.0 if primary_alive else 0.0
                 pension_mult = 1.0 if primary_alive else 0.0
-                mil_pension_mult = 1.0 if primary_alive else 0.0
+                if not primary_alive:
+                    base_mil_pension = np.zeros(self.iterations)
+                    base_va_pay = np.zeros(self.iterations)
                 
             deduction = STD_DED_MFJ if current_filing_status == 'MFJ' else STD_DED_SINGLE
             brackets = TAX_BRACKETS_MFJ if current_filing_status == 'MFJ' else TAX_BRACKETS_SINGLE
@@ -212,7 +267,12 @@ class StochasticRetirementEngine:
             
             mil_cola = np.maximum(0, inf_paths[:, yr])
             base_mil_pension *= (1 + mil_cola)
-            current_mil_pension = base_mil_pension * mil_pension_mult if age >= mil_start_age else np.zeros(self.iterations)
+            base_va_pay *= (1 + mil_cola)
+            
+            current_mil_pension = np.where(age >= mil_start_age, base_mil_pension, 0)
+            current_va_pay = np.where(age >= self.inputs['current_age'], base_va_pay, 0)
+            
+            history['va_income'][:, yr] = current_va_pay
             
             if age < ret_age:
                 tsp += (annual_savings * 0.70)
@@ -505,7 +565,8 @@ class StochasticRetirementEngine:
             
             if age >= ret_age:
                 total_deductions = total_tax_fed + total_tax_state + medicare_cost + history['health_cost'][:, yr] + current_mortgage + current_add_exp
-                history['net_spendable'][:, yr] = actual_portfolio_withdrawal + total_current_pension + ss + current_salary_income - total_deductions
+                # ADD VA PAY AS TAX-FREE CASH FLOW HERE
+                history['net_spendable'][:, yr] = actual_portfolio_withdrawal + total_current_pension + current_va_pay + ss + current_salary_income - total_deductions
             else:
                 history['net_spendable'][:, yr] = 0.0
             
