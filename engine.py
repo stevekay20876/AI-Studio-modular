@@ -1,5 +1,3 @@
-### 2. `engine.py`
-```python
 import numpy as np
 import scipy.optimize as optimize
 from scipy.stats import t
@@ -51,7 +49,6 @@ class StochasticRetirementEngine:
         if seed is not None:
             np.random.seed(seed)
             
-        # Multiply by sqrt(3/5) to normalize Student's t-distribution variance back to 1.0
         variance_scalar = np.sqrt(3.0 / 5.0)
         shocks = t.rvs(df=5, size=(self.iterations, self.years, self.n_assets)) * variance_scalar
         correlated_shocks = np.einsum('ij,kyj->kyi', L, shocks)
@@ -62,14 +59,7 @@ class StochasticRetirementEngine:
         r_tax, v_tax = self.get_port_params('taxable_strat', override_port)
         r_hsa, v_hsa = self.get_port_params('hsa_strat', override_port)
         
-        drifts = np.array([
-            0.03,
-            r_tsp - (v_tsp**2)/2,
-            r_ira - (v_ira**2)/2,
-            r_roth - (v_roth**2)/2,
-            r_tax - (v_tax**2)/2,
-            r_hsa - (v_hsa**2)/2
-        ])
+        drifts = np.array([0.03, r_tsp - (v_tsp**2)/2, r_ira - (v_ira**2)/2, r_roth - (v_roth**2)/2, r_tax - (v_tax**2)/2, r_hsa - (v_hsa**2)/2])
         
         returns = np.exp(drifts + correlated_shocks) - 1
         inf_paths = np.zeros((self.iterations, self.years))
@@ -100,10 +90,8 @@ class StochasticRetirementEngine:
         hsa = np.full(self.iterations, self.inputs['hsa_bal'])
         cash = np.full(self.iterations, self.inputs['cash_bal'])
         home_value = np.full(self.iterations, self.inputs.get('home_value', 0.0))
-        
         taxable_basis = np.full(self.iterations, self.inputs.get('taxable_basis', self.inputs['taxable_bal']))
         
-        # Base Pensions setup
         base_pension = np.full(self.iterations, self.inputs['pension_est'])
         base_mil_pension = np.full(self.iterations, self.inputs.get('mil_pension_est', 0.0))
         mil_start_age = self.inputs.get('mil_pension_start_age', self.inputs['current_age'])
@@ -120,40 +108,23 @@ class StochasticRetirementEngine:
         scheduled_withdrawal = np.zeros(self.iterations)
         
         history = {
-            'total_bal': np.zeros((self.iterations, self.years)),
-            'total_bal_real': np.zeros((self.iterations, self.years)), 
-            'cum_inf': np.zeros((self.iterations, self.years)),        
-            'tsp_bal': np.zeros((self.iterations, self.years)),
-            'ira_bal': np.zeros((self.iterations, self.years)),
-            'roth_bal': np.zeros((self.iterations, self.years)),
-            'taxable_bal': np.zeros((self.iterations, self.years)),
-            'cash_bal': np.zeros((self.iterations, self.years)),
-            'hsa_bal': np.zeros((self.iterations, self.years)),
-            'home_value': np.zeros((self.iterations, self.years)),
-            'tsp_withdrawal': np.zeros((self.iterations, self.years)),
-            'ira_withdrawal': np.zeros((self.iterations, self.years)),
-            'roth_withdrawal': np.zeros((self.iterations, self.years)),    
-            'taxable_withdrawal': np.zeros((self.iterations, self.years)), 
-            'cash_withdrawal': np.zeros((self.iterations, self.years)),    
-            'rmds': np.zeros((self.iterations, self.years)),
-            'extra_rmd': np.zeros((self.iterations, self.years)),
-            'taxes_fed': np.zeros((self.iterations, self.years)),
-            'taxes_state': np.zeros((self.iterations, self.years)),
-            'taxable_income': np.zeros((self.iterations, self.years)), 
-            'magi': np.zeros((self.iterations, self.years)),           
-            'medicare_cost': np.zeros((self.iterations, self.years)),
-            'health_cost': np.zeros((self.iterations, self.years)),
-            'mortgage_cost': np.zeros((self.iterations, self.years)),
-            'additional_expenses': np.zeros((self.iterations, self.years)),
-            'net_spendable': np.zeros((self.iterations, self.years)),
-            'salary_income': np.zeros((self.iterations, self.years)),
-            'port_return': np.zeros((self.iterations, self.years)),
-            'real_return': np.zeros((self.iterations, self.years)),
-            'inflation': inf_paths,
-            'constraint_active': np.zeros((self.iterations, self.years)),
-            'ss_income': np.zeros((self.iterations, self.years)),
-            'pension_income': np.zeros((self.iterations, self.years)), # Holds BOTH FERS and Military 
-            'roth_conversion': np.zeros((self.iterations, self.years)),
+            'total_bal': np.zeros((self.iterations, self.years)), 'total_bal_real': np.zeros((self.iterations, self.years)), 
+            'cum_inf': np.zeros((self.iterations, self.years)), 'tsp_bal': np.zeros((self.iterations, self.years)),
+            'ira_bal': np.zeros((self.iterations, self.years)), 'roth_bal': np.zeros((self.iterations, self.years)),
+            'taxable_bal': np.zeros((self.iterations, self.years)), 'cash_bal': np.zeros((self.iterations, self.years)),
+            'hsa_bal': np.zeros((self.iterations, self.years)), 'home_value': np.zeros((self.iterations, self.years)),
+            'tsp_withdrawal': np.zeros((self.iterations, self.years)), 'ira_withdrawal': np.zeros((self.iterations, self.years)),
+            'roth_withdrawal': np.zeros((self.iterations, self.years)), 'taxable_withdrawal': np.zeros((self.iterations, self.years)), 
+            'cash_withdrawal': np.zeros((self.iterations, self.years)), 'rmds': np.zeros((self.iterations, self.years)),
+            'extra_rmd': np.zeros((self.iterations, self.years)), 'taxes_fed': np.zeros((self.iterations, self.years)),
+            'taxes_state': np.zeros((self.iterations, self.years)), 'taxable_income': np.zeros((self.iterations, self.years)), 
+            'magi': np.zeros((self.iterations, self.years)), 'medicare_cost': np.zeros((self.iterations, self.years)),
+            'health_cost': np.zeros((self.iterations, self.years)), 'mortgage_cost': np.zeros((self.iterations, self.years)),
+            'additional_expenses': np.zeros((self.iterations, self.years)), 'net_spendable': np.zeros((self.iterations, self.years)),
+            'salary_income': np.zeros((self.iterations, self.years)), 'port_return': np.zeros((self.iterations, self.years)),
+            'real_return': np.zeros((self.iterations, self.years)), 'inflation': inf_paths,
+            'constraint_active': np.zeros((self.iterations, self.years)), 'ss_income': np.zeros((self.iterations, self.years)),
+            'pension_income': np.zeros((self.iterations, self.years)), 'roth_conversion': np.zeros((self.iterations, self.years)),
             'roth_taxes_from_cash': np.zeros((self.iterations, self.years)), 
         }
 
@@ -162,7 +133,6 @@ class StochasticRetirementEngine:
         spouse_age = self.inputs.get('spouse_age', age)
         primary_life_exp = self.inputs['life_expectancy']
         spouse_life_exp = self.inputs.get('spouse_life_exp', 95)
-        
         current_year = datetime.datetime.now().year
         
         base_filing_status = self.inputs['filing_status']
@@ -171,16 +141,13 @@ class StochasticRetirementEngine:
         phased_age = self.inputs.get('phased_ret_age', ret_age)
         pay_taxes_from_cash = self.inputs.get('pay_taxes_from_cash', True)
         survivor_benefit_choice = self.inputs.get('survivor_benefit', "No Survivor Benefit")
-        
         min_spending = self.inputs.get('min_spending', 0.0)
         max_spending = self.inputs.get('max_spending', 0.0)
         base_add_exp = self.inputs.get('additional_expenses', 0.0)
         user_max_bracket = float(self.inputs.get('max_tax_bracket', '0.24'))
-        
         base_health_premium = self.inputs.get('health_cost', 0.0)
         base_oop_cost = self.inputs.get('oop_cost', 0.0)
         health_plan = self.inputs.get('health_plan', "None/Self-Insure")
-        
         mortgage_pmt = self.inputs.get('mortgage_pmt', 0.0)
         mortgage_yrs = self.inputs.get('mortgage_yrs', 0)
         annual_savings = self.inputs.get('annual_savings', 0.0)
@@ -190,7 +157,6 @@ class StochasticRetirementEngine:
         state_tax_rate = 0.0 if state_str in RETIREMENT_TAX_FREE_STATES else (0.045 if state_str != "" else 0.0)
         local_tax_rate = 0.025 if county_str != "" and state_str in ["MD", "IN", "PA", "OH", "NY"] else (0.010 if county_str != "" else 0.0)
         combined_state_local_rate = state_tax_rate + local_tax_rate
-
         cum_inf = np.ones(self.iterations)
 
         for yr in range(self.years):
@@ -203,66 +169,22 @@ class StochasticRetirementEngine:
             
             if base_filing_status == 'MFJ':
                 if primary_alive and spouse_alive:
-                    current_filing_status = 'MFJ'
-                    moop_idx = 1
-                    ss_mult = 1.0
-                    
-                    # FERS SBP
-                    if survivor_benefit_choice == 'Full Survivor Benefit':
-                        pension_mult = 0.90
-                    elif survivor_benefit_choice == 'Partial Survivor Benefit':
-                        pension_mult = 0.95
-                    else:
-                        pension_mult = 1.0
-                        
-                    # MIL SBP
-                    if mil_survivor_benefit_choice == 'Full SBP (55% Survivor / 6.5% Premium)':
-                        mil_pension_mult = 0.935
-                    else:
-                        mil_pension_mult = 1.0
-                        
+                    current_filing_status, moop_idx, ss_mult = 'MFJ', 1, 1.0
+                    pension_mult = 0.90 if survivor_benefit_choice == 'Full Survivor Benefit' else (0.95 if survivor_benefit_choice == 'Partial Survivor Benefit' else 1.0)
+                    mil_pension_mult = 0.935 if mil_survivor_benefit_choice == 'Full SBP (55% Survivor / 6.5% Premium)' else 1.0
                 elif not primary_alive and spouse_alive:
-                    current_filing_status = 'Single'
-                    moop_idx = 0
-                    ss_mult = 0.50 
-                    
-                    # FERS
-                    if survivor_benefit_choice == 'Full Survivor Benefit':
-                        pension_mult = 0.50
-                    elif survivor_benefit_choice == 'Partial Survivor Benefit':
-                        pension_mult = 0.25
-                    else:
-                        pension_mult = 0.0
-                        
-                    # MIL
-                    if mil_survivor_benefit_choice == 'Full SBP (55% Survivor / 6.5% Premium)':
-                        mil_pension_mult = 0.55
-                    else:
-                        mil_pension_mult = 0.0
-                        
+                    current_filing_status, moop_idx, ss_mult = 'Single', 0, 0.50
+                    pension_mult = 0.50 if survivor_benefit_choice == 'Full Survivor Benefit' else (0.25 if survivor_benefit_choice == 'Partial Survivor Benefit' else 0.0)
+                    mil_pension_mult = 0.55 if mil_survivor_benefit_choice == 'Full SBP (55% Survivor / 6.5% Premium)' else 0.0
                 elif primary_alive and not spouse_alive:
-                    current_filing_status = 'Single'
-                    moop_idx = 0
-                    ss_mult = 0.50
-                    pension_mult = 1.0
-                    mil_pension_mult = 1.0  # Premium drops after spouse mortality
+                    current_filing_status, moop_idx, ss_mult, pension_mult, mil_pension_mult = 'Single', 0, 0.50, 1.0, 1.0
                 else:
-                    current_filing_status = 'Single'
-                    moop_idx = 0
-                    ss_mult = 0.0
-                    pension_mult = 0.0
-                    mil_pension_mult = 0.0
+                    current_filing_status, moop_idx, ss_mult, pension_mult, mil_pension_mult = 'Single', 0, 0.0, 0.0, 0.0
             else:
-                current_filing_status = 'Single'
-                moop_idx = 0
-                if primary_alive:
-                    ss_mult = 1.0
-                    pension_mult = 1.0
-                    mil_pension_mult = 1.0
-                else:
-                    ss_mult = 0.0
-                    pension_mult = 0.0
-                    mil_pension_mult = 0.0
+                current_filing_status, moop_idx = 'Single', 0
+                ss_mult = 1.0 if primary_alive else 0.0
+                pension_mult = 1.0 if primary_alive else 0.0
+                mil_pension_mult = 1.0 if primary_alive else 0.0
                 
             deduction = STD_DED_MFJ if current_filing_status == 'MFJ' else STD_DED_SINGLE
             brackets = TAX_BRACKETS_MFJ if current_filing_status == 'MFJ' else TAX_BRACKETS_SINGLE
@@ -288,13 +210,9 @@ class StochasticRetirementEngine:
             current_salary_income = np.zeros(self.iterations)
             current_fers_pension = np.zeros(self.iterations)
             
-            # Independent Military Pension (Full CPI instead of FERS diet COLA)
             mil_cola = np.maximum(0, inf_paths[:, yr])
             base_mil_pension *= (1 + mil_cola)
-            if age >= mil_start_age:
-                current_mil_pension = base_mil_pension * mil_pension_mult
-            else:
-                current_mil_pension = np.zeros(self.iterations)
+            current_mil_pension = base_mil_pension * mil_pension_mult if age >= mil_start_age else np.zeros(self.iterations)
             
             if age < ret_age:
                 tsp += (annual_savings * 0.70)
@@ -317,8 +235,6 @@ class StochasticRetirementEngine:
                 current_fers_pension = base_pension * pension_mult
                 
             history['salary_income'][:, yr] = current_salary_income
-            
-            # Combine both guaranteed pensions into one cashflow element
             total_current_pension = current_fers_pension + current_mil_pension
             history['pension_income'][:, yr] = total_current_pension
             
@@ -363,21 +279,19 @@ class StochasticRetirementEngine:
                     
                 inflated_min_spend = min_spending * cum_inf
                 w_needed = np.maximum(scheduled_withdrawal, inflated_min_spend)
-                
                 if max_spending > 0:
                     inflated_max_spend = max_spending * cum_inf
                     w_needed = np.minimum(w_needed, inflated_max_spend)
 
             history['constraint_active'][:, yr] = constraint_flag
-            
             rmd_divisor = IRS_RMD_DIVISORS.get(age, 1.9 if age > 120 else 0.0)
             rmd_rate = 1.0 / rmd_divisor if rmd_divisor > 0 else 0.0
             
             rmd_tsp = tsp * rmd_rate
             rmd_ira = ira * rmd_rate
             rmds = rmd_tsp + rmd_ira
-            
             history['rmds'][:, yr] = rmds
+            
             tsp -= rmd_tsp
             ira -= rmd_ira
             
@@ -385,11 +299,7 @@ class StochasticRetirementEngine:
             excess_rmd = np.maximum(0, rmds - w_needed)
             history['extra_rmd'][:, yr] = excess_rmd
             
-            w_tsp = np.zeros(self.iterations)
-            w_ira = np.zeros(self.iterations)
-            w_cash = np.zeros(self.iterations)
-            w_taxable = np.zeros(self.iterations)
-            w_roth = np.zeros(self.iterations)
+            w_tsp, w_ira, w_cash, w_taxable, w_roth = np.zeros(self.iterations), np.zeros(self.iterations), np.zeros(self.iterations), np.zeros(self.iterations), np.zeros(self.iterations)
             
             if age >= ret_age:
                 tsp_prior_ret = returns[:, yr-1, 1] if yr > 0 else np.zeros(self.iterations)
@@ -465,67 +375,50 @@ class StochasticRetirementEngine:
             for i in range(len(brackets)):
                 prev_limit = (brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
                 limit = brackets[i][0] * cum_inf
-                rate = brackets[i][1]
-                base_tax_fed += np.clip(taxable_income - prev_limit, 0, limit - prev_limit) * rate
+                base_tax_fed += np.clip(taxable_income - prev_limit, 0, limit - prev_limit) * brackets[i][1]
                 
             ltcg_tax = np.zeros(self.iterations)
             for i in range(len(ltcg_brackets)):
                 limit = ltcg_brackets[i][0] * cum_inf
-                rate = ltcg_brackets[i][1]
                 applicable_gains = np.clip(taxable_income + realized_gains - limit, 0, realized_gains)
-                ltcg_tax += applicable_gains * rate
+                ltcg_tax += applicable_gains * ltcg_brackets[i][1]
                 
             niit_tax = np.where(magi > (niit_threshold * cum_inf), realized_gains * 0.038, 0.0)
             base_tax_fed += (ltcg_tax + niit_tax)
             
-            state_taxable_base = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), 
-                                          taxable_income - rmds - w_tsp - w_ira - total_current_pension - (ss * 0.85), 
-                                          taxable_income)
-            state_taxable_base = np.maximum(0, state_taxable_base)
+            state_taxable_base = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), np.maximum(0, taxable_income - rmds - w_tsp - w_ira - total_current_pension - (ss * 0.85)), taxable_income)
             base_tax_state_local = state_taxable_base * combined_state_local_rate
             
             total_tax_fed = base_tax_fed.copy()
             total_tax_state = base_tax_state_local.copy()
             conv_amt = np.zeros(self.iterations)
             w_tax_cash_roth = np.zeros(self.iterations)
-            
             final_taxable_income = taxable_income.copy()
             final_magi = magi.copy()
             
             if roth_strategy > 0 and age >= ret_age and age < 75:
                 space = np.zeros(self.iterations)
-                
                 if roth_strategy in [1, 4]: 
                     for i in range(len(brackets)):
                         limit = brackets[i][0] * cum_inf
                         mask = (taxable_income < limit) & (space == 0)
                         space[mask] = limit[mask] - taxable_income[mask] - 1
                     space = np.where(space > 1e6, 0, space)
-                    
                     if roth_strategy == 1:
                         for i in range(len(irmaa_brackets)):
                             irmaa_limit = irmaa_brackets[i][0] * cum_inf
                             crosses_cliff = (magi < irmaa_limit) & ((magi + space) >= irmaa_limit)
                             space = np.where(crosses_cliff, irmaa_limit - magi - 1, space)
-                        
                 elif roth_strategy == 2: 
-                    irmaa_tier_1 = irmaa_brackets[0][0] * cum_inf
-                    space = np.maximum(0, irmaa_tier_1 - magi - 1)
-                    
+                    space = np.maximum(0, (irmaa_brackets[0][0] * cum_inf) - magi - 1)
                 elif roth_strategy == 3:
-                    irmaa_tier_2 = irmaa_brackets[1][0] * cum_inf
-                    space = np.maximum(0, irmaa_tier_2 - magi - 1)
+                    space = np.maximum(0, (irmaa_brackets[1][0] * cum_inf) - magi - 1)
                 
-                max_allowable_space = np.maximum(0, limit_max_pct - taxable_income - 1)
-                space = np.minimum(space, max_allowable_space)
-                
+                space = np.minimum(space, np.maximum(0, limit_max_pct - taxable_income - 1))
                 conv_from_ira = np.minimum(space, ira)
                 ira -= conv_from_ira
-                rem_space = space - conv_from_ira
-                
-                conv_from_tsp = np.minimum(rem_space, tsp)
+                conv_from_tsp = np.minimum(space - conv_from_ira, tsp)
                 tsp -= conv_from_tsp
-                
                 conv_amt = conv_from_ira + conv_from_tsp
                 
                 final_taxable_income = taxable_income + conv_amt
@@ -535,20 +428,16 @@ class StochasticRetirementEngine:
                 for i in range(len(brackets)):
                     prev_limit = (brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
                     limit = brackets[i][0] * cum_inf
-                    rate = brackets[i][1]
-                    new_tax_fed += np.clip(final_taxable_income - prev_limit, 0, limit - prev_limit) * rate
+                    new_tax_fed += np.clip(final_taxable_income - prev_limit, 0, limit - prev_limit) * brackets[i][1]
                 
                 new_ltcg_tax = np.zeros(self.iterations)
                 for i in range(len(ltcg_brackets)):
                     limit = ltcg_brackets[i][0] * cum_inf
-                    rate = ltcg_brackets[i][1]
                     applicable_gains = np.clip(final_taxable_income + realized_gains - limit, 0, realized_gains)
-                    new_ltcg_tax += applicable_gains * rate
+                    new_ltcg_tax += applicable_gains * ltcg_brackets[i][1]
                     
                 new_niit_tax = np.where(final_magi > (niit_threshold * cum_inf), realized_gains * 0.038, 0.0)
-                
                 extra_tax_fed = (new_tax_fed + new_ltcg_tax + new_niit_tax) - base_tax_fed
-                
                 state_conv_tax_base = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), 0.0, conv_amt)
                 extra_tax_state = state_conv_tax_base * combined_state_local_rate
                 extra_tax_total = extra_tax_fed + extra_tax_state
@@ -557,15 +446,11 @@ class StochasticRetirementEngine:
                     w_tax_cash_roth = np.minimum(cash, extra_tax_total)
                     cash -= w_tax_cash_roth
                     rem_tax = extra_tax_total - w_tax_cash_roth
-                    
                     w_tax_taxable = np.minimum(taxable, rem_tax)
                     taxable -= w_tax_taxable
-                    
                     gains_ratio_tax = np.maximum(0, 1.0 - (taxable_basis / np.maximum(taxable + w_tax_taxable, 1.0)))
                     taxable_basis -= (w_tax_taxable - (w_tax_taxable * gains_ratio_tax))
-                    
-                    rem_tax -= w_tax_taxable
-                    net_to_roth = conv_amt - rem_tax 
+                    net_to_roth = conv_amt - (rem_tax - w_tax_taxable)
                 else:
                     net_to_roth = conv_amt - extra_tax_total
                     
@@ -583,25 +468,20 @@ class StochasticRetirementEngine:
             current_health_premium = base_health_premium * cum_inf
             age_morbidity = 1.025 ** max(0, age - self.inputs['current_age'])
             med_cpi_cum = np.prod(1 + (np.maximum(0, inf_paths[:, :yr+1]) * 1.5), axis=1) if yr > 0 else np.ones(self.iterations)
-            
             raw_oop = base_oop_cost * med_cpi_cum * age_morbidity
-            current_moop = base_moop * cum_inf
-            inflated_oop = np.minimum(raw_oop, current_moop)
+            inflated_oop = np.minimum(raw_oop, base_moop * cum_inf)
             
             medicare_cost = np.zeros(self.iterations)
             if age >= 65 and "FEHB" not in health_plan and "TRICARE" not in health_plan:
                 medicare_cost += MEDICARE_PART_B_BASE
                 for i in range(len(irmaa_brackets)):
                     prev_limit = (irmaa_brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
-                    surcharge = irmaa_brackets[i][1]
-                    medicare_cost = np.where(final_magi > prev_limit, MEDICARE_PART_B_BASE + surcharge, medicare_cost)
+                    medicare_cost = np.where(final_magi > prev_limit, MEDICARE_PART_B_BASE + irmaa_brackets[i][1], medicare_cost)
             history['medicare_cost'][:, yr] = medicare_cost
 
             w_hsa = np.minimum(hsa, inflated_oop)
             hsa -= w_hsa
-            oop_remainder = inflated_oop - w_hsa
-            
-            history['health_cost'][:, yr] = current_health_premium + oop_remainder
+            history['health_cost'][:, yr] = current_health_premium + (inflated_oop - w_hsa)
             
             current_mortgage = np.full(self.iterations, mortgage_pmt if yr < mortgage_yrs else 0.0)
             history['mortgage_cost'][:, yr] = current_mortgage
@@ -616,7 +496,6 @@ class StochasticRetirementEngine:
             
             history['total_bal'][:, yr] = tsp + ira + roth + taxable + cash
             history['total_bal_real'][:, yr] = history['total_bal'][:, yr] / cum_inf
-            
             history['tsp_bal'][:, yr] = tsp
             history['ira_bal'][:, yr] = ira
             history['roth_bal'][:, yr] = roth
@@ -625,10 +504,8 @@ class StochasticRetirementEngine:
             history['hsa_bal'][:, yr] = hsa
             
             if age >= ret_age:
-                history['net_spendable'][:, yr] = (actual_portfolio_withdrawal + total_current_pension + ss + current_salary_income
-                                                   - total_tax_fed - total_tax_state 
-                                                   - medicare_cost - history['health_cost'][:, yr] 
-                                                   - current_mortgage - current_add_exp)
+                total_deductions = total_tax_fed + total_tax_state + medicare_cost + history['health_cost'][:, yr] + current_mortgage + current_add_exp
+                history['net_spendable'][:, yr] = actual_portfolio_withdrawal + total_current_pension + ss + current_salary_income - total_deductions
             else:
                 history['net_spendable'][:, yr] = 0.0
             
@@ -638,14 +515,12 @@ class StochasticRetirementEngine:
         history = self.run_mc(iwr_test, seed=42, roth_strategy=0)
         median_real_path = np.median(history['total_bal_real'], axis=0)
         target_floor = self.inputs.get('target_floor', 0.0)
-        
         terminal_wealth = median_real_path[-1]
         
         if terminal_wealth <= 1.0:
             years_bankrupt = np.sum(median_real_path <= 1.0)
             initial_wealth = median_real_path[0]
-            artificial_terminal = -(years_bankrupt * initial_wealth * 0.05)
-            return artificial_terminal - target_floor
+            return -(years_bankrupt * initial_wealth * 0.05) - target_floor
             
         return terminal_wealth - target_floor
 
@@ -658,56 +533,31 @@ class StochasticRetirementEngine:
     def analyze_portfolios(self, opt_iwr, roth_strategy=0):
         results = {}
         hist_custom = self.run_mc(opt_iwr, seed=42, roth_strategy=roth_strategy, override_port=None)
-        results["Your Custom Mix"] = {
-            'wealth': np.median(hist_custom['total_bal_real'][:, -1]), 
-            'cut_prob': np.mean(np.any(hist_custom['constraint_active'] == 1, axis=1)) * 100
-        }
+        results["Your Custom Mix"] = {'wealth': np.median(hist_custom['total_bal_real'][:, -1]), 'cut_prob': np.mean(np.any(hist_custom['constraint_active'] == 1, axis=1)) * 100}
         del hist_custom
         gc.collect()
         
         for port in ["Conservative (20% Stock / 80% Bond)", "Moderate (60% Stock / 40% Bond)", "Aggressive (100% Stock)"]:
             hist = self.run_mc(opt_iwr, seed=42, roth_strategy=roth_strategy, override_port=port)
-            results[port] = {
-                'wealth': np.median(hist['total_bal_real'][:, -1]), 
-                'cut_prob': np.mean(np.any(hist['constraint_active'] == 1, axis=1)) * 100
-            }
+            results[port] = {'wealth': np.median(hist['total_bal_real'][:, -1]), 'cut_prob': np.mean(np.any(hist['constraint_active'] == 1, axis=1)) * 100}
             del hist
             gc.collect()
             
         return results
 
     def analyze_roth_strategies(self, opt_iwr):
-        results = {}
         user_max = float(self.inputs.get("max_tax_bracket", 0.24)) * 100
-        strats = [
-            (0, 'Baseline (None)'),
-            (1, 'Fill Current Bracket (IRMAA Protected)'),
-            (2, 'Target IRMAA Tier 1'),
-            (3, 'Target IRMAA Tier 2'),
-            (4, f'Max User Bracket Fill ({user_max:.0f}%)')
-        ]
+        strats = [(0, 'Baseline (None)'), (1, 'Fill Current Bracket (IRMAA Protected)'), (2, 'Target IRMAA Tier 1'), (3, 'Target IRMAA Tier 2'), (4, f'Max User Bracket Fill ({user_max:.0f}%)')]
         
-        best_wealth = -np.inf
-        winner_name = 'Baseline (None)'
-        winner_hist = None
+        results, best_wealth, winner_name, winner_hist = {}, -np.inf, 'Baseline (None)', None
         
         for s_idx, s_name in strats:
             hist = self.run_mc(opt_iwr, seed=42, roth_strategy=s_idx)
             wealth = np.median(hist['total_bal_real'][:, -1])
-            
-            results[s_name] = {
-                'wealth': wealth,
-                'taxes': np.sum(np.median(hist['taxes_fed'], axis=0)),
-                'rmds': np.sum(np.median(hist['rmds'], axis=0)),
-                'tax_path': np.median(hist['taxes_fed'], axis=0),
-                'conv_path': np.median(hist['roth_conversion'], axis=0),
-                'taxable_inc_path': np.median(hist['taxable_income'], axis=0)
-            }
+            results[s_name] = {'wealth': wealth, 'taxes': np.sum(np.median(hist['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist['rmds'], axis=0)), 'tax_path': np.median(hist['taxes_fed'], axis=0), 'conv_path': np.median(hist['roth_conversion'], axis=0), 'taxable_inc_path': np.median(hist['taxable_income'], axis=0)}
             
             if wealth > best_wealth:
-                best_wealth = wealth
-                winner_name = s_name
-                winner_hist = hist 
+                best_wealth, winner_name, winner_hist = wealth, s_name, hist 
             else:
                 del hist 
                 gc.collect()
