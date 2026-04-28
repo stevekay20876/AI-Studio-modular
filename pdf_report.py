@@ -1,5 +1,3 @@
-### 4. `pdf_report.py`
-```python
 from fpdf import FPDF
 import datetime
 

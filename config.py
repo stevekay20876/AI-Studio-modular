@@ -1,5 +1,3 @@
-### 6. `config.py`
-```python
 import numpy as np
 
 # --- 2025 IRS TAX BRACKETS & LIMITS ---
