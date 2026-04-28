@@ -1,4 +1,5 @@
-# engine.py
+### 2. `engine.py`
+```python
 import numpy as np
 import scipy.optimize as optimize
 from scipy.stats import t
@@ -102,7 +103,11 @@ class StochasticRetirementEngine:
         
         taxable_basis = np.full(self.iterations, self.inputs.get('taxable_basis', self.inputs['taxable_bal']))
         
+        # Base Pensions setup
         base_pension = np.full(self.iterations, self.inputs['pension_est'])
+        base_mil_pension = np.full(self.iterations, self.inputs.get('mil_pension_est', 0.0))
+        mil_start_age = self.inputs.get('mil_pension_start_age', self.inputs['current_age'])
+        mil_survivor_benefit_choice = self.inputs.get('mil_survivor_benefit', "No SBP")
         
         ss_claim_age = self.inputs.get('ss_claim_age', 67)
         months_early = max(0, (67 - ss_claim_age) * 12)
@@ -147,7 +152,7 @@ class StochasticRetirementEngine:
             'inflation': inf_paths,
             'constraint_active': np.zeros((self.iterations, self.years)),
             'ss_income': np.zeros((self.iterations, self.years)),
-            'pension_income': np.zeros((self.iterations, self.years)),
+            'pension_income': np.zeros((self.iterations, self.years)), # Holds BOTH FERS and Military 
             'roth_conversion': np.zeros((self.iterations, self.years)),
             'roth_taxes_from_cash': np.zeros((self.iterations, self.years)), 
         }
@@ -201,41 +206,63 @@ class StochasticRetirementEngine:
                     current_filing_status = 'MFJ'
                     moop_idx = 1
                     ss_mult = 1.0
+                    
+                    # FERS SBP
                     if survivor_benefit_choice == 'Full Survivor Benefit':
                         pension_mult = 0.90
                     elif survivor_benefit_choice == 'Partial Survivor Benefit':
                         pension_mult = 0.95
                     else:
                         pension_mult = 1.0
+                        
+                    # MIL SBP
+                    if mil_survivor_benefit_choice == 'Full SBP (55% Survivor / 6.5% Premium)':
+                        mil_pension_mult = 0.935
+                    else:
+                        mil_pension_mult = 1.0
+                        
                 elif not primary_alive and spouse_alive:
                     current_filing_status = 'Single'
                     moop_idx = 0
                     ss_mult = 0.50 
+                    
+                    # FERS
                     if survivor_benefit_choice == 'Full Survivor Benefit':
                         pension_mult = 0.50
                     elif survivor_benefit_choice == 'Partial Survivor Benefit':
                         pension_mult = 0.25
                     else:
                         pension_mult = 0.0
+                        
+                    # MIL
+                    if mil_survivor_benefit_choice == 'Full SBP (55% Survivor / 6.5% Premium)':
+                        mil_pension_mult = 0.55
+                    else:
+                        mil_pension_mult = 0.0
+                        
                 elif primary_alive and not spouse_alive:
                     current_filing_status = 'Single'
                     moop_idx = 0
                     ss_mult = 0.50
                     pension_mult = 1.0
+                    mil_pension_mult = 1.0  # Premium drops after spouse mortality
                 else:
                     current_filing_status = 'Single'
                     moop_idx = 0
                     ss_mult = 0.0
                     pension_mult = 0.0
+                    mil_pension_mult = 0.0
             else:
                 current_filing_status = 'Single'
                 moop_idx = 0
                 if primary_alive:
                     ss_mult = 1.0
                     pension_mult = 1.0
+                    mil_pension_mult = 1.0
                 else:
                     ss_mult = 0.0
                     pension_mult = 0.0
+                    mil_pension_mult = 0.0
                 
             deduction = STD_DED_MFJ if current_filing_status == 'MFJ' else STD_DED_SINGLE
             brackets = TAX_BRACKETS_MFJ if current_filing_status == 'MFJ' else TAX_BRACKETS_SINGLE
@@ -259,7 +286,15 @@ class StochasticRetirementEngine:
             
             inflated_salary = base_salary * cum_inf
             current_salary_income = np.zeros(self.iterations)
-            current_pension = np.zeros(self.iterations)
+            current_fers_pension = np.zeros(self.iterations)
+            
+            # Independent Military Pension (Full CPI instead of FERS diet COLA)
+            mil_cola = np.maximum(0, inf_paths[:, yr])
+            base_mil_pension *= (1 + mil_cola)
+            if age >= mil_start_age:
+                current_mil_pension = base_mil_pension * mil_pension_mult
+            else:
+                current_mil_pension = np.zeros(self.iterations)
             
             if age < ret_age:
                 tsp += (annual_savings * 0.70)
@@ -271,18 +306,21 @@ class StochasticRetirementEngine:
                     current_salary_income = inflated_salary * 0.50
                     fers_cola = np.where(inf_paths[:, yr] <= 0.02, inf_paths[:, yr], np.where(inf_paths[:, yr] <= 0.03, 0.02, inf_paths[:, yr] - 0.01))
                     base_pension *= (1 + np.maximum(0, fers_cola))
-                    current_pension = base_pension * 0.50 * pension_mult
+                    current_fers_pension = base_pension * 0.50 * pension_mult
                 else:
                     current_salary_income = inflated_salary
-                    current_pension = np.zeros(self.iterations)
+                    current_fers_pension = np.zeros(self.iterations)
             else:
                 current_salary_income = np.zeros(self.iterations)
                 fers_cola = np.where(inf_paths[:, yr] <= 0.02, inf_paths[:, yr], np.where(inf_paths[:, yr] <= 0.03, 0.02, inf_paths[:, yr] - 0.01))
                 base_pension *= (1 + np.maximum(0, fers_cola))
-                current_pension = base_pension * pension_mult
+                current_fers_pension = base_pension * pension_mult
                 
             history['salary_income'][:, yr] = current_salary_income
-            history['pension_income'][:, yr] = current_pension
+            
+            # Combine both guaranteed pensions into one cashflow element
+            total_current_pension = current_fers_pension + current_mil_pension
+            history['pension_income'][:, yr] = total_current_pension
             
             prev_total_port = tsp + ira + roth + taxable + cash
             tsp *= (1 + returns[:, yr, 1])
@@ -419,7 +457,7 @@ class StochasticRetirementEngine:
             taxable += excess_rmd
             taxable_basis += excess_rmd 
             
-            gross_income = rmds + w_tsp + w_ira + current_pension + (ss * 0.85) + current_salary_income
+            gross_income = rmds + w_tsp + w_ira + total_current_pension + (ss * 0.85) + current_salary_income
             magi = gross_income.copy() 
             taxable_income = np.maximum(0, gross_income - (deduction * cum_inf)) 
             
@@ -441,7 +479,7 @@ class StochasticRetirementEngine:
             base_tax_fed += (ltcg_tax + niit_tax)
             
             state_taxable_base = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), 
-                                          taxable_income - rmds - w_tsp - w_ira - current_pension - (ss * 0.85), 
+                                          taxable_income - rmds - w_tsp - w_ira - total_current_pension - (ss * 0.85), 
                                           taxable_income)
             state_taxable_base = np.maximum(0, state_taxable_base)
             base_tax_state_local = state_taxable_base * combined_state_local_rate
@@ -587,7 +625,7 @@ class StochasticRetirementEngine:
             history['hsa_bal'][:, yr] = hsa
             
             if age >= ret_age:
-                history['net_spendable'][:, yr] = (actual_portfolio_withdrawal + current_pension + ss + current_salary_income
+                history['net_spendable'][:, yr] = (actual_portfolio_withdrawal + total_current_pension + ss + current_salary_income
                                                    - total_tax_fed - total_tax_state 
                                                    - medicare_cost - history['health_cost'][:, yr] 
                                                    - current_mortgage - current_add_exp)

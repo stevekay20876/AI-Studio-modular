@@ -1,3 +1,5 @@
+### 7. `requirements.txt`
+```text
 streamlit
 numpy
 pandas

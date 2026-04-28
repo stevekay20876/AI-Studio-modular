@@ -1,4 +1,5 @@
-# visuals.py
+### 5. `visuals.py`
+```python
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
@@ -62,7 +63,7 @@ def plot_cash_flow_sources(history, years_arr):
     fig = go.Figure()
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['salary_income'], axis=0), name="Salary", marker_color='purple'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['ss_income'], axis=0), name="Social Security", marker_color='#1f77b4'))
-    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['pension_income'], axis=0), name="Pension", marker_color='#ff7f0e'))
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['pension_income'], axis=0), name="Total Pension", marker_color='#ff7f0e'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['tsp_withdrawal'], axis=0), name="TSP Withdrawal", marker_color='#2ca02c'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['ira_withdrawal'], axis=0), name="IRA Withdrawal", marker_color='#98df8a'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['roth_withdrawal'], axis=0), name="Roth Withdrawal", marker_color='green'))

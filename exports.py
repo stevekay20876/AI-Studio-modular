@@ -1,4 +1,5 @@
-# exports.py
+### 3. `exports.py`
+```python
 import numpy as np
 import pandas as pd
 
@@ -43,4 +44,15 @@ def build_csv_dataframe(history, years_arr, age_arr, percentile=50):
         "Ending Total Balance (Today's $)": np.percentile(history['total_bal_real'], percentile, axis=0), 
         "Withdrawal Constraint Active": ["Yes" if flag > 0 else "No" for flag in np.percentile(history['constraint_active'], percentile, axis=0)]
     }
-    return pd.DataFrame(data)
+    
+    df = pd.DataFrame(data)
+    
+    # By checking if the maximum absolute value is less than 0.0001, we mathematically bypass floating point inaccuracy bugs.
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    cols_to_drop = [col for col in numeric_cols if df[col].abs().max() < 1e-4]
+    
+    # Ensure we never accidentally drop the Calendar Year or Age columns
+    cols_to_drop = [c for c in cols_to_drop if c not in ["Calendar Year", "Age"]]
+    df = df.drop(columns=cols_to_drop)
+    
+    return df
