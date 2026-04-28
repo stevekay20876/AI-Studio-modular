@@ -149,22 +149,29 @@ with nav1:
                         st.error("Error loading profile.")
                     
         with col_save:
-            st.write("") 
-            st.write("")
+            # Added Custom File Naming
+            profile_name = st.text_input("Name your save file:", value="client_profile")
+            
             state_dict = get_current_state()
             if isinstance(state_dict.get('mil_diems'), datetime.date):
                 state_dict['mil_diems'] = state_dict['mil_diems'].isoformat()
             
+            # Ensure it has .json extension
+            safe_filename = profile_name.strip()
+            if not safe_filename.endswith(".json"):
+                safe_filename += ".json"
+            
             st.download_button(
                 label="⬇️ Save Current Profile to Computer",
                 data=json.dumps(state_dict, indent=4),
-                file_name="client_profile.json",
+                file_name=safe_filename,
                 mime="application/json",
                 use_container_width=True
             )
 
     has_run = 'sim_data' in st.session_state
 
+    # Notice expanded=not has_run. This collapses the expanders dynamically when data is present.
     with st.form("input_form"):
         st.markdown("### Build Your Profile")
         
