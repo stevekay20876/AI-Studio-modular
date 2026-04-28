@@ -768,4 +768,47 @@ with nav3:
     """)
 
     st.header("4. Dynamic Liquidation Hierarchy & Sequence Risk Mitigation")
-    st.write(
+    st.write("The engine actively manages where you pull money from year by year based on what the simulated market is doing.")
+    st.markdown("""
+    - **Normal Years:** Lifestyle is funded by Tax-Deferred accounts (TSP/Trad IRA), allowing your Tax-Free (Roth) and Taxable accounts to compound.
+    - **Market Crash Years (Down >10%):** The engine triggers an emergency **Sequence of Return Risk (SORR)** protocol. It immediately halts the sale of equities in your TSP/IRA to avoid locking in losses. It seamlessly pivots to burning down your Cash Buffer, followed by Taxable and Roth accounts, until the market recovers.
+    """)
+
+    st.header("5. Federal Tax Code & Roth Optimization Engine")
+    st.write("The model contains a highly detailed US Tax logic tree.")
+    st.markdown("""
+    - It tracks Standard Deductions, Ordinary Brackets, Long-Term Capital Gains (LTCG), Net Investment Income Tax (NIIT), and State/Local taxes.
+    - **Roth Optimizer:** In the background, the engine actually runs your entire lifetime 5 separate times using different Roth Conversion strategies (Baseline, Filling your current bracket, Targeting IRMAA cliffs, and Max Bracket limits). It compares the "Terminal Legacy" of all 5 runs and surfaces the mathematical winner to you, alongside a step-by-step conversion schedule.
+    """)
+
+# ==========================================
+# PAGE 4: ABOUT
+# ==========================================
+with nav4:
+    st.title("About the Advanced Quantitative Retirement Planner")
+    st.markdown("---")
+
+    st.header("The Mission")
+    st.write("""
+    For decades, ultra-wealthy families and institutional endowments have relied on sophisticated Monte Carlo simulations and dynamic spending algorithms to manage their wealth. Meanwhile, DIY investors have been forced to rely on rudimentary calculators that output dangerous, straight-line "averages."
+
+    **I built this platform to democratize institution-grade financial modeling.**
+
+    The Advanced Quantitative Retirement Planner was designed to bridge the gap between basic retirement calculators and expensive, gatekept professional financial software. It evaluates the raw, mathematical truth of your retirement survivability.
+    """)
+
+    st.header("Specialized for Federal Employees")
+    st.write("""
+    While this simulator is highly effective for any private-sector retiree, it features a specialized logic engine built specifically to handle the unique nuances of United States Federal Employees and Military Retirees.
+    """)
+    st.markdown("""
+    - Native integration for the Thrift Savings Plan (TSP).
+    - Actuarial comparisons between Medicare Part B / IRMAA and FEHB (FEPBlue, GEHA) / TRICARE for Life.
+    - Phased Retirement modeling and FERS Pension COLA calculations.
+    - Parallel Military & FERS integration combining separate survivor benefit multipliers, Start Ages, and differing CPI/Diet COLA rules.
+    """)
+
+    st.header("Why 'CASAM'?")
+    st.write("""
+    This tool relies on the **Constant Amortization Spending Model (CASAM)**. Instead of using rigid rules like the "4% Rule," CASAM looks at your actual portfolio balance, guaranteed income streams (Social Security, Pensions), and specific tax liabilities every single year, dynamically adjusting your safe spending limits to ensure your money outlives you.
+    """)
