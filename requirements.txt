@@ -1,8 +1,6 @@
-### 7. `requirements.txt`
-```text
 streamlit
 numpy
 pandas
 scipy
 plotly
-fpdf
+fpdf2
