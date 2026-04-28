@@ -82,4 +82,5 @@ def generate_pdf(data):
     pdf.set_text_color(100, 100, 100)
     pdf.multi_cell(0, 6, "*Note: This is an actuarial simulation based on Monte Carlo stochastic modeling. For visual charts, full cash flow mapping, and step-by-step conversion tables, please refer to your interactive web dashboard.")
 
-    return pdf.output(dest='S').encode('latin-1')
+    # UPDATED FOR FPDF2
+    return bytes(pdf.output())
