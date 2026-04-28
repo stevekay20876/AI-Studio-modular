@@ -105,7 +105,6 @@ with nav1:
         'current_salary': None, 'annual_savings': None, 'phased_ret_active': False,
         'phased_ret_age': None, 'pension_est': None, 'survivor_benefit': "Full Survivor Benefit", 
         
-        # New Military Variables
         'mil_active': False, 'mil_component': "Active Duty", 'mil_years': 0, 'mil_months': 0, 'mil_days': 0,
         'mil_points': 0, 'mil_rank': "O-4", 'mil_discharge': "Honorable Discharge", 
         'mil_diems': datetime.date(2005, 1, 1), 'mil_system': "High-36 (2.5%)",
@@ -152,7 +151,6 @@ with nav1:
         with col_save:
             st.write("") 
             st.write("")
-            # Need to handle Date serialization for JSON
             state_dict = get_current_state()
             if isinstance(state_dict.get('mil_diems'), datetime.date):
                 state_dict['mil_diems'] = state_dict['mil_diems'].isoformat()
@@ -211,15 +209,15 @@ with nav1:
             mil_active = st.checkbox("Enable Military Pension Modeling?", key="mil_active")
             
             m1, m2 = st.columns(2)
-            mil_component = m1.selectbox("Service Component", ["Active Duty", "National Guard / Reserve"], key="mil_component")
+            mil_component = m1.selectbox("Service Component", ["Active Duty", "National Guard / Reserve", "Mixed (Active + Guard/Reserve)"], key="mil_component")
             mil_start_age = m2.number_input("Mil. Pension Start Age (Default 60 for Guard/Reserve)", min_value=18, max_value=100, key="mil_start_age")
 
             st.markdown("**Creditable Service & Points**")
             mc1, mc2, mc3, mc4 = st.columns(4)
-            mil_years = mc1.number_input("Years", min_value=0, max_value=40, key="mil_years")
-            mil_months = mc2.number_input("Months", min_value=0, max_value=11, key="mil_months")
-            mil_days = mc3.number_input("Days", min_value=0, max_value=30, key="mil_days")
-            mil_points = mc4.number_input("Total Retirement Points", min_value=0, help="Only required if Guard/Reserve", key="mil_points")
+            mil_years = mc1.number_input("Active Years", min_value=0, max_value=40, key="mil_years")
+            mil_months = mc2.number_input("Active Months", min_value=0, max_value=11, key="mil_months")
+            mil_days = mc3.number_input("Active Days", min_value=0, max_value=30, key="mil_days")
+            mil_points = mc4.number_input("Inactive/Reserve Points", min_value=0, help="For Guard/Reserve or Mixed components. Do not double-count active duty time here.", key="mil_points")
 
             st.markdown("**Rank, System & Pay**")
             mr1, mr2 = st.columns(2)
@@ -227,7 +225,6 @@ with nav1:
             mil_discharge = mr2.selectbox("Character of Service", ["Honorable Discharge", "General Discharge (Under Honorable Conditions)", "Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge", "Uncharacterized Separation"], key="mil_discharge")
             
             md1, md2, md3 = st.columns(3)
-            # Try to handle string date from JSON
             default_diems = st.session_state.mil_diems
             if isinstance(default_diems, str):
                 default_diems = datetime.date.fromisoformat(default_diems)
@@ -326,7 +323,6 @@ with nav1:
             'phased_ret_active': st.session_state.phased_ret_active, 'phased_ret_age': int(st.session_state.phased_ret_age or st.session_state.ret_age),
             'pension_est': safe_float(st.session_state.pension_est), 'survivor_benefit': st.session_state.survivor_benefit,
             
-            # MILITARY INPUTS
             'mil_active': st.session_state.mil_active,
             'mil_component': st.session_state.mil_component,
             'mil_years': int(st.session_state.mil_years or 0),
@@ -661,9 +657,6 @@ with nav1:
 
             df_median_raw = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
             df_pess_raw = build_csv_dataframe(history, years_arr, age_arr, percentile=10)
-            
-            df_median_csv = format_df_for_csv(df_median_raw)
-            df_pess_csv = format_df_for_csv(df_pess_raw)
             
             colA, colB = st.columns(2)
             colA.download_button("📄 Download Median (50th) CSV", df_median_csv.to_csv(index=False), "Retirement_Median.csv", "text/csv")

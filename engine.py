@@ -106,10 +106,12 @@ class StochasticRetirementEngine:
         if mil_active:
             if self.inputs['mil_discharge'] not in ["Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge"]:
                 
-                # 1. Equivalent Years
+                # 1. Equivalent Years (WITH NEW MIXED LOGIC)
                 if self.inputs['mil_component'] == "National Guard / Reserve":
                     eq_years = self.inputs['mil_points'] / 360.0
-                else:
+                elif self.inputs['mil_component'] == "Mixed (Active + Guard/Reserve)":
+                    eq_years = self.inputs['mil_years'] + (self.inputs['mil_months'] / 12.0) + (self.inputs['mil_days'] / 360.0) + (self.inputs['mil_points'] / 360.0)
+                else: # Active Duty
                     eq_years = self.inputs['mil_years'] + (self.inputs['mil_months'] / 12.0) + (self.inputs['mil_days'] / 360.0)
                 
                 # 2. Multiplier
@@ -133,7 +135,7 @@ class StochasticRetirementEngine:
                 va_annual = va_monthly * 12
                 base_va_pay = np.full(self.iterations, va_annual)
                 
-                # Concurrent Receipt (CRDP) legal threshold is 50%. Special ratings also waive offset.
+                # CRDP Eligible?
                 crdp_eligible = False
                 if self.inputs['mil_disability_rating'] in ["50% - 60%", "70% - 90%", "100%"] or self.inputs['mil_special_rating'] in ["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]:
                     crdp_eligible = True
@@ -565,7 +567,6 @@ class StochasticRetirementEngine:
             
             if age >= ret_age:
                 total_deductions = total_tax_fed + total_tax_state + medicare_cost + history['health_cost'][:, yr] + current_mortgage + current_add_exp
-                # ADD VA PAY AS TAX-FREE CASH FLOW HERE
                 history['net_spendable'][:, yr] = actual_portfolio_withdrawal + total_current_pension + current_va_pay + ss + current_salary_income - total_deductions
             else:
                 history['net_spendable'][:, yr] = 0.0
