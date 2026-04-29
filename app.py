@@ -105,18 +105,15 @@ with nav1:
             state_in = c5.text_input("State of Residence", key="state")
             county_in = c6.text_input("County of Residence", key="county")
             
-            if filing_status == "MFJ":
-                c_sp1, c_sp2, c_sp3 = st.columns(3)
-                spouse_age = c_sp1.number_input("Spouse Current Age", min_value=18, max_value=100, key="spouse_age")
-                s_ret_age = c_sp2.number_input("Spouse Retirement Age", min_value=18, max_value=100, key="s_ret_age")
-                spouse_life_exp = c_sp3.number_input("Spouse Life Expectancy", min_value=50, max_value=120, key="spouse_life_exp")
+            st.info("If Married Filing Jointly (MFJ), please complete the Spouse details below.")
+            c_sp1, c_sp2, c_sp3 = st.columns(3)
+            spouse_age = c_sp1.number_input("Spouse Current Age (If MFJ)", min_value=18, max_value=100, key="spouse_age")
+            s_ret_age = c_sp2.number_input("Spouse Retirement Age (If MFJ)", min_value=18, max_value=100, key="s_ret_age")
+            spouse_life_exp = c_sp3.number_input("Spouse Life Expectancy (If MFJ)", min_value=50, max_value=120, key="spouse_life_exp")
 
         with st.expander("💼 Income & Social Security", expanded=not has_run):
-            if st.session_state.filing_status == "MFJ":
-                t_inc_p, t_inc_s = st.tabs(["Primary", "Spouse"])
-            else:
-                t_inc_p = st.container()
-                t_inc_s = None
+            # REMOVED the 'if MFJ' blocker so the tabs are always generated and saved to session state
+            t_inc_p, t_inc_s = st.tabs(["Primary", "Spouse (If MFJ)"])
                 
             with t_inc_p:
                 st.markdown("**Primary Pre-Retirement & Phased Transition**")
@@ -138,29 +135,25 @@ with nav1:
                 ss_fra = c7.number_input("Social Security at FRA ($/yr)", min_value=0, step=1000, key="ss_fra")
                 ss_claim_age = c8.number_input("Target SS Claiming Age", min_value=62, max_value=70, key="ss_claim_age")
                 
-            if t_inc_s is not None:
-                with t_inc_s:
-                    st.markdown("**Spouse Pre-Retirement**")
-                    cs1, cs2 = st.columns(2)
-                    s_current_salary = cs1.number_input("Spouse Current Annual Salary ($)", min_value=0, step=1000, key="s_current_salary")
-                    s_annual_savings = cs2.number_input("Spouse Total Annual Savings ($)", min_value=0, step=1000, key="s_annual_savings")
-                    
-                    st.markdown("**Spouse Civilian Federal Pension (FERS/CSRS)**")
-                    cs5, cs6 = st.columns(2)
-                    s_pension_est = cs5.number_input("Spouse Full FERS Pension Est. ($)", min_value=0, step=1000, key="s_pension_est")
-                    s_survivor_benefit = cs6.selectbox("Spouse FERS Survivor Benefit Option", ["No Survivor Benefit", "Partial Survivor Benefit", "Full Survivor Benefit"], key="s_survivor_benefit")
+            with t_inc_s:
+                st.markdown("**Spouse Pre-Retirement**")
+                cs1, cs2 = st.columns(2)
+                s_current_salary = cs1.number_input("Spouse Current Annual Salary ($)", min_value=0, step=1000, key="s_current_salary")
+                s_annual_savings = cs2.number_input("Spouse Total Annual Savings ($)", min_value=0, step=1000, key="s_annual_savings")
+                
+                st.markdown("**Spouse Civilian Federal Pension (FERS/CSRS)**")
+                cs5, cs6 = st.columns(2)
+                s_pension_est = cs5.number_input("Spouse Full FERS Pension Est. ($)", min_value=0, step=1000, key="s_pension_est")
+                s_survivor_benefit = cs6.selectbox("Spouse FERS Survivor Benefit Option", ["No Survivor Benefit", "Partial Survivor Benefit", "Full Survivor Benefit"], key="s_survivor_benefit")
 
-                    st.markdown("**Spouse Social Security Guaranteed Income**")
-                    cs7, cs8 = st.columns(2)
-                    s_ss_fra = cs7.number_input("Spouse Social Security at FRA ($/yr)", min_value=0, step=1000, key="s_ss_fra")
-                    s_ss_claim_age = cs8.number_input("Spouse Target SS Claiming Age", min_value=62, max_value=70, key="s_ss_claim_age")
+                st.markdown("**Spouse Social Security Guaranteed Income**")
+                cs7, cs8 = st.columns(2)
+                s_ss_fra = cs7.number_input("Spouse Social Security at FRA ($/yr)", min_value=0, step=1000, key="s_ss_fra")
+                s_ss_claim_age = cs8.number_input("Spouse Target SS Claiming Age", min_value=62, max_value=70, key="s_ss_claim_age")
 
         with st.expander("🎖️ Military Service & Pension (Optional)", expanded=False):
-            if st.session_state.filing_status == "MFJ":
-                t_mil_p, t_mil_s = st.tabs(["Primary", "Spouse"])
-            else:
-                t_mil_p = st.container()
-                t_mil_s = None
+            # REMOVED the 'if MFJ' blocker here as well
+            t_mil_p, t_mil_s = st.tabs(["Primary", "Spouse (If MFJ)"])
                 
             with t_mil_p:
                 st.markdown("**Primary Military Service Member Profile**")
@@ -195,39 +188,38 @@ with nav1:
                 mil_va_pay = mv3.number_input("Monthly VA Disability Pay ($/mo)", min_value=0, step=100, key="mil_va_pay")
                 mil_sbp = st.selectbox("Survivor Benefit Plan (SBP)", ["No SBP", "Full SBP (55% Survivor / 6.5% Premium)"], key="mil_sbp")
                 
-            if t_mil_s is not None:
-                with t_mil_s:
-                    st.markdown("**Spouse Military Service Member Profile**")
-                    s_mil_active = st.checkbox("Enable Spouse Military Pension Modeling?", key="s_mil_active")
-                    
-                    sm1, sm2 = st.columns(2)
-                    s_mil_component = sm1.selectbox("Spouse Service Component", ["Active Duty", "National Guard / Reserve", "Mixed (Active + Guard/Reserve)"], key="s_mil_component")
-                    s_mil_start_age = sm2.number_input("Spouse Mil. Pension Start Age", min_value=18, max_value=100, key="s_mil_start_age")
+            with t_mil_s:
+                st.markdown("**Spouse Military Service Member Profile**")
+                s_mil_active = st.checkbox("Enable Spouse Military Pension Modeling?", key="s_mil_active")
+                
+                sm1, sm2 = st.columns(2)
+                s_mil_component = sm1.selectbox("Spouse Service Component", ["Active Duty", "National Guard / Reserve", "Mixed (Active + Guard/Reserve)"], key="s_mil_component")
+                s_mil_start_age = sm2.number_input("Spouse Mil. Pension Start Age", min_value=18, max_value=100, key="s_mil_start_age")
 
-                    st.markdown("**Spouse Creditable Service & Points**")
-                    smc1, smc2, smc3, smc4 = st.columns(4)
-                    s_mil_years = smc1.number_input("Spouse Active Years", min_value=0, max_value=40, key="s_mil_years")
-                    s_mil_months = smc2.number_input("Spouse Active Months", min_value=0, max_value=11, key="s_mil_months")
-                    s_mil_days = smc3.number_input("Spouse Active Days", min_value=0, max_value=30, key="s_mil_days")
-                    s_mil_points = smc4.number_input("Spouse Total Career Points", min_value=0, key="s_mil_points")
+                st.markdown("**Spouse Creditable Service & Points**")
+                smc1, smc2, smc3, smc4 = st.columns(4)
+                s_mil_years = smc1.number_input("Spouse Active Years", min_value=0, max_value=40, key="s_mil_years")
+                s_mil_months = smc2.number_input("Spouse Active Months", min_value=0, max_value=11, key="s_mil_months")
+                s_mil_days = smc3.number_input("Spouse Active Days", min_value=0, max_value=30, key="s_mil_days")
+                s_mil_points = smc4.number_input("Spouse Total Career Points", min_value=0, key="s_mil_points")
 
-                    st.markdown("**Spouse Rank, System & Pay**")
-                    smr1, smr2 = st.columns(2)
-                    s_mil_rank = smr1.selectbox("Spouse Final Rank / Pay Grade", ["E-1", "E-2", "E-3", "E-4", "E-5", "E-6", "E-7", "E-8", "E-9", "W-1", "W-2", "W-3", "W-4", "W-5", "O-1", "O-2", "O-3", "O-4", "O-5", "O-6", "O-7", "O-8", "O-9"], key="s_mil_rank")
-                    s_mil_discharge = smr2.selectbox("Spouse Character of Service", ["Honorable Discharge", "General Discharge (Under Honorable Conditions)", "Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge", "Uncharacterized Separation"], key="s_mil_discharge")
-                    
-                    smd1, smd2, smd3 = st.columns(3)
-                    s_default_diems = datetime.date.fromisoformat(st.session_state.s_mil_diems) if isinstance(st.session_state.s_mil_diems, str) else st.session_state.s_mil_diems
-                    s_mil_diems = smd1.date_input("Spouse DIEMS Date", value=s_default_diems, key="s_mil_diems")
-                    s_mil_system = smd2.selectbox("Spouse Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="s_mil_system")
-                    s_mil_pay_base = smd3.number_input("Spouse Pay Base ($/mo)", min_value=0, step=100, key="s_mil_pay_base")
-                    
-                    st.markdown("**Spouse Disability & Survivor Options**")
-                    smv1, smv2, smv3 = st.columns(3)
-                    s_mil_disability_rating = smv1.selectbox("Spouse VA Disability Rating", ["0%", "10% - 20%", "30% - 40%", "50% - 60%", "70% - 90%", "100%"], key="s_mil_disability_rating")
-                    s_mil_special_rating = smv2.selectbox("Spouse Special Classifications", ["None", "TDIU (Unemployability)", "SMC (Special Monthly Comp)"], key="s_mil_special_rating")
-                    s_mil_va_pay = smv3.number_input("Spouse Monthly VA Disability Pay ($/mo)", min_value=0, step=100, key="s_mil_va_pay")
-                    s_mil_sbp = st.selectbox("Spouse Survivor Benefit Plan (SBP)", ["No SBP", "Full SBP (55% Survivor / 6.5% Premium)"], key="s_mil_sbp")
+                st.markdown("**Spouse Rank, System & Pay**")
+                smr1, smr2 = st.columns(2)
+                s_mil_rank = smr1.selectbox("Spouse Final Rank / Pay Grade", ["E-1", "E-2", "E-3", "E-4", "E-5", "E-6", "E-7", "E-8", "E-9", "W-1", "W-2", "W-3", "W-4", "W-5", "O-1", "O-2", "O-3", "O-4", "O-5", "O-6", "O-7", "O-8", "O-9"], key="s_mil_rank")
+                s_mil_discharge = smr2.selectbox("Spouse Character of Service", ["Honorable Discharge", "General Discharge (Under Honorable Conditions)", "Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge", "Uncharacterized Separation"], key="s_mil_discharge")
+                
+                smd1, smd2, smd3 = st.columns(3)
+                s_default_diems = datetime.date.fromisoformat(st.session_state.s_mil_diems) if isinstance(st.session_state.s_mil_diems, str) else st.session_state.s_mil_diems
+                s_mil_diems = smd1.date_input("Spouse DIEMS Date", value=s_default_diems, key="s_mil_diems")
+                s_mil_system = smd2.selectbox("Spouse Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="s_mil_system")
+                s_mil_pay_base = smd3.number_input("Spouse Pay Base ($/mo)", min_value=0, step=100, key="s_mil_pay_base")
+                
+                st.markdown("**Spouse Disability & Survivor Options**")
+                smv1, smv2, smv3 = st.columns(3)
+                s_mil_disability_rating = smv1.selectbox("Spouse VA Disability Rating", ["0%", "10% - 20%", "30% - 40%", "50% - 60%", "70% - 90%", "100%"], key="s_mil_disability_rating")
+                s_mil_special_rating = smv2.selectbox("Spouse Special Classifications", ["None", "TDIU (Unemployability)", "SMC (Special Monthly Comp)"], key="s_mil_special_rating")
+                s_mil_va_pay = smv3.number_input("Spouse Monthly VA Disability Pay ($/mo)", min_value=0, step=100, key="s_mil_va_pay")
+                s_mil_sbp = st.selectbox("Spouse Survivor Benefit Plan (SBP)", ["No SBP", "Full SBP (55% Survivor / 6.5% Premium)"], key="s_mil_sbp")
 
         with st.expander("📉 Expenses & Goals", expanded=not has_run):
             st.markdown("**Spending Limits & Legacy Goals (In Today's Dollars)**")
@@ -289,9 +281,10 @@ with nav1:
     if submit:
         final_tax_basis = st.session_state.tax_basis if st.session_state.tax_basis is not None else st.session_state.tax_b
         
-        vital_checks = {"Current Age": st.session_state.cur_age, "Retirement Age": st.session_state.ret_age, "Life Expectancy": st.session_state.life_exp, "Target Legacy Floor": st.session_state.target_floor}
+        vital_checks = {"Primary Current Age": st.session_state.cur_age, "Primary Retirement Age": st.session_state.ret_age, "Primary Life Expectancy": st.session_state.life_exp}
         if st.session_state.filing_status == 'MFJ':
-            vital_checks["Spouse Age"] = st.session_state.spouse_age
+            vital_checks["Spouse Current Age"] = st.session_state.spouse_age
+            vital_checks["Spouse Retirement Age"] = st.session_state.s_ret_age
             vital_checks["Spouse Life Exp"] = st.session_state.spouse_life_exp
             
         missing_vitals = [name for name, val in vital_checks.items() if val is None or val == 0]
