@@ -41,7 +41,9 @@ class StochasticRetirementEngine:
             [-0.15, 0.85,  0.85,  0.85,  1.00,  0.85],
             [-0.15, 0.85,  0.85,  0.85,  0.85,  1.00]
         ])
-        vols = np.array([0.012, v_tsp, v_ira, v_roth, v_tax, v_hsa])
+        
+        # Bumping inflation volatility from 0.012 to 0.02 to better map historical variance
+        vols = np.array([0.020, v_tsp, v_ira, v_roth, v_tax, v_hsa])
         cov = np.outer(vols, vols) * corr
         return np.linalg.cholesky(cov)
 
@@ -63,16 +65,25 @@ class StochasticRetirementEngine:
         
         returns = np.exp(drifts + correlated_shocks) - 1
         inf_paths = np.zeros((self.iterations, self.years))
+        
+        # FIXED: More realistic Ornstein-Uhlenbeck parameters
         inf_base = 0.025   
-        kappa = 0.5        
-        jump_prob = 0.05   
+        kappa = 0.15        # Reduced from 0.5 to allow inflationary regimes to persist longer (half-life ~4.6 yrs)
+        jump_prob = 0.05    
+        dt = 1.0            # Explicit timestep
+        sqrt_dt = np.sqrt(dt)
         current_inf = np.full(self.iterations, inf_base)
         
         for yr in range(self.years):
-            dW = correlated_shocks[:, yr, 0]
-            jumps = np.where(np.random.rand(self.iterations) < jump_prob, np.random.normal(0.04, 0.01, self.iterations), 0)
-            current_inf = current_inf + kappa * (inf_base - current_inf) + dW + jumps
-            inf_paths[:, yr] = np.clip(current_inf, -0.01, 0.12) 
+            dW = correlated_shocks[:, yr, 0] * sqrt_dt
+            
+            # Widen jump shocks: previously (0.04, 0.01), now forces +4% to +8% tail risk spikes
+            jumps = np.where(np.random.rand(self.iterations) < jump_prob, np.random.normal(0.06, 0.02, self.iterations), 0)
+            
+            current_inf = current_inf + kappa * (inf_base - current_inf) * dt + dW + jumps
+            inf_paths[:, yr] = np.clip(current_inf, -0.01, 0.15) # Raised ceiling to 15% to accommodate wider jumps
+            
+            # Stagflationary shock: if inflation jumps, force a corresponding drag on real asset returns
             stagflation_shock = np.where(jumps > 0, -0.10, 0)
             returns[:, yr, 1:] += stagflation_shock[:, None]
             
@@ -92,10 +103,8 @@ class StochasticRetirementEngine:
         home_value = np.full(self.iterations, self.inputs.get('home_value', 0.0))
         taxable_basis = np.full(self.iterations, self.inputs.get('taxable_basis', self.inputs['taxable_bal']))
         
-        # FERS
         base_pension = np.full(self.iterations, self.inputs['pension_est'])
         
-        # MILITARY PENSION LOGIC
         mil_active = self.inputs.get('mil_active', False)
         base_mil_pension = np.zeros(self.iterations)
         base_va_pay = np.zeros(self.iterations)
@@ -139,7 +148,6 @@ class StochasticRetirementEngine:
                 base_mil_pension = net_gross_taxable - mil_sbp_annual
                 base_mil_pension = np.maximum(0, base_mil_pension)
 
-        # SS
         ss_claim_age = self.inputs.get('ss_claim_age', 67)
         months_early = max(0, (67 - ss_claim_age) * 12)
         months_late = max(0, (ss_claim_age - 67) * 12)
@@ -462,7 +470,6 @@ class StochasticRetirementEngine:
                 else:
                     state_taxable_base = taxable_income
                     
-            # --- NEW: APPLY PARTIAL PENSION EXCLUSIONS FOR AGE 65+ ---
             if age >= 65:
                 if current_filing_status == 'MFJ':
                     state_exclusion = STATE_EXCLUSIONS_65_MFJ.get(state_str, 0.0) * cum_inf
@@ -537,7 +544,22 @@ class StochasticRetirementEngine:
                         extra_state_taxable = final_taxable_income - taxable_ss_conv - (taxable_income - taxable_ss_base)
                     else:
                         extra_state_taxable = final_taxable_income - taxable_income
-                        
+                
+                if age >= 65:
+                    if current_filing_status == 'MFJ':
+                        state_exclusion = STATE_EXCLUSIONS_65_MFJ.get(state_str, 0.0) * cum_inf
+                    else:
+                        state_exclusion = STATE_EXCLUSIONS_65_SINGLE.get(state_str, 0.0) * cum_inf
+                    
+                    ret_income = total_current_pension + w_tsp + w_ira + conv_amt
+                    allowed_exclusion = np.minimum(state_exclusion, ret_income)
+                    # Subtracting base exclusion since we are working with the delta/extra taxable income
+                    base_ret_income = total_current_pension + w_tsp + w_ira
+                    base_allowed_exclusion = np.minimum(state_exclusion, base_ret_income)
+                    
+                    extra_exclusion_benefit = allowed_exclusion - base_allowed_exclusion
+                    extra_state_taxable = np.maximum(0, extra_state_taxable - extra_exclusion_benefit)
+
                 extra_tax_state = extra_state_taxable * combined_state_local_rate
                 extra_tax_total = extra_tax_fed + extra_tax_state
                 
