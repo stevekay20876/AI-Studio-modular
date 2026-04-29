@@ -195,9 +195,11 @@ class StochasticRetirementEngine:
         mortgage_yrs = self.inputs.get('mortgage_yrs', 0)
         annual_savings = self.inputs.get('annual_savings', 0.0)
 
+        # STATE TAX MAP IMPLEMENTATION
         state_str = self.inputs.get('state', '').strip().upper()
         county_str = self.inputs.get('county', '').strip().upper()
-        state_tax_rate = 0.0 if state_str in RETIREMENT_TAX_FREE_STATES else (0.045 if state_str != "" else 0.0)
+        
+        state_tax_rate = STATE_TAX_RATES.get(state_str, 0.045) if state_str not in RETIREMENT_TAX_FREE_STATES else 0.0
         local_tax_rate = 0.025 if county_str != "" and state_str in ["MD", "IN", "PA", "OH", "NY"] else (0.010 if county_str != "" else 0.0)
         combined_state_local_rate = state_tax_rate + local_tax_rate
         cum_inf = np.ones(self.iterations)
@@ -218,7 +220,7 @@ class StochasticRetirementEngine:
                     current_filing_status, moop_idx, ss_mult = 'Single', 0, 0.50
                     pension_mult = 0.50 if survivor_benefit_choice == 'Full Survivor Benefit' else (0.25 if survivor_benefit_choice == 'Partial Survivor Benefit' else 0.0)
                     base_mil_pension = np.where(mil_sbp_annual > 0, base_mil_pension * 0.55, np.zeros(self.iterations))
-                    base_va_pay = np.zeros(self.iterations)
+                    base_va_pay = np.zeros(self.iterations) 
                 elif primary_alive and not spouse_alive:
                     current_filing_status, moop_idx, ss_mult, pension_mult = 'Single', 0, 0.50, 1.0
                     base_mil_pension += mil_sbp_annual 
@@ -420,8 +422,8 @@ class StochasticRetirementEngine:
             
             taxable += excess_rmd
             taxable_basis += excess_rmd 
-
-            # ----- EXACT IRS PROVISIONAL INCOME FORMULA -----
+            
+            # --- UPDATED IRS PROVISIONAL INCOME FORMULA ---
             t1 = 32000 if current_filing_status == 'MFJ' else 25000
             t2 = 44000 if current_filing_status == 'MFJ' else 34000
             
@@ -483,7 +485,6 @@ class StochasticRetirementEngine:
                 tsp -= conv_from_tsp
                 conv_amt = conv_from_ira + conv_from_tsp
                 
-                # RECALCULATE SS WITH ROTH CONVERSION (TAX TORPEDO)
                 pi_conv = pi_base + conv_amt
                 calc_ss_conv = 0.5 * np.clip(pi_conv - t1, 0, t2 - t1) + 0.85 * np.maximum(0, pi_conv - t2)
                 taxable_ss_conv = np.minimum(0.85 * ss, calc_ss_conv)

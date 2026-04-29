@@ -26,8 +26,22 @@ MEDICARE_PART_B_BASE = 2096.40
 IRMAA_BRACKETS_SINGLE = [(103000, 0), (129000, 838.8), (161000, 2101.2), (193000, 3362.4), (499999, 4624.8), (np.inf, 5043.6)]
 IRMAA_BRACKETS_MFJ = [(206000, 0), (258000, 838.8), (322000, 2101.2), (386000, 3362.4), (749999, 4624.8), (np.inf, 5043.6)]
 
-# --- STATE RETIREMENT EXEMPTIONS ---
+# --- STATE RETIREMENT EXEMPTIONS & BLENDED EFFECTIVE RATES ---
 RETIREMENT_TAX_FREE_STATES = ["FL", "TX", "NV", "WA", "SD", "WY", "AK", "TN", "NH", "IL", "PA", "MS"]
+
+# Blended effective tax rates for a typical retiree income ($80k - $150k) based on 2024 state brackets
+STATE_TAX_RATES = {
+    "AL": 0.050, "AK": 0.000, "AZ": 0.025, "AR": 0.039, "CA": 0.080, 
+    "CO": 0.044, "CT": 0.050, "DE": 0.050, "FL": 0.000, "GA": 0.054, 
+    "HI": 0.072, "ID": 0.058, "IL": 0.000, "IN": 0.030, "IA": 0.057, 
+    "KS": 0.057, "KY": 0.040, "LA": 0.042, "ME": 0.071, "MD": 0.047, 
+    "MA": 0.050, "MI": 0.042, "MN": 0.068, "MS": 0.000, "MO": 0.049, 
+    "MT": 0.059, "NE": 0.058, "NV": 0.000, "NH": 0.000, "NJ": 0.055, 
+    "NM": 0.049, "NY": 0.055, "NC": 0.045, "ND": 0.025, "OH": 0.035, 
+    "OK": 0.047, "OR": 0.087, "PA": 0.000, "RI": 0.047, "SC": 0.064, 
+    "SD": 0.000, "TN": 0.000, "TX": 0.000, "UT": 0.046, "VT": 0.066, 
+    "VA": 0.057, "WA": 0.000, "WV": 0.042, "WI": 0.053, "WY": 0.000
+}
 
 # --- STATUTORY HEALTH INSURANCE MOOP LIMITS (Single, MFJ) ---
 MOOP_LIMITS = {
