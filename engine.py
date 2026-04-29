@@ -106,11 +106,9 @@ class StochasticRetirementEngine:
         if mil_active:
             if self.inputs['mil_discharge'] not in ["Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge"]:
                 
-                # 1. Equivalent Years (WITH NEW MIXED LOGIC)
-                if self.inputs['mil_component'] == "National Guard / Reserve":
+                # 1. Equivalent Years (DFAS Logic: Rely purely on Total Points for Non-Regular)
+                if self.inputs['mil_component'] in ["National Guard / Reserve", "Mixed (Active + Guard/Reserve)"]:
                     eq_years = self.inputs['mil_points'] / 360.0
-                elif self.inputs['mil_component'] == "Mixed (Active + Guard/Reserve)":
-                    eq_years = self.inputs['mil_years'] + (self.inputs['mil_months'] / 12.0) + (self.inputs['mil_days'] / 360.0) + (self.inputs['mil_points'] / 360.0)
                 else: # Active Duty
                     eq_years = self.inputs['mil_years'] + (self.inputs['mil_months'] / 12.0) + (self.inputs['mil_days'] / 360.0)
                 

@@ -149,14 +149,12 @@ with nav1:
                         st.error("Error loading profile.")
                     
         with col_save:
-            # Added Custom File Naming
             profile_name = st.text_input("Name your save file:", value="client_profile")
             
             state_dict = get_current_state()
             if isinstance(state_dict.get('mil_diems'), datetime.date):
                 state_dict['mil_diems'] = state_dict['mil_diems'].isoformat()
             
-            # Ensure it has .json extension
             safe_filename = profile_name.strip()
             if not safe_filename.endswith(".json"):
                 safe_filename += ".json"
@@ -171,7 +169,6 @@ with nav1:
 
     has_run = 'sim_data' in st.session_state
 
-    # Notice expanded=not has_run. This collapses the expanders dynamically when data is present.
     with st.form("input_form"):
         st.markdown("### Build Your Profile")
         
@@ -224,7 +221,7 @@ with nav1:
             mil_years = mc1.number_input("Active Years", min_value=0, max_value=40, key="mil_years")
             mil_months = mc2.number_input("Active Months", min_value=0, max_value=11, key="mil_months")
             mil_days = mc3.number_input("Active Days", min_value=0, max_value=30, key="mil_days")
-            mil_points = mc4.number_input("Inactive/Reserve Points", min_value=0, help="For Guard/Reserve or Mixed components. Do not double-count active duty time here.", key="mil_points")
+            mil_points = mc4.number_input("Total Career Points", min_value=0, help="For Guard/Reserve or Mixed components. Enter your GRAND TOTAL points (which already includes 1 point/day for your active duty time).", key="mil_points")
 
             st.markdown("**Rank, System & Pay**")
             mr1, mr2 = st.columns(2)
@@ -492,7 +489,7 @@ with nav1:
                 
             st.markdown("### Integrated Year-by-Year Cash Flow Projections")
             df_ui = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
-            desired_cols = ['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'TSP Withdrawal', 'Trad IRA Withdrawal', 'Salary Income', 'Social Security', 'Pension', 'VA Disability Pay', 'Additional Expenses (Smile Curve)']
+            desired_cols = ['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'TSP Withdrawal', 'Trad IRA Withdrawal', 'Salary Income', 'Social Security', 'Total Pension (FERS + Mil)', 'VA Disability Pay', 'Additional Expenses (Smile Curve)']
             display_cols = [c for c in desired_cols if c in df_ui.columns]
             
             format_dict = {c: "${:,.0f}" for c in display_cols if c not in ['Calendar Year', 'Age']}
