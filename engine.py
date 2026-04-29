@@ -77,8 +77,6 @@ class StochasticRetirementEngine:
             current_inf = current_inf + kappa * (inf_base - current_inf) * dt + dW + jumps
             inf_paths[:, yr] = np.clip(current_inf, -0.01, 0.15) 
             
-            # --- FIXED: Proportional Stagflation Shock ---
-            # If inflation spikes above 4%, apply a continuous penalty to asset returns: -2% equity return for every 1% of extra inflation
             stagflation_shock = np.where(inf_paths[:, yr] > 0.04, -2.0 * (inf_paths[:, yr] - 0.04), 0)
             returns[:, yr, 1:] += stagflation_shock[:, None]
             
@@ -152,6 +150,7 @@ class StochasticRetirementEngine:
         base_ss = np.full(self.iterations, self.inputs['ss_fra'] * ss_modifier)
         
         scheduled_withdrawal = np.zeros(self.iterations)
+        initial_withdrawal_arr = np.zeros(self.iterations)
         
         history = {
             'total_bal': np.zeros((self.iterations, self.years)), 'total_bal_real': np.zeros((self.iterations, self.years)), 
@@ -322,8 +321,10 @@ class StochasticRetirementEngine:
             w_needed = np.zeros(self.iterations)
             constraint_flag = np.zeros(self.iterations)
             
-            if age == ret_age:
+            # --- FIXED: Catch already-retired users and set the baseline arrays ---
+            if age == ret_age or (yr == 0 and age > ret_age):
                 scheduled_withdrawal = current_total_port * iwr
+                initial_withdrawal_arr = scheduled_withdrawal.copy()
             
             if age >= ret_age:
                 if yr > 0 and age > ret_age:
@@ -336,7 +337,14 @@ class StochasticRetirementEngine:
                     scheduled_withdrawal = np.where(ceiling_hit, scheduled_withdrawal * 0.9, scheduled_withdrawal)
                     constraint_flag = np.where(ceiling_hit, 1, constraint_flag)
                     
-                    scheduled_withdrawal = np.where(cwr < iwr * 0.8, scheduled_withdrawal * 1.1, scheduled_withdrawal)
+                    floor_hit = cwr < iwr * 0.8
+                    scheduled_withdrawal = np.where(floor_hit, scheduled_withdrawal * 1.1, scheduled_withdrawal)
+                    
+                    # --- FIXED: Absolute Cap on Prosperity Raises ---
+                    # Capped at 1.5x the initial real spending to prevent infinite ratcheting in bull runs
+                    max_guardrail_spend = initial_withdrawal_arr * cum_inf * 1.5
+                    scheduled_withdrawal = np.minimum(scheduled_withdrawal, max_guardrail_spend)
+                    
                     sorr_trigger = current_total_port <= prev_total_port * 0.9
                     scheduled_withdrawal = np.where(sorr_trigger, scheduled_withdrawal * 0.9, scheduled_withdrawal)
                     constraint_flag = np.where(sorr_trigger, 1, constraint_flag)
@@ -471,10 +479,14 @@ class StochasticRetirementEngine:
                 else:
                     state_exclusion = STATE_EXCLUSIONS_65_SINGLE.get(state_str, 0.0) * cum_inf
                 
-                ret_income = total_current_pension + w_tsp + w_ira
+                ret_income = total_current_pension + w_tsp + w_ira + conv_amt
                 allowed_exclusion = np.minimum(state_exclusion, ret_income)
-                state_taxable_base = np.maximum(0, state_taxable_base - allowed_exclusion)
-                    
+                base_ret_income = total_current_pension + w_tsp + w_ira
+                base_allowed_exclusion = np.minimum(state_exclusion, base_ret_income)
+                
+                extra_exclusion_benefit = allowed_exclusion - base_allowed_exclusion
+                state_taxable_base = np.maximum(0, state_taxable_base - extra_exclusion_benefit)
+
             base_tax_state_local = state_taxable_base * combined_state_local_rate
             
             total_tax_fed = base_tax_fed.copy()
