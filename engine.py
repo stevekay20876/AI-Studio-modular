@@ -106,34 +106,28 @@ class StochasticRetirementEngine:
         if mil_active:
             if self.inputs['mil_discharge'] not in ["Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge"]:
                 
-                # 1. Equivalent Years (DFAS Logic: Rely purely on Total Points for Non-Regular)
                 if self.inputs['mil_component'] in ["National Guard / Reserve", "Mixed (Active + Guard/Reserve)"]:
                     eq_years = self.inputs['mil_points'] / 360.0
-                else: # Active Duty
+                else:
                     eq_years = self.inputs['mil_years'] + (self.inputs['mil_months'] / 12.0) + (self.inputs['mil_days'] / 360.0)
                 
-                # 2. Multiplier
                 mil_sys = self.inputs['mil_system']
                 if "BRS" in mil_sys:
                     mult = eq_years * 0.02
                 elif "REDUX" in mil_sys:
                     mult = (eq_years * 0.025) - max(0, 30 - eq_years) * 0.01
-                else: # Final Pay or High-36
+                else: 
                     mult = eq_years * 0.025
                 
-                # 3. Base Gross
                 gross_annual = self.inputs['mil_pay_base'] * mult * 12
                 
-                # 4. SBP Deduction
                 if "Full SBP" in self.inputs['mil_sbp']:
                     mil_sbp_annual = np.full(self.iterations, gross_annual * 0.065)
                 
-                # 5. VA Offset Logic
                 va_monthly = self.inputs['mil_va_pay']
                 va_annual = va_monthly * 12
                 base_va_pay = np.full(self.iterations, va_annual)
                 
-                # CRDP Eligible?
                 crdp_eligible = False
                 if self.inputs['mil_disability_rating'] in ["50% - 60%", "70% - 90%", "100%"] or self.inputs['mil_special_rating'] in ["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]:
                     crdp_eligible = True
@@ -224,10 +218,10 @@ class StochasticRetirementEngine:
                     current_filing_status, moop_idx, ss_mult = 'Single', 0, 0.50
                     pension_mult = 0.50 if survivor_benefit_choice == 'Full Survivor Benefit' else (0.25 if survivor_benefit_choice == 'Partial Survivor Benefit' else 0.0)
                     base_mil_pension = np.where(mil_sbp_annual > 0, base_mil_pension * 0.55, np.zeros(self.iterations))
-                    base_va_pay = np.zeros(self.iterations) # VA pay ends on death
+                    base_va_pay = np.zeros(self.iterations)
                 elif primary_alive and not spouse_alive:
                     current_filing_status, moop_idx, ss_mult, pension_mult = 'Single', 0, 0.50, 1.0
-                    base_mil_pension += mil_sbp_annual # Premium ends when spouse dies
+                    base_mil_pension += mil_sbp_annual 
                     mil_sbp_annual = np.zeros(self.iterations)
                 else:
                     current_filing_status, moop_idx, ss_mult, pension_mult = 'Single', 0, 0.0, 0.0
@@ -426,8 +420,16 @@ class StochasticRetirementEngine:
             
             taxable += excess_rmd
             taxable_basis += excess_rmd 
+
+            # ----- EXACT IRS PROVISIONAL INCOME FORMULA -----
+            t1 = 32000 if current_filing_status == 'MFJ' else 25000
+            t2 = 44000 if current_filing_status == 'MFJ' else 34000
             
-            gross_income = rmds + w_tsp + w_ira + total_current_pension + (ss * 0.85) + current_salary_income
+            pi_base = rmds + w_tsp + w_ira + total_current_pension + current_salary_income + realized_gains + (0.5 * ss)
+            calc_ss_base = 0.5 * np.clip(pi_base - t1, 0, t2 - t1) + 0.85 * np.maximum(0, pi_base - t2)
+            taxable_ss_base = np.minimum(0.85 * ss, calc_ss_base)
+            
+            gross_income = rmds + w_tsp + w_ira + total_current_pension + taxable_ss_base + current_salary_income
             magi = gross_income.copy() 
             taxable_income = np.maximum(0, gross_income - (deduction * cum_inf)) 
             
@@ -446,7 +448,7 @@ class StochasticRetirementEngine:
             niit_tax = np.where(magi > (niit_threshold * cum_inf), realized_gains * 0.038, 0.0)
             base_tax_fed += (ltcg_tax + niit_tax)
             
-            state_taxable_base = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), np.maximum(0, taxable_income - rmds - w_tsp - w_ira - total_current_pension - (ss * 0.85)), taxable_income)
+            state_taxable_base = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), np.maximum(0, taxable_income - rmds - w_tsp - w_ira - total_current_pension - taxable_ss_base), taxable_income)
             base_tax_state_local = state_taxable_base * combined_state_local_rate
             
             total_tax_fed = base_tax_fed.copy()
@@ -481,8 +483,14 @@ class StochasticRetirementEngine:
                 tsp -= conv_from_tsp
                 conv_amt = conv_from_ira + conv_from_tsp
                 
-                final_taxable_income = taxable_income + conv_amt
-                final_magi = magi + conv_amt
+                # RECALCULATE SS WITH ROTH CONVERSION (TAX TORPEDO)
+                pi_conv = pi_base + conv_amt
+                calc_ss_conv = 0.5 * np.clip(pi_conv - t1, 0, t2 - t1) + 0.85 * np.maximum(0, pi_conv - t2)
+                taxable_ss_conv = np.minimum(0.85 * ss, calc_ss_conv)
+                
+                final_gross_income = rmds + w_tsp + w_ira + total_current_pension + taxable_ss_conv + current_salary_income + conv_amt
+                final_taxable_income = np.maximum(0, final_gross_income - (deduction * cum_inf))
+                final_magi = final_gross_income.copy()
                 
                 new_tax_fed = np.zeros(self.iterations)
                 for i in range(len(brackets)):
@@ -498,8 +506,9 @@ class StochasticRetirementEngine:
                     
                 new_niit_tax = np.where(final_magi > (niit_threshold * cum_inf), realized_gains * 0.038, 0.0)
                 extra_tax_fed = (new_tax_fed + new_ltcg_tax + new_niit_tax) - base_tax_fed
-                state_conv_tax_base = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), 0.0, conv_amt)
-                extra_tax_state = state_conv_tax_base * combined_state_local_rate
+                
+                extra_state_taxable = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), 0.0, final_taxable_income - taxable_income)
+                extra_tax_state = extra_state_taxable * combined_state_local_rate
                 extra_tax_total = extra_tax_fed + extra_tax_state
                 
                 if pay_taxes_from_cash:
