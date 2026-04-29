@@ -10,6 +10,7 @@ from exports import build_csv_dataframe
 from config import MOOP_LIMITS, TAX_BRACKETS_MFJ, TAX_BRACKETS_SINGLE, PORTFOLIOS
 from pdf_report import generate_pdf
 
+# Flattened import to prevent Copy/Paste SyntaxErrors
 from visuals import plot_wealth_trajectory, plot_liquidity_timeline, plot_cash_flow_sources, plot_expenses_breakdown, plot_withdrawal_hierarchy, plot_taxes_and_rmds, plot_roth_strategy_comparison, plot_roth_tax_impact, plot_ss_breakeven, plot_medicare_comparison, plot_income_volatility, plot_legacy_breakdown, plot_fan_chart, plot_income_gap
 
 st.set_page_config(page_title="Advanced Retirement Simulator", layout="wide")
@@ -714,6 +715,7 @@ with nav2:
       - **Moderate:** 60% Stocks / 40% Bonds.
       - **Aggressive:** 100% Stocks.
     - **Money Market (Cash):** This is your "Safety Net." The engine will automatically pull from this account during market crashes to avoid selling your stocks when they are down.
+    - **Health Savings Account (HSA):** *Please Note:* HSA funds are strictly segregated for out-of-pocket medical expenses and are NOT included in the core portfolio survival probability or the Initial Withdrawal Rate (IWR) optimization. Excluding these funds makes the model structurally pessimistic in a non-transparent way, though it is fully expected that these funds will be utilized during your lifetime.
     """)
 
     st.header("Run the Engine")
@@ -811,3 +813,6 @@ with nav4:
     st.write("""
     This tool relies on the **Constant Amortization Spending Model (CASAM)**. Instead of using rigid rules like the "4% Rule," CASAM looks at your actual portfolio balance, guaranteed income streams (Social Security, Pensions), and specific tax liabilities every single year, dynamically adjusting your safe spending limits to ensure your money outlives you.
     """)
+    
+    st.markdown("---")
+    st.markdown("**Developed by DK**")
