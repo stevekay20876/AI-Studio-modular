@@ -41,8 +41,6 @@ class StochasticRetirementEngine:
             [-0.15, 0.85,  0.85,  0.85,  1.00,  0.85],
             [-0.15, 0.85,  0.85,  0.85,  0.85,  1.00]
         ])
-        
-        # Bumping inflation volatility from 0.012 to 0.02 to better map historical variance
         vols = np.array([0.020, v_tsp, v_ira, v_roth, v_tax, v_hsa])
         cov = np.outer(vols, vols) * corr
         return np.linalg.cholesky(cov)
@@ -65,26 +63,23 @@ class StochasticRetirementEngine:
         
         returns = np.exp(drifts + correlated_shocks) - 1
         inf_paths = np.zeros((self.iterations, self.years))
-        
-        # FIXED: More realistic Ornstein-Uhlenbeck parameters
         inf_base = 0.025   
-        kappa = 0.15        # Reduced from 0.5 to allow inflationary regimes to persist longer (half-life ~4.6 yrs)
+        kappa = 0.15        
         jump_prob = 0.05    
-        dt = 1.0            # Explicit timestep
+        dt = 1.0            
         sqrt_dt = np.sqrt(dt)
         current_inf = np.full(self.iterations, inf_base)
         
         for yr in range(self.years):
             dW = correlated_shocks[:, yr, 0] * sqrt_dt
-            
-            # Widen jump shocks: previously (0.04, 0.01), now forces +4% to +8% tail risk spikes
             jumps = np.where(np.random.rand(self.iterations) < jump_prob, np.random.normal(0.06, 0.02, self.iterations), 0)
             
             current_inf = current_inf + kappa * (inf_base - current_inf) * dt + dW + jumps
-            inf_paths[:, yr] = np.clip(current_inf, -0.01, 0.15) # Raised ceiling to 15% to accommodate wider jumps
+            inf_paths[:, yr] = np.clip(current_inf, -0.01, 0.15) 
             
-            # Stagflationary shock: if inflation jumps, force a corresponding drag on real asset returns
-            stagflation_shock = np.where(jumps > 0, -0.10, 0)
+            # --- FIXED: Proportional Stagflation Shock ---
+            # If inflation spikes above 4%, apply a continuous penalty to asset returns: -2% equity return for every 1% of extra inflation
+            stagflation_shock = np.where(inf_paths[:, yr] > 0.04, -2.0 * (inf_paths[:, yr] - 0.04), 0)
             returns[:, yr, 1:] += stagflation_shock[:, None]
             
         return returns, inf_paths
@@ -553,7 +548,6 @@ class StochasticRetirementEngine:
                     
                     ret_income = total_current_pension + w_tsp + w_ira + conv_amt
                     allowed_exclusion = np.minimum(state_exclusion, ret_income)
-                    # Subtracting base exclusion since we are working with the delta/extra taxable income
                     base_ret_income = total_current_pension + w_tsp + w_ira
                     base_allowed_exclusion = np.minimum(state_exclusion, base_ret_income)
                     
