@@ -10,7 +10,6 @@ from exports import build_csv_dataframe
 from config import MOOP_LIMITS, TAX_BRACKETS_MFJ, TAX_BRACKETS_SINGLE, PORTFOLIOS
 from pdf_report import generate_pdf
 
-# Flattened import to prevent Copy/Paste SyntaxErrors
 from visuals import plot_wealth_trajectory, plot_liquidity_timeline, plot_cash_flow_sources, plot_expenses_breakdown, plot_withdrawal_hierarchy, plot_taxes_and_rmds, plot_roth_strategy_comparison, plot_roth_tax_impact, plot_ss_breakeven, plot_medicare_comparison, plot_income_volatility, plot_legacy_breakdown, plot_fan_chart, plot_income_gap
 
 st.set_page_config(page_title="Advanced Retirement Simulator", layout="wide")
@@ -429,7 +428,8 @@ with nav1:
                 'prob_success': prob_success, 'prob_legacy': prob_legacy, 'terminal_wealth': median_real_terminal, 'yr1_burn': yr1_burn,
                 'safe_years': safe_years, 'roth_winner': winner, 'tax_savings': tax_savings,
                 'rmd_reduction': rmd_reduction, 'wealth_increase': wealth_increase, 'health_plan': inputs['health_plan'],
-                'total_medicare': total_medicare_cost, 'medicare_verdict': med_verdict
+                'total_medicare': total_medicare_cost, 'medicare_verdict': med_verdict,
+                'life_exp': inputs['life_expectancy'], 'ss_claim_age': inputs['ss_claim_age']
             }
             pdf_bytes = generate_pdf(pdf_data)
             st.download_button(label="📄 Download Executive Summary PDF", data=pdf_bytes, file_name="Retirement_Plan_Summary.pdf", mime="application/pdf", use_container_width=True)
@@ -657,9 +657,6 @@ with nav1:
 
             df_median_raw = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
             df_pess_raw = build_csv_dataframe(history, years_arr, age_arr, percentile=10)
-            
-            df_median_csv = format_df_for_csv(df_median_raw)
-            df_pess_csv = format_df_for_csv(df_pess_raw)
             
             colA, colB = st.columns(2)
             colA.download_button("📄 Download Median (50th) CSV", df_median_csv.to_csv(index=False), "Retirement_Median.csv", "text/csv")

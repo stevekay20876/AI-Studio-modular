@@ -49,8 +49,16 @@ def generate_pdf(data):
     pdf.set_font('Arial', 'B', 14)
     pdf.cell(0, 10, '3. Social Security Strategy', 0, 1)
     pdf.set_font('Arial', '', 12)
-    pdf.multi_cell(0, 8, "Actuarial Verdict: Delay Claiming until Age 70\n"
-                         "Reasoning: Alongside your Federal/Military Pension, Social Security is one of the few guaranteed, inflation-adjusted, market-immune income streams you possess. Delaying to 70 maximizes this 'Longevity Insurance', drastically reducing the withdrawal pressure placed on your TSP/Roth deep into retirement.")
+    
+    # NEW: Dynamic SS Logic
+    if data['life_exp'] < 80:
+        ss_verdict = "Actuarial Verdict: Claim Early (Age 62 or Current Age)\nReasoning: Because your entered life expectancy is below the mathematical crossover point (~Age 80-82), claiming early allows you to capture more total guaranteed income during your lifetime than if you delayed."
+    elif data['ss_claim_age'] < 70:
+        ss_verdict = f"Actuarial Verdict: You selected to claim at {data['ss_claim_age']}.\nReasoning: While delaying to 70 maximizes 'Longevity Insurance' by permanently increasing your payout by 8% per year, your chosen claiming age of {data['ss_claim_age']} has been fully modeled and stress-tested against your portfolio."
+    else:
+        ss_verdict = "Actuarial Verdict: Delay Claiming until Age 70\nReasoning: Alongside your Federal/Military Pension, Social Security is one of the few guaranteed, inflation-adjusted, market-immune income streams you possess. Delaying to 70 maximizes this 'Longevity Insurance', drastically reducing the withdrawal pressure placed on your TSP/Roth deep into retirement."
+        
+    pdf.multi_cell(0, 8, ss_verdict)
     pdf.ln(5)
 
     # 4. HEALTHCARE & MEDICARE
@@ -82,5 +90,4 @@ def generate_pdf(data):
     pdf.set_text_color(100, 100, 100)
     pdf.multi_cell(0, 6, "*Note: This is an actuarial simulation based on Monte Carlo stochastic modeling. For visual charts, full cash flow mapping, and step-by-step conversion tables, please refer to your interactive web dashboard.")
 
-    # UPDATED FOR FPDF2
     return bytes(pdf.output())
