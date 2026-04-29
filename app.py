@@ -612,7 +612,7 @@ with nav1:
 
         with t9:
             st.subheader("Social Security Claiming Strategy")
-            st.plotly_chart(plot_ss_breakeven(inputs['ss_fra'], age_arr), use_container_width=True)
+            st.plotly_chart(plot_ss_breakeven(inputs['ss_fra'], age_arr, years_arr), use_container_width=True)
             
             ss_base = inputs['ss_fra']
             ss_data = {
