@@ -4,6 +4,10 @@ import numpy as np
 STD_DED_SINGLE = 15000
 STD_DED_MFJ = 30000
 
+# IRS Extra Standard Deduction for Age 65+ or Blind (2024/2025 estimates)
+EXTRA_DED_65_SINGLE = 1950
+EXTRA_DED_65_MFJ_PER_PERSON = 1550
+
 TAX_BRACKETS_SINGLE = [
     (11925, 0.10), (48475, 0.12), (103350, 0.22), 
     (197300, 0.24), (250525, 0.32), (626350, 0.35), (np.inf, 0.37)
@@ -29,7 +33,20 @@ IRMAA_BRACKETS_MFJ = [(206000, 0), (258000, 838.8), (322000, 2101.2), (386000, 3
 # --- STATE RETIREMENT EXEMPTIONS & BLENDED EFFECTIVE RATES ---
 RETIREMENT_TAX_FREE_STATES = ["FL", "TX", "NV", "WA", "SD", "WY", "AK", "TN", "NH", "IL", "PA", "MS"]
 
-# Blended effective tax rates for a typical retiree income ($80k - $150k) based on 2024 state brackets
+# States that fully tax Social Security
+STATES_TAXING_SS = ["CO", "CT", "KS", "MN", "MT", "NM", "RI", "UT", "VT"]
+
+# Flat dollar exemptions deducted from state taxable income for Retirees Age 65+
+STATE_EXCLUSIONS_65_SINGLE = {
+    "MD": 34300, "GA": 65000, "NY": 20000, "CO": 24000, 
+    "MI": 61518, "SC": 15000, "OK": 10000, "NJ": 100000
+}
+STATE_EXCLUSIONS_65_MFJ = {
+    "MD": 68600, "GA": 130000, "NY": 40000, "CO": 48000, 
+    "MI": 123036, "SC": 30000, "OK": 20000, "NJ": 100000
+}
+
+# Statutory / Effective marginal rates applied AFTER exemptions
 STATE_TAX_RATES = {
     "AL": 0.050, "AK": 0.000, "AZ": 0.025, "AR": 0.039, "CA": 0.080, 
     "CO": 0.044, "CT": 0.050, "DE": 0.050, "FL": 0.000, "GA": 0.054, 

@@ -195,7 +195,6 @@ class StochasticRetirementEngine:
         mortgage_yrs = self.inputs.get('mortgage_yrs', 0)
         annual_savings = self.inputs.get('annual_savings', 0.0)
 
-        # STATE TAX MAP IMPLEMENTATION
         state_str = self.inputs.get('state', '').strip().upper()
         county_str = self.inputs.get('county', '').strip().upper()
         
@@ -237,7 +236,13 @@ class StochasticRetirementEngine:
                     base_mil_pension = np.zeros(self.iterations)
                     base_va_pay = np.zeros(self.iterations)
                 
-            deduction = STD_DED_MFJ if current_filing_status == 'MFJ' else STD_DED_SINGLE
+            base_deduction = STD_DED_MFJ if current_filing_status == 'MFJ' else STD_DED_SINGLE
+            extra_ded_primary = EXTRA_DED_65_SINGLE if current_filing_status == 'Single' and age >= 65 else 0
+            extra_ded_primary_mfj = EXTRA_DED_65_MFJ_PER_PERSON if current_filing_status == 'MFJ' and age >= 65 else 0
+            extra_ded_spouse = EXTRA_DED_65_MFJ_PER_PERSON if current_filing_status == 'MFJ' and spouse_age >= 65 else 0
+            
+            deduction = base_deduction + extra_ded_primary + extra_ded_primary_mfj + extra_ded_spouse
+            
             brackets = TAX_BRACKETS_MFJ if current_filing_status == 'MFJ' else TAX_BRACKETS_SINGLE
             irmaa_brackets = IRMAA_BRACKETS_MFJ if current_filing_status == 'MFJ' else IRMAA_BRACKETS_SINGLE
             ltcg_brackets = LTCG_BRACKETS_MFJ if current_filing_status == 'MFJ' else LTCG_BRACKETS_SINGLE
@@ -423,7 +428,6 @@ class StochasticRetirementEngine:
             taxable += excess_rmd
             taxable_basis += excess_rmd 
             
-            # --- UPDATED IRS PROVISIONAL INCOME FORMULA ---
             t1 = 32000 if current_filing_status == 'MFJ' else 25000
             t2 = 44000 if current_filing_status == 'MFJ' else 34000
             
@@ -450,7 +454,25 @@ class StochasticRetirementEngine:
             niit_tax = np.where(magi > (niit_threshold * cum_inf), realized_gains * 0.038, 0.0)
             base_tax_fed += (ltcg_tax + niit_tax)
             
-            state_taxable_base = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), np.maximum(0, taxable_income - rmds - w_tsp - w_ira - total_current_pension - taxable_ss_base), taxable_income)
+            if state_str in RETIREMENT_TAX_FREE_STATES:
+                state_taxable_base = np.maximum(0, taxable_income - rmds - w_tsp - w_ira - total_current_pension - taxable_ss_base)
+            else:
+                if state_str not in STATES_TAXING_SS:
+                    state_taxable_base = np.maximum(0, taxable_income - taxable_ss_base)
+                else:
+                    state_taxable_base = taxable_income
+                    
+            # --- NEW: APPLY PARTIAL PENSION EXCLUSIONS FOR AGE 65+ ---
+            if age >= 65:
+                if current_filing_status == 'MFJ':
+                    state_exclusion = STATE_EXCLUSIONS_65_MFJ.get(state_str, 0.0) * cum_inf
+                else:
+                    state_exclusion = STATE_EXCLUSIONS_65_SINGLE.get(state_str, 0.0) * cum_inf
+                
+                ret_income = total_current_pension + w_tsp + w_ira
+                allowed_exclusion = np.minimum(state_exclusion, ret_income)
+                state_taxable_base = np.maximum(0, state_taxable_base - allowed_exclusion)
+                    
             base_tax_state_local = state_taxable_base * combined_state_local_rate
             
             total_tax_fed = base_tax_fed.copy()
@@ -508,7 +530,14 @@ class StochasticRetirementEngine:
                 new_niit_tax = np.where(final_magi > (niit_threshold * cum_inf), realized_gains * 0.038, 0.0)
                 extra_tax_fed = (new_tax_fed + new_ltcg_tax + new_niit_tax) - base_tax_fed
                 
-                extra_state_taxable = np.where(np.isin(state_str, RETIREMENT_TAX_FREE_STATES), 0.0, final_taxable_income - taxable_income)
+                if state_str in RETIREMENT_TAX_FREE_STATES:
+                    extra_state_taxable = np.zeros(self.iterations)
+                else:
+                    if state_str not in STATES_TAXING_SS:
+                        extra_state_taxable = final_taxable_income - taxable_ss_conv - (taxable_income - taxable_ss_base)
+                    else:
+                        extra_state_taxable = final_taxable_income - taxable_income
+                        
                 extra_tax_state = extra_state_taxable * combined_state_local_rate
                 extra_tax_total = extra_tax_fed + extra_tax_state
                 
