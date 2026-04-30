@@ -61,16 +61,21 @@ class StochasticRetirementEngine:
         returns = np.exp(drifts + correlated_shocks) - 1
         inf_paths = np.zeros((self.iterations, self.years))
         
-        inf_base, kappa, jump_prob, dt = 0.025, 0.15, 0.05, 1.0            
+        # --- FIXED INFLATION DRIFT CALIBRATION ---
+        # The base is lowered to 2.1%. With a 4% chance of a +4% jump and kappa at 0.25,
+        # the mathematical expected value (the median path) balances perfectly at ~2.7% CPI.
+        inf_base, kappa, jump_prob, dt = 0.021, 0.25, 0.04, 1.0            
         sqrt_dt = np.sqrt(dt)
         current_inf = np.full(self.iterations, inf_base)
         
         for yr in range(self.years):
             dW = correlated_shocks[:, yr, 0] * sqrt_dt
-            jumps = np.where(np.random.rand(self.iterations) < jump_prob, np.random.normal(0.06, 0.02, self.iterations), 0)
+            jumps = np.where(np.random.rand(self.iterations) < jump_prob, np.random.uniform(0.03, 0.05, self.iterations), 0)
             current_inf = current_inf + kappa * (inf_base - current_inf) * dt + dW + jumps
             inf_paths[:, yr] = np.clip(current_inf, -0.01, 0.15) 
-            stagflation_shock = np.where(inf_paths[:, yr] > 0.04, -2.0 * (inf_paths[:, yr] - 0.04), 0)
+            
+            # Equity penalty only applies in severe shock environments (CPI > 5%)
+            stagflation_shock = np.where(inf_paths[:, yr] > 0.05, -1.5 * (inf_paths[:, yr] - 0.05), 0)
             returns[:, yr, 1:] += stagflation_shock[:, None]
             
         return returns, inf_paths
@@ -174,6 +179,9 @@ class StochasticRetirementEngine:
         s_ss_modifier = 1.0 - ((min(36, s_months_early) * (5/900)) + (max(0, s_months_early - 36) * (5/1200))) + (s_months_late * (8/1200))
         s_base_ss = np.full(self.iterations, float(self.inputs.get('s_ss_fra', 0)))
         
+        scheduled_withdrawal = np.zeros(self.iterations)
+        initial_withdrawal_arr = np.zeros(self.iterations)
+        
         history = {
             'total_bal': np.zeros((self.iterations, self.years)), 'total_bal_real': np.zeros((self.iterations, self.years)), 
             'cum_inf': np.zeros((self.iterations, self.years)), 'tsp_bal': np.zeros((self.iterations, self.years)),
@@ -224,7 +232,6 @@ class StochasticRetirementEngine:
         combined_state_local_rate = state_tax_rate + local_tax_rate
         cum_inf = np.ones(self.iterations)
         
-        # New Target Lifestyle Tracking Variables
         target_lifestyle = np.zeros(self.iterations)
         ref_draw = np.zeros(self.iterations)
 
@@ -422,7 +429,6 @@ class StochasticRetirementEngine:
             history['total_bal'][:, yr] = current_total_port + home_value
             history['total_bal_real'][:, yr] = (current_total_port + home_value) / cum_inf
             
-            # --- NEW: DYNAMIC LIFESTYLE GAP TARGETING ---
             w_needed = np.zeros(self.iterations)
             constraint_flag = np.zeros(self.iterations)
             
@@ -446,7 +452,6 @@ class StochasticRetirementEngine:
                     target_lifestyle = np.where(preservation, target_lifestyle * 0.90, target_lifestyle)
                     constraint_flag = np.where(preservation, 1, constraint_flag)
                     
-                    # --- NEW: CASH REPLENISHMENT SWEEP RULE ---
                     sweep_mask = port_ret_prev > 0.08
                     target_cash = w_needed * 2.0
                     cash_deficit = np.maximum(0, target_cash - cash)
@@ -484,7 +489,6 @@ class StochasticRetirementEngine:
             excess_rmd = np.maximum(0, rmds - w_needed)
             history['extra_rmd'][:, yr] = excess_rmd
             
-            # --- NEW: MULTI-PHASE WITHDRAWAL HIERARCHY ---
             w_tsp, w_ira, w_cash, w_taxable, w_roth = np.zeros(self.iterations), np.zeros(self.iterations), np.zeros(self.iterations), np.zeros(self.iterations), np.zeros(self.iterations)
             
             if age >= ret_age:
@@ -498,7 +502,6 @@ class StochasticRetirementEngine:
                 base_taxable_pre = np.maximum(0, rmds + yr_pension + taxable_ss_base_pre + yr_salary - (deduction * cum_inf))
                 bracket_space = np.maximum(0, limit_max_pct - base_taxable_pre)
                 
-                # 1. Normal State: Pre-Tax up to Bracket Space
                 pull_tsp_1 = np.where(normal_state, np.minimum(w_remaining, np.minimum(tsp, bracket_space)), 0)
                 w_tsp += pull_tsp_1
                 w_remaining -= pull_tsp_1
@@ -510,31 +513,26 @@ class StochasticRetirementEngine:
                 w_remaining -= pull_ira_1
                 ira -= pull_ira_1
                 
-                # 2. Downturn State: Cash First
                 pull_cash_1 = np.where(downturn_state, np.minimum(w_remaining, cash), 0)
                 w_cash += pull_cash_1
                 w_remaining -= pull_cash_1
                 cash -= pull_cash_1
                 
-                # 3. Taxable (Normal AND Downturn hit Taxable next)
                 pull_tax_1 = np.minimum(w_remaining, taxable)
                 w_taxable += pull_tax_1
                 w_remaining -= pull_tax_1
                 taxable -= pull_tax_1
                 
-                # 4. Normal State: Cash (after Taxable)
                 pull_cash_2 = np.where(normal_state, np.minimum(w_remaining, cash), 0)
                 w_cash += pull_cash_2
                 w_remaining -= pull_cash_2
                 cash -= pull_cash_2
                 
-                # 5. Roth (Both Normal and Downturn)
                 pull_roth_1 = np.minimum(w_remaining, roth)
                 w_roth += pull_roth_1
                 w_remaining -= pull_roth_1
                 roth -= pull_roth_1
                 
-                # 6. Fallback: Exhaust Pre-Tax regardless of brackets/downturns
                 pull_tsp_2 = np.minimum(w_remaining, tsp)
                 w_tsp += pull_tsp_2
                 w_remaining -= pull_tsp_2
@@ -777,6 +775,7 @@ class StochasticRetirementEngine:
         target_floor = self.inputs.get('target_floor', 0.0)
         terminal_wealth = median_real_path[-1]
         
+        # PROBABILITY OF SUCCESS FIX: Target Floor is directly solved against terminal wealth 
         if terminal_wealth < target_floor:
             return terminal_wealth - target_floor
         else:
