@@ -78,7 +78,6 @@ class StochasticRetirementEngine:
     def run_mc(self, iwr, seed=None, roth_strategy=0, override_port=None):
         L = self.setup_covariance_matrix(override_port)
         returns, inf_paths = self.generate_stochastic_paths(L, seed=seed, override_port=override_port)
-        cash_ret = self.inputs['cash_ret']
         
         tsp = np.full(self.iterations, float(self.inputs['tsp_bal']))
         ira = np.full(self.iterations, float(self.inputs['ira_bal']))
@@ -352,12 +351,21 @@ class StochasticRetirementEngine:
             p_ss_val = p_active_ss if age >= p_ss_claim else np.zeros(self.iterations)
             s_ss_val = s_active_ss if spouse_age >= s_ss_claim else np.zeros(self.iterations)
 
+            # --- UPDATED: SS SURVIVOR BENEFIT (WIDOW LIMIT) LOGIC ---
             if primary_alive and spouse_alive:
                 yr_ss = p_ss_val + s_ss_val
             elif primary_alive and not spouse_alive:
-                yr_ss = np.maximum(p_ss_val, s_ss_val) if age >= p_ss_claim else np.zeros(self.iterations)
+                s_widow_limit = np.where(s_ss_claim < 67, np.maximum(s_active_ss, s_base_ss * 0.825 * ss_haircut), s_active_ss)
+                p_surv_penalty = np.clip(1.0 - ((67 - age) * (0.285 / 7.0)), 0.715, 1.0)
+                inherited_ss = s_widow_limit * p_surv_penalty
+                yr_ss = np.maximum(p_ss_val, inherited_ss)
             elif not primary_alive and spouse_alive:
-                yr_ss = np.maximum(p_ss_val, s_ss_val) if spouse_age >= s_ss_claim else np.zeros(self.iterations)
+                p_widow_limit = np.where(p_ss_claim < 67, np.maximum(p_active_ss, p_base_ss * 0.825 * ss_haircut), p_active_ss)
+                s_surv_penalty = np.clip(1.0 - ((67 - spouse_age) * (0.285 / 7.0)), 0.715, 1.0)
+                inherited_ss = p_widow_limit * s_surv_penalty
+                yr_ss = np.maximum(s_ss_val, inherited_ss)
+            else:
+                yr_ss = np.zeros(self.iterations)
 
             history['salary_income'][:, yr] = yr_salary
             history['pension_income'][:, yr] = yr_pension

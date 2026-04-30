@@ -90,10 +90,6 @@ with nav1:
 
     has_run = 'sim_data' in st.session_state
 
-    # =========================================================================
-    # REMOVED st.form HERE
-    # This allows the UI elements (dropdowns) to update instantly when clicked
-    # =========================================================================
     st.markdown("### Build Your Profile")
     
     with st.expander("👤 Personal & Tax Details", expanded=not has_run):
@@ -129,14 +125,13 @@ with nav1:
             
             st.markdown("**Primary Civilian Pension**")
             cp1, cp2, cp3 = st.columns(3)
-            pension_type = cp1.selectbox("Pension Type", ["FERS", "Other (3% Cap)"], key="pension_type")
+            pension_type = cp1.selectbox("Pension Type", ["FERS", "Other"], key="pension_type")
             pension_est = cp2.number_input("Full (Unreduced) Pension Est. ($)", min_value=0, step=1000, key="pension_est")
             
-            # Since st.form is removed, this dynamic if/else works instantly!
             if st.session_state.pension_type == "FERS":
                 surv_options = ["Full Survivor Benefit", "Partial Survivor Benefit", "No Survivor Benefit"]
             else:
-                surv_options = ["100% Survivor (15% Premium)", "50% Survivor (7.5% Premium)", "Present Value Refund (3.5% Premium)", "No Survivor Benefit"]
+                surv_options = ["100% Survivor", "50% Survivor", "Present Value Refund", "No Survivor Benefit"]
             survivor_benefit = cp3.selectbox("Survivor Benefit Option", surv_options, key="survivor_benefit")
 
             st.markdown("**Primary Social Security Guaranteed Income**")
@@ -152,13 +147,13 @@ with nav1:
             
             st.markdown("**Spouse Civilian Pension**")
             csp1, csp2, csp3 = st.columns(3)
-            s_pension_type = csp1.selectbox("Spouse Pension Type", ["FERS", "Other (3% Cap)"], key="s_pension_type")
+            s_pension_type = csp1.selectbox("Spouse Pension Type", ["FERS", "Other"], key="s_pension_type")
             s_pension_est = csp2.number_input("Spouse Full Pension Est. ($)", min_value=0, step=1000, key="s_pension_est")
             
             if st.session_state.s_pension_type == "FERS":
                 s_surv_options = ["No Survivor Benefit", "Partial Survivor Benefit", "Full Survivor Benefit"]
             else:
-                s_surv_options = ["No Survivor Benefit", "Present Value Refund (3.5% Premium)", "50% Survivor (7.5% Premium)", "100% Survivor (15% Premium)"]
+                s_surv_options = ["No Survivor Benefit", "Present Value Refund", "50% Survivor", "100% Survivor"]
             s_survivor_benefit = csp3.selectbox("Spouse Survivor Benefit Option", s_surv_options, key="s_survivor_benefit")
 
             st.markdown("**Spouse Social Security Guaranteed Income**")
@@ -290,7 +285,6 @@ with nav1:
         st.markdown("---")
         pay_taxes_from_cash = st.checkbox("Pay Roth Conversion Taxes from Cash Buffer?", key="pay_taxes_from_cash")
     
-    # Since we removed st.form, we use a standard st.button
     submit = st.button("Run Projection Engine", type="primary")
 
     if submit:
