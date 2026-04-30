@@ -90,16 +90,12 @@ with nav1:
                     except Exception as e:
                         st.error("Error loading profile.")
         with col_save:
-            # FIXED: Bound explicitly to session_state key to ensure input registers before button press
-            st.text_input("Name your save file:", key="save_file_name")
-            
+            profile_name = st.text_input("Name your save file:", key="save_file_name")
             state_dict = get_current_state()
             if isinstance(state_dict.get('mil_diems'), datetime.date): state_dict['mil_diems'] = state_dict['mil_diems'].isoformat()
             if isinstance(state_dict.get('s_mil_diems'), datetime.date): state_dict['s_mil_diems'] = state_dict['s_mil_diems'].isoformat()
-            
             safe_filename = st.session_state.save_file_name.strip()
             if not safe_filename.endswith(".json"): safe_filename += ".json"
-            
             st.download_button("⬇️ Save Current Profile to Computer", data=json.dumps(state_dict, indent=4), file_name=safe_filename, mime="application/json", use_container_width=True)
 
     has_run = 'sim_data' in st.session_state
@@ -131,16 +127,15 @@ with nav1:
             st.markdown("**Primary Pre-Retirement Salary & Savings**")
             c1, c2 = st.columns(2)
             current_salary = c1.number_input("Current Annual Salary ($)", min_value=0, step=1000, key="current_salary")
-            
             p_max_tsp = c2.checkbox("Maximize IRS allowable TSP/401(k) limit?", key="p_max_tsp")
             if p_max_tsp:
-                c2.info("IRS Max active: Engine automatically deposits $23,500/yr (or $31,000 if Age 50+).")
+                c2.info("IRS Max active: Engine automatically scales contributions by age ($24,500 to $35,750).")
             else:
                 p_tsp_contrib = c2.number_input("Annual TSP/401(k) Pre-Tax Contribution ($)", min_value=0, step=1000, key="p_tsp_contrib")
             
             c3, c4, c5, c6 = st.columns(4)
             p_taxable_contrib = c3.number_input("Taxable Acct Savings ($/yr)", min_value=0, step=1000, key="p_taxable_contrib")
-            p_roth_contrib = c4.number_input("Roth IRA Savings ($/yr)", min_value=0, step=1000, key="p_roth_contrib")
+            p_roth_contrib = c4.number_input("Roth Savings ($/yr)", min_value=0, step=1000, key="p_roth_contrib")
             p_cash_contrib = c5.number_input("Money Market Savings ($/yr)", min_value=0, step=1000, key="p_cash_contrib")
             p_hsa_contrib = c6.number_input("HSA Savings ($/yr)", min_value=0, step=1000, key="p_hsa_contrib")
             
@@ -164,16 +159,15 @@ with nav1:
             st.markdown("**Spouse Pre-Retirement Salary & Savings**")
             cs1, cs2 = st.columns(2)
             s_current_salary = cs1.number_input("Spouse Current Annual Salary ($)", min_value=0, step=1000, key="s_current_salary")
-            
             s_max_tsp = cs2.checkbox("Spouse: Maximize IRS allowable TSP/401(k)?", key="s_max_tsp")
             if s_max_tsp:
-                cs2.info("IRS Max active: Engine automatically deposits $23,500/yr (or $31,000 if Age 50+).")
+                cs2.info("IRS Max active: Engine automatically scales contributions by age ($24,500 to $35,750).")
             else:
                 s_tsp_contrib = cs2.number_input("Spouse TSP/401(k) Pre-Tax Contribution ($)", min_value=0, step=1000, key="s_tsp_contrib")
             
             cs3, cs4, cs5, cs6 = st.columns(4)
             s_taxable_contrib = cs3.number_input("Spouse Taxable Savings ($/yr)", min_value=0, step=1000, key="s_taxable_contrib")
-            s_roth_contrib = cs4.number_input("Spouse Roth IRA Savings ($/yr)", min_value=0, step=1000, key="s_roth_contrib")
+            s_roth_contrib = cs4.number_input("Spouse Roth Savings ($/yr)", min_value=0, step=1000, key="s_roth_contrib")
             s_cash_contrib = cs5.number_input("Spouse Cash Savings ($/yr)", min_value=0, step=1000, key="s_cash_contrib")
             s_hsa_contrib = cs6.number_input("Spouse HSA Savings ($/yr)", min_value=0, step=1000, key="s_hsa_contrib")
             
@@ -287,6 +281,7 @@ with nav1:
         oop_cost = c11.number_input("Typical Out-of-Pocket Medical ($)", min_value=0, step=100, key="oop_cost")
 
     with st.expander("🏛️ Savings & Assets", expanded=not has_run):
+        st.markdown("**Current Portfolios & Strategies**")
         t_ast_p, t_ast_s = st.tabs(["Household Assets", "Spouse Assets (If MFJ)"])
         
         with t_ast_p:
@@ -402,7 +397,6 @@ with nav1:
             'mortgage_pmt': safe_int(st.session_state.mortgage_pmt), 'mortgage_yrs': safe_int(st.session_state.mortgage_yrs),
             'home_value': safe_int(st.session_state.home_value), 'target_floor': safe_int(st.session_state.target_floor),
             
-            # MERGED BALANCES
             'tsp_bal': safe_int(st.session_state.tsp_b) + safe_int(st.session_state.s_tsp_b), 
             'tsp_strat': st.session_state.tsp_strat,
             'ira_bal': safe_int(st.session_state.ira_b) + safe_int(st.session_state.s_ira_b), 

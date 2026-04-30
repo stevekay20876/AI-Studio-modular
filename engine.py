@@ -91,8 +91,6 @@ class StochasticRetirementEngine:
         
         p_base_salary = float(self.inputs.get('current_salary', 0))
         s_base_salary = float(self.inputs.get('s_current_salary', 0))
-        
-        # Parse Pre-Retirement Savings Fields
         p_max_tsp = self.inputs.get('p_max_tsp', False)
         p_tsp_c = float(self.inputs.get('p_tsp_contrib', 0))
         p_tax_c = float(self.inputs.get('p_taxable_contrib', 0))
@@ -313,13 +311,22 @@ class StochasticRetirementEngine:
                         yr_pension += p_base_pension * 0.50 * p_pension_mult
                     else:
                         yr_salary += p_salary_inf
-                        p_actual_tsp_c = (31000 if age >= 50 else 23500) if p_max_tsp else p_tsp_c
-                        tsp += p_actual_tsp_c
-                        taxable += p_tax_c
-                        taxable_basis += p_tax_c
-                        roth += p_roth_c
-                        cash += p_cash_c
-                        hsa += p_hsa_c
+                        
+                        # --- FIXED: IRS Max Catch-up Bounds ---
+                        if p_max_tsp:
+                            if age < 50: p_tsp_c_yr = 24500 * cum_inf
+                            elif 50 <= age <= 59: p_tsp_c_yr = 32500 * cum_inf
+                            elif 60 <= age <= 63: p_tsp_c_yr = 35750 * cum_inf
+                            else: p_tsp_c_yr = 32500 * cum_inf
+                        else:
+                            p_tsp_c_yr = p_tsp_c * cum_inf
+                            
+                        tsp += p_tsp_c_yr
+                        taxable += p_tax_c * cum_inf
+                        taxable_basis += p_tax_c * cum_inf
+                        roth += p_roth_c * cum_inf
+                        cash += p_cash_c * cum_inf
+                        hsa += p_hsa_c * cum_inf
                 else:
                     yr_pension += p_base_pension * p_pension_mult
                     
@@ -342,13 +349,22 @@ class StochasticRetirementEngine:
                         yr_pension += s_base_pension * 0.50 * s_pension_mult
                     else:
                         yr_salary += s_salary_inf
-                        s_actual_tsp_c = (31000 if spouse_age >= 50 else 23500) if s_max_tsp else s_tsp_c
-                        tsp += s_actual_tsp_c
-                        taxable += s_tax_c
-                        taxable_basis += s_tax_c
-                        roth += s_roth_c
-                        cash += s_cash_c
-                        hsa += s_hsa_c
+                        
+                        # --- FIXED: Spouse IRS Max Catch-up Bounds ---
+                        if s_max_tsp:
+                            if spouse_age < 50: s_tsp_c_yr = 24500 * cum_inf
+                            elif 50 <= spouse_age <= 59: s_tsp_c_yr = 32500 * cum_inf
+                            elif 60 <= spouse_age <= 63: s_tsp_c_yr = 35750 * cum_inf
+                            else: s_tsp_c_yr = 32500 * cum_inf
+                        else:
+                            s_tsp_c_yr = s_tsp_c * cum_inf
+                            
+                        tsp += s_tsp_c_yr
+                        taxable += s_tax_c * cum_inf
+                        taxable_basis += s_tax_c * cum_inf
+                        roth += s_roth_c * cum_inf
+                        cash += s_cash_c * cum_inf
+                        hsa += s_hsa_c * cum_inf
                 else:
                     yr_pension += s_base_pension * s_pension_mult
                     
@@ -617,21 +633,13 @@ class StochasticRetirementEngine:
                 for i in range(len(brackets)):
                     prev_limit = (brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
                     limit = brackets[i][0] * cum_inf
-                    taxable_in_bracket = np.clip(final_taxable_income, prev_limit, limit) - prev_limit
-                    new_tax_fed += np.maximum(0, taxable_in_bracket) * brackets[i][1]
+                    new_tax_fed += np.clip(final_taxable_income - prev_limit, 0, limit - prev_limit) * brackets[i][1]
                 
                 new_ltcg_tax = np.zeros(self.iterations)
                 for i in range(len(ltcg_brackets)):
-                    prev_limit = (ltcg_brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
                     limit = ltcg_brackets[i][0] * cum_inf
-                    
-                    gains_start = final_taxable_income
-                    gains_end = final_taxable_income + realized_gains
-                    overlap_start = np.maximum(gains_start, prev_limit)
-                    overlap_end = np.minimum(gains_end, limit)
-                    taxable_gains_in_bracket = np.maximum(0, overlap_end - overlap_start)
-                    
-                    new_ltcg_tax += taxable_gains_in_bracket * ltcg_brackets[i][1]
+                    applicable_gains = np.clip(final_taxable_income + realized_gains - limit, 0, realized_gains)
+                    new_ltcg_tax += applicable_gains * ltcg_brackets[i][1]
                     
                 new_niit_tax = np.where(final_magi > (niit_threshold * cum_inf), realized_gains * 0.038, 0.0)
                 extra_tax_fed = (new_tax_fed + new_ltcg_tax + new_niit_tax) - base_tax_fed
