@@ -66,6 +66,9 @@ with nav1:
     def get_current_state():
         return {k: st.session_state[k] for k in DEFAULT_STATE.keys() if k in st.session_state}
 
+    def force_update():
+        pass # Blank callback to force Streamlit to refresh the UI when Pension Type changes
+
     with st.expander("💾 Client Profile Management (Save / Load)", expanded=False):
         col_load, col_save = st.columns(2)
         with col_load:
@@ -126,10 +129,12 @@ with nav1:
                 
                 st.markdown("**Primary Civilian Pension**")
                 cp1, cp2, cp3 = st.columns(3)
-                pension_type = cp1.selectbox("Pension Type", ["FERS", "Other (3% Cap)"], key="pension_type")
+                # ADDED: on_change=force_update to dynamically redraw the sub-options below
+                pension_type = cp1.selectbox("Pension Type", ["FERS", "Other (3% Cap)"], key="pension_type", on_change=force_update)
                 pension_est = cp2.number_input("Full (Unreduced) Pension Est. ($)", min_value=0, step=1000, key="pension_est")
                 
-                if pension_type == "FERS":
+                # Check the live session state so the UI swaps immediately
+                if st.session_state.pension_type == "FERS":
                     surv_options = ["Full Survivor Benefit", "Partial Survivor Benefit", "No Survivor Benefit"]
                 else:
                     surv_options = ["100% Survivor (15% Premium)", "50% Survivor (7.5% Premium)", "Present Value Refund (3.5% Premium)", "No Survivor Benefit"]
@@ -148,10 +153,10 @@ with nav1:
                 
                 st.markdown("**Spouse Civilian Pension**")
                 csp1, csp2, csp3 = st.columns(3)
-                s_pension_type = csp1.selectbox("Spouse Pension Type", ["FERS", "Other (3% Cap)"], key="s_pension_type")
+                s_pension_type = csp1.selectbox("Spouse Pension Type", ["FERS", "Other (3% Cap)"], key="s_pension_type", on_change=force_update)
                 s_pension_est = csp2.number_input("Spouse Full Pension Est. ($)", min_value=0, step=1000, key="s_pension_est")
                 
-                if s_pension_type == "FERS":
+                if st.session_state.s_pension_type == "FERS":
                     s_surv_options = ["No Survivor Benefit", "Partial Survivor Benefit", "Full Survivor Benefit"]
                 else:
                     s_surv_options = ["No Survivor Benefit", "Present Value Refund (3.5% Premium)", "50% Survivor (7.5% Premium)", "100% Survivor (15% Premium)"]
@@ -546,10 +551,18 @@ with nav1:
             st.subheader("Medicare Part B & Actuarial Healthcare OOP")
             st.plotly_chart(plot_medicare_comparison(history, years_arr, inputs), use_container_width=True)
             st.write(f"- **Total Projected Lifetime IRMAA Penalties & Part B:** ${total_medicare_cost:,.0f}")
-            if moop_cap == 999999: st.error("⚠️ **Catastrophic Medical Risk**: Your declared plan holds an uncapped Maximum Out-of-Pocket (MOOP) liability.")
-            else: st.info(f"🛡️ **Plan Protection Active**: Your {inputs['health_plan']} correctly caps out-of-pocket medical tail-risk at **${moop_cap:,.0f}** per year (inflation adjusted).")
-            if inputs['health_plan'] in fed_plans or "TRICARE" in inputs['health_plan']: st.success("Verdict: **Waive Part B & Rely on Retiree Coverage**")
-            else: st.warning("Verdict: **Enroll in Medicare Part B**")
+            
+            moop_cap = MOOP_LIMITS.get(inputs['health_plan'], (999999, 999999))[1 if inputs['filing_status'] == 'MFJ' else 0]
+            if moop_cap == 999999:
+                st.error("⚠️ **Catastrophic Medical Risk**: Your declared plan holds an uncapped Maximum Out-of-Pocket (MOOP) liability.")
+            else:
+                st.info(f"🛡️ **Plan Protection Active**: Your {inputs['health_plan']} correctly caps out-of-pocket medical tail-risk at **${moop_cap:,.0f}** per year (inflation adjusted).")
+                
+            fed_plans = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard"]
+            if inputs['health_plan'] in fed_plans or "TRICARE" in inputs['health_plan']:
+                st.success("Verdict: **Waive Part B & Rely on Retiree Coverage**")
+            else:
+                st.warning("Verdict: **Enroll in Medicare Part B**")
 
         with t11:
             st.subheader("Strict-Format CSV Data Exports")

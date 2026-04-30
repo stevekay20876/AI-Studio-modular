@@ -78,6 +78,7 @@ class StochasticRetirementEngine:
     def run_mc(self, iwr, seed=None, roth_strategy=0, override_port=None):
         L = self.setup_covariance_matrix(override_port)
         returns, inf_paths = self.generate_stochastic_paths(L, seed=seed, override_port=override_port)
+        cash_ret = self.inputs['cash_ret']
         
         tsp = np.full(self.iterations, float(self.inputs['tsp_bal']))
         ira = np.full(self.iterations, float(self.inputs['ira_bal']))
@@ -96,7 +97,6 @@ class StochasticRetirementEngine:
         p_base_pension = np.full(self.iterations, float(self.inputs.get('pension_est', 0)))
         s_base_pension = np.full(self.iterations, float(self.inputs.get('s_pension_est', 0)))
         
-        # Primary Civilian Pension Rules
         p_surv_choice = self.inputs.get('survivor_benefit', 'No Survivor Benefit')
         if self.inputs.get('pension_type', 'FERS') == "FERS":
             p_pension_mult = 0.90 if p_surv_choice == 'Full Survivor Benefit' else (0.95 if p_surv_choice == 'Partial Survivor Benefit' else 1.0)
@@ -105,7 +105,6 @@ class StochasticRetirementEngine:
             p_pension_mult = 0.85 if "100%" in p_surv_choice else (0.925 if "50%" in p_surv_choice else (0.965 if "Present Value" in p_surv_choice else 1.0))
             p_fers_survivor_mult = 1.0 if "100%" in p_surv_choice else (0.50 if "50%" in p_surv_choice else 0.0)
 
-        # Spouse Civilian Pension Rules
         s_surv_choice = self.inputs.get('s_survivor_benefit', 'No Survivor Benefit')
         if self.inputs.get('s_pension_type', 'FERS') == "FERS":
             s_pension_mult = 0.90 if s_surv_choice == 'Full Survivor Benefit' else (0.95 if s_surv_choice == 'Partial Survivor Benefit' else 1.0)
@@ -114,7 +113,6 @@ class StochasticRetirementEngine:
             s_pension_mult = 0.85 if "100%" in s_surv_choice else (0.925 if "50%" in s_surv_choice else (0.965 if "Present Value" in s_surv_choice else 1.0))
             s_fers_survivor_mult = 1.0 if "100%" in s_surv_choice else (0.50 if "50%" in s_surv_choice else 0.0)
 
-        # Primary Military Pension Rules
         p_mil_active = self.inputs.get('mil_active', False)
         p_base_mil_gross = np.zeros(self.iterations)
         p_base_va = np.zeros(self.iterations)
@@ -135,7 +133,6 @@ class StochasticRetirementEngine:
                 p_base_va = np.full(self.iterations, self.inputs['mil_va_pay'] * 12)
                 p_crdp = self.inputs['mil_disability_rating'] in ["50% - 60%", "70% - 90%", "100%"] or self.inputs['mil_special_rating'] in ["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
 
-        # Spouse Military Pension Rules
         s_mil_active = self.inputs.get('s_mil_active', False)
         s_base_mil_gross = np.zeros(self.iterations)
         s_base_va = np.zeros(self.iterations)
@@ -156,7 +153,6 @@ class StochasticRetirementEngine:
                 s_base_va = np.full(self.iterations, self.inputs['s_mil_va_pay'] * 12)
                 s_crdp = self.inputs['s_mil_disability_rating'] in ["50% - 60%", "70% - 90%", "100%"] or self.inputs['s_mil_special_rating'] in ["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
 
-        # Social Security Base Setup
         p_ss_claim = self.inputs.get('ss_claim_age', 67)
         p_months_early, p_months_late = max(0, (67 - p_ss_claim) * 12), max(0, (p_ss_claim - 67) * 12)
         p_ss_modifier = 1.0 - ((min(36, p_months_early) * (5/900)) + (max(0, p_months_early - 36) * (5/1200))) + (p_months_late * (8/1200))
@@ -231,12 +227,21 @@ class StochasticRetirementEngine:
                     current_filing_status, moop_idx = 'MFJ', 1
                 elif not primary_alive and spouse_alive:
                     current_filing_status, moop_idx = 'Single', 0
+                    base_mil_pension = np.where(mil_sbp_annual > 0, base_mil_pension * 0.55, np.zeros(self.iterations))
+                    base_va_pay = np.zeros(self.iterations) 
                 elif primary_alive and not spouse_alive:
                     current_filing_status, moop_idx = 'Single', 0
+                    base_mil_pension += mil_sbp_annual 
+                    mil_sbp_annual = np.zeros(self.iterations)
                 else:
                     current_filing_status, moop_idx = 'Single', 0
+                    base_mil_pension = np.zeros(self.iterations)
+                    base_va_pay = np.zeros(self.iterations)
             else:
                 current_filing_status, moop_idx = 'Single', 0
+                if not primary_alive:
+                    base_mil_pension = np.zeros(self.iterations)
+                    base_va_pay = np.zeros(self.iterations)
                 
             base_deduction = STD_DED_MFJ if current_filing_status == 'MFJ' else STD_DED_SINGLE
             extra_ded_primary = EXTRA_DED_65_SINGLE if current_filing_status == 'Single' and age >= 65 else 0
@@ -299,7 +304,6 @@ class StochasticRetirementEngine:
             
             p_active_ss = p_base_ss * p_ss_modifier * ss_haircut
             
-            # --- Primary Income Calculation ---
             if primary_alive:
                 if age < ret_age:
                     if self.inputs.get('phased_ret_active', False) and age >= self.inputs.get('phased_ret_age', ret_age):
@@ -322,7 +326,6 @@ class StochasticRetirementEngine:
                     yr_pension += p_base_pension * p_fers_survivor_mult
                     if p_mil_sbp: yr_pension += p_base_mil_gross * 0.55
 
-            # --- Spouse Income Calculation ---
             s_active_ss = s_base_ss * s_ss_modifier * ss_haircut
             if spouse_alive:
                 if spouse_age < s_ret_age:
@@ -346,7 +349,6 @@ class StochasticRetirementEngine:
                     yr_pension += s_base_pension * s_fers_survivor_mult
                     if s_mil_sbp: yr_pension += s_base_mil_gross * 0.55
 
-            # --- Household SS Calculation ---
             p_ss_val = p_active_ss if age >= p_ss_claim else np.zeros(self.iterations)
             s_ss_val = s_active_ss if spouse_age >= s_ss_claim else np.zeros(self.iterations)
 
