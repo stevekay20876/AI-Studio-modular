@@ -128,7 +128,12 @@ with nav1:
                 cp1, cp2, cp3 = st.columns(3)
                 pension_type = cp1.selectbox("Pension Type", ["FERS", "Other (3% Cap)"], key="pension_type")
                 pension_est = cp2.number_input("Full (Unreduced) Pension Est. ($)", min_value=0, step=1000, key="pension_est")
-                survivor_benefit = cp3.selectbox("Survivor Benefit Option", ["Full Survivor Benefit", "Partial Survivor Benefit", "No Survivor Benefit"], key="survivor_benefit")
+                
+                if pension_type == "FERS":
+                    surv_options = ["Full Survivor Benefit", "Partial Survivor Benefit", "No Survivor Benefit"]
+                else:
+                    surv_options = ["100% Survivor (15% Premium)", "50% Survivor (7.5% Premium)", "Present Value Refund (3.5% Premium)", "No Survivor Benefit"]
+                survivor_benefit = cp3.selectbox("Survivor Benefit Option", surv_options, key="survivor_benefit")
 
                 st.markdown("**Primary Social Security Guaranteed Income**")
                 c7, c8 = st.columns(2)
@@ -145,7 +150,12 @@ with nav1:
                 csp1, csp2, csp3 = st.columns(3)
                 s_pension_type = csp1.selectbox("Spouse Pension Type", ["FERS", "Other (3% Cap)"], key="s_pension_type")
                 s_pension_est = csp2.number_input("Spouse Full Pension Est. ($)", min_value=0, step=1000, key="s_pension_est")
-                s_survivor_benefit = csp3.selectbox("Spouse Survivor Benefit Option", ["No Survivor Benefit", "Partial Survivor Benefit", "Full Survivor Benefit"], key="s_survivor_benefit")
+                
+                if s_pension_type == "FERS":
+                    s_surv_options = ["No Survivor Benefit", "Partial Survivor Benefit", "Full Survivor Benefit"]
+                else:
+                    s_surv_options = ["No Survivor Benefit", "Present Value Refund (3.5% Premium)", "50% Survivor (7.5% Premium)", "100% Survivor (15% Premium)"]
+                s_survivor_benefit = csp3.selectbox("Spouse Survivor Benefit Option", s_surv_options, key="s_survivor_benefit")
 
                 st.markdown("**Spouse Social Security Guaranteed Income**")
                 cs7, cs8 = st.columns(2)

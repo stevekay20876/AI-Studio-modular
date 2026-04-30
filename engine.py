@@ -97,12 +97,20 @@ class StochasticRetirementEngine:
         s_base_pension = np.full(self.iterations, float(self.inputs.get('s_pension_est', 0)))
         
         p_surv_choice = self.inputs.get('survivor_benefit', 'No Survivor Benefit')
-        p_pension_mult = 0.90 if p_surv_choice == 'Full Survivor Benefit' else (0.95 if p_surv_choice == 'Partial Survivor Benefit' else 1.0)
-        p_fers_survivor_mult = 0.50 if p_surv_choice == 'Full Survivor Benefit' else (0.25 if p_surv_choice == 'Partial Survivor Benefit' else 0.0)
+        if self.inputs.get('pension_type') == "FERS":
+            p_pension_mult = 0.90 if p_surv_choice == 'Full Survivor Benefit' else (0.95 if p_surv_choice == 'Partial Survivor Benefit' else 1.0)
+            p_fers_survivor_mult = 0.50 if p_surv_choice == 'Full Survivor Benefit' else (0.25 if p_surv_choice == 'Partial Survivor Benefit' else 0.0)
+        else:
+            p_pension_mult = 0.85 if "100%" in p_surv_choice else (0.925 if "50%" in p_surv_choice else (0.965 if "Present Value" in p_surv_choice else 1.0))
+            p_fers_survivor_mult = 1.0 if "100%" in p_surv_choice else (0.50 if "50%" in p_surv_choice else 0.0)
 
         s_surv_choice = self.inputs.get('s_survivor_benefit', 'No Survivor Benefit')
-        s_pension_mult = 0.90 if s_surv_choice == 'Full Survivor Benefit' else (0.95 if s_surv_choice == 'Partial Survivor Benefit' else 1.0)
-        s_fers_survivor_mult = 0.50 if s_surv_choice == 'Full Survivor Benefit' else (0.25 if s_surv_choice == 'Partial Survivor Benefit' else 0.0)
+        if self.inputs.get('s_pension_type') == "FERS":
+            s_pension_mult = 0.90 if s_surv_choice == 'Full Survivor Benefit' else (0.95 if s_surv_choice == 'Partial Survivor Benefit' else 1.0)
+            s_fers_survivor_mult = 0.50 if s_surv_choice == 'Full Survivor Benefit' else (0.25 if s_surv_choice == 'Partial Survivor Benefit' else 0.0)
+        else:
+            s_pension_mult = 0.85 if "100%" in s_surv_choice else (0.925 if "50%" in s_surv_choice else (0.965 if "Present Value" in s_surv_choice else 1.0))
+            s_fers_survivor_mult = 1.0 if "100%" in s_surv_choice else (0.50 if "50%" in s_surv_choice else 0.0)
 
         p_mil_active = self.inputs.get('mil_active', False)
         p_base_mil_gross = np.zeros(self.iterations)
@@ -219,12 +227,21 @@ class StochasticRetirementEngine:
                     current_filing_status, moop_idx = 'MFJ', 1
                 elif not primary_alive and spouse_alive:
                     current_filing_status, moop_idx = 'Single', 0
+                    base_mil_pension = np.where(mil_sbp_annual > 0, base_mil_pension * 0.55, np.zeros(self.iterations))
+                    base_va_pay = np.zeros(self.iterations) 
                 elif primary_alive and not spouse_alive:
                     current_filing_status, moop_idx = 'Single', 0
+                    base_mil_pension += mil_sbp_annual 
+                    mil_sbp_annual = np.zeros(self.iterations)
                 else:
                     current_filing_status, moop_idx = 'Single', 0
+                    base_mil_pension = np.zeros(self.iterations)
+                    base_va_pay = np.zeros(self.iterations)
             else:
                 current_filing_status, moop_idx = 'Single', 0
+                if not primary_alive:
+                    base_mil_pension = np.zeros(self.iterations)
+                    base_va_pay = np.zeros(self.iterations)
                 
             base_deduction = STD_DED_MFJ if current_filing_status == 'MFJ' else STD_DED_SINGLE
             extra_ded_primary = EXTRA_DED_65_SINGLE if current_filing_status == 'Single' and age >= 65 else 0
@@ -259,7 +276,6 @@ class StochasticRetirementEngine:
 
             inf_floor = np.maximum(0, inf_paths[:, yr])
             
-            # FIXED: New Civilian COLA Logic (FERS vs Other)
             if self.inputs.get('pension_type', 'FERS') == 'FERS':
                 p_cola = np.where(inf_floor <= 0.02, inf_floor, np.where(inf_floor <= 0.03, 0.02, inf_floor - 0.01))
                 p_cola = np.where(age >= 62, p_cola, 0.0) 
