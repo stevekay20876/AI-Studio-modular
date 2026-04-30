@@ -44,10 +44,10 @@ with nav1:
     DEFAULT_STATE = {
         'cur_age': None, 'ret_age': None, 'life_exp': None, 'filing_status': "Single",
         'spouse_age': None, 's_ret_age': None, 'spouse_life_exp': None, 'state': "", 'county': "",
-        'current_salary': 0, 'annual_savings': 0, 'phased_ret_active': False, 'phased_ret_age': None, 'pension_est': 0, 'survivor_benefit': "Full Survivor Benefit", 
+        'current_salary': 0, 'annual_savings': 0, 'phased_ret_active': False, 'phased_ret_age': None, 'pension_type': "FERS", 'pension_est': 0, 'survivor_benefit': "Full Survivor Benefit", 
         'mil_active': False, 'mil_component': "Active Duty", 'mil_years': 0, 'mil_months': 0, 'mil_days': 0, 'mil_points': 0, 'mil_rank': "O-4", 'mil_discharge': "Honorable Discharge", 'mil_diems': datetime.date(2005, 1, 1), 'mil_system': "High-36 (2.5%)", 'mil_pay_base': 0, 'mil_disability_rating': "0%", 'mil_special_rating': "None", 'mil_va_pay': 0, 'mil_sbp': "No SBP", 'mil_start_age': None,
         'ss_fra': 0, 'ss_claim_age': 67,
-        's_current_salary': 0, 's_annual_savings': 0, 's_phased_ret_active': False, 's_phased_ret_age': None, 's_pension_est': 0, 's_survivor_benefit': "No Survivor Benefit", 
+        's_current_salary': 0, 's_annual_savings': 0, 's_phased_ret_active': False, 's_phased_ret_age': None, 's_pension_type': "FERS", 's_pension_est': 0, 's_survivor_benefit': "No Survivor Benefit", 
         's_mil_active': False, 's_mil_component': "Active Duty", 's_mil_years': 0, 's_mil_months': 0, 's_mil_days': 0, 's_mil_points': 0, 's_mil_rank': "O-4", 's_mil_discharge': "Honorable Discharge", 's_mil_diems': datetime.date(2005, 1, 1), 's_mil_system': "High-36 (2.5%)", 's_mil_pay_base': 0, 's_mil_disability_rating': "0%", 's_mil_special_rating': "None", 's_mil_va_pay': 0, 's_mil_sbp': "No SBP", 's_mil_start_age': None,
         's_ss_fra': 0, 's_ss_claim_age': 67,
         'target_floor': 0, 'min_spending': 0, 'max_spending': 0, 'add_exp': 0, 'max_tax_bracket': "24%", 'mortgage_pmt': 0, 'mortgage_yrs': 0, 'home_value': 0,
@@ -112,7 +112,6 @@ with nav1:
             spouse_life_exp = c_sp3.number_input("Spouse Life Expectancy (If MFJ)", min_value=50, max_value=120, key="spouse_life_exp")
 
         with st.expander("💼 Income & Social Security", expanded=not has_run):
-            # REMOVED the 'if MFJ' blocker so the tabs are always generated and saved to session state
             t_inc_p, t_inc_s = st.tabs(["Primary", "Spouse (If MFJ)"])
                 
             with t_inc_p:
@@ -125,10 +124,11 @@ with nav1:
                 phased_ret_active = c3.checkbox("Enable FERS Phased Retirement?", key="phased_ret_active")
                 phased_ret_age = c4.number_input("Phased Retirement Start Age", min_value=50, max_value=70, key="phased_ret_age")
                 
-                st.markdown("**Primary Civilian Federal Pension (FERS/CSRS)**")
-                c5, c6 = st.columns(2)
-                pension_est = c5.number_input("Full (Unreduced) FERS Pension Est. ($)", min_value=0, step=1000, key="pension_est")
-                survivor_benefit = c6.selectbox("FERS Survivor Benefit Option", ["Full Survivor Benefit", "Partial Survivor Benefit", "No Survivor Benefit"], key="survivor_benefit")
+                st.markdown("**Primary Civilian Pension**")
+                cp1, cp2, cp3 = st.columns(3)
+                pension_type = cp1.selectbox("Pension Type", ["FERS", "Other (3% Cap)"], key="pension_type")
+                pension_est = cp2.number_input("Full (Unreduced) Pension Est. ($)", min_value=0, step=1000, key="pension_est")
+                survivor_benefit = cp3.selectbox("Survivor Benefit Option", ["Full Survivor Benefit", "Partial Survivor Benefit", "No Survivor Benefit"], key="survivor_benefit")
 
                 st.markdown("**Primary Social Security Guaranteed Income**")
                 c7, c8 = st.columns(2)
@@ -141,10 +141,11 @@ with nav1:
                 s_current_salary = cs1.number_input("Spouse Current Annual Salary ($)", min_value=0, step=1000, key="s_current_salary")
                 s_annual_savings = cs2.number_input("Spouse Total Annual Savings ($)", min_value=0, step=1000, key="s_annual_savings")
                 
-                st.markdown("**Spouse Civilian Federal Pension (FERS/CSRS)**")
-                cs5, cs6 = st.columns(2)
-                s_pension_est = cs5.number_input("Spouse Full FERS Pension Est. ($)", min_value=0, step=1000, key="s_pension_est")
-                s_survivor_benefit = cs6.selectbox("Spouse FERS Survivor Benefit Option", ["No Survivor Benefit", "Partial Survivor Benefit", "Full Survivor Benefit"], key="s_survivor_benefit")
+                st.markdown("**Spouse Civilian Pension**")
+                csp1, csp2, csp3 = st.columns(3)
+                s_pension_type = csp1.selectbox("Spouse Pension Type", ["FERS", "Other (3% Cap)"], key="s_pension_type")
+                s_pension_est = csp2.number_input("Spouse Full Pension Est. ($)", min_value=0, step=1000, key="s_pension_est")
+                s_survivor_benefit = csp3.selectbox("Spouse Survivor Benefit Option", ["No Survivor Benefit", "Partial Survivor Benefit", "Full Survivor Benefit"], key="s_survivor_benefit")
 
                 st.markdown("**Spouse Social Security Guaranteed Income**")
                 cs7, cs8 = st.columns(2)
@@ -152,7 +153,6 @@ with nav1:
                 s_ss_claim_age = cs8.number_input("Spouse Target SS Claiming Age", min_value=62, max_value=70, key="s_ss_claim_age")
 
         with st.expander("🎖️ Military Service & Pension (Optional)", expanded=False):
-            # REMOVED the 'if MFJ' blocker here as well
             t_mil_p, t_mil_s = st.tabs(["Primary", "Spouse (If MFJ)"])
                 
             with t_mil_p:
@@ -168,7 +168,7 @@ with nav1:
                 mil_years = mc1.number_input("Active Years", min_value=0, max_value=40, key="mil_years")
                 mil_months = mc2.number_input("Active Months", min_value=0, max_value=11, key="mil_months")
                 mil_days = mc3.number_input("Active Days", min_value=0, max_value=30, key="mil_days")
-                mil_points = mc4.number_input("Total Career Points", min_value=0, help="For Guard/Reserve or Mixed.", key="mil_points")
+                mil_points = mc4.number_input("Total Career Points", min_value=0, help="For Guard/Reserve or Mixed components. Enter your GRAND TOTAL points (which already includes 1 point/day for your active duty time).", key="mil_points")
 
                 st.markdown("**Rank, System & Pay**")
                 mr1, mr2 = st.columns(2)
@@ -305,7 +305,7 @@ with nav1:
             
             'current_salary': safe_int(st.session_state.current_salary), 'annual_savings': safe_int(st.session_state.annual_savings),
             'phased_ret_active': st.session_state.phased_ret_active, 'phased_ret_age': safe_int(st.session_state.phased_ret_age or st.session_state.ret_age),
-            'pension_est': safe_int(st.session_state.pension_est), 'survivor_benefit': st.session_state.survivor_benefit,
+            'pension_type': st.session_state.pension_type, 'pension_est': safe_int(st.session_state.pension_est), 'survivor_benefit': st.session_state.survivor_benefit,
             
             'mil_active': st.session_state.mil_active, 'mil_component': st.session_state.mil_component,
             'mil_years': safe_int(st.session_state.mil_years), 'mil_months': safe_int(st.session_state.mil_months), 'mil_days': safe_int(st.session_state.mil_days),
@@ -317,7 +317,7 @@ with nav1:
             'ss_fra': safe_int(st.session_state.ss_fra), 'ss_claim_age': safe_int(st.session_state.ss_claim_age),
             
             's_current_salary': safe_int(st.session_state.s_current_salary), 's_annual_savings': safe_int(st.session_state.s_annual_savings),
-            's_pension_est': safe_int(st.session_state.s_pension_est), 's_survivor_benefit': st.session_state.s_survivor_benefit,
+            's_pension_type': st.session_state.s_pension_type, 's_pension_est': safe_int(st.session_state.s_pension_est), 's_survivor_benefit': st.session_state.s_survivor_benefit,
             
             's_mil_active': st.session_state.s_mil_active, 's_mil_component': st.session_state.s_mil_component,
             's_mil_years': safe_int(st.session_state.s_mil_years), 's_mil_months': safe_int(st.session_state.s_mil_months), 's_mil_days': safe_int(st.session_state.s_mil_days),
