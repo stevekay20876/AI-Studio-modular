@@ -66,9 +66,6 @@ with nav1:
     def get_current_state():
         return {k: st.session_state[k] for k in DEFAULT_STATE.keys() if k in st.session_state}
 
-    def force_update():
-        pass # Blank callback to force Streamlit to refresh the UI when Pension Type changes
-
     with st.expander("💾 Client Profile Management (Save / Load)", expanded=False):
         col_load, col_save = st.columns(2)
         with col_load:
@@ -129,11 +126,10 @@ with nav1:
                 
                 st.markdown("**Primary Civilian Pension**")
                 cp1, cp2, cp3 = st.columns(3)
-                # ADDED: on_change=force_update to dynamically redraw the sub-options below
-                pension_type = cp1.selectbox("Pension Type", ["FERS", "Other (3% Cap)"], key="pension_type", on_change=force_update)
+                pension_type = cp1.selectbox("Pension Type", ["FERS", "Other (3% Cap)"], key="pension_type")
                 pension_est = cp2.number_input("Full (Unreduced) Pension Est. ($)", min_value=0, step=1000, key="pension_est")
                 
-                # Check the live session state so the UI swaps immediately
+                # Removed the illegal on_change callback. Standard state reference used instead.
                 if st.session_state.pension_type == "FERS":
                     surv_options = ["Full Survivor Benefit", "Partial Survivor Benefit", "No Survivor Benefit"]
                 else:
@@ -153,7 +149,7 @@ with nav1:
                 
                 st.markdown("**Spouse Civilian Pension**")
                 csp1, csp2, csp3 = st.columns(3)
-                s_pension_type = csp1.selectbox("Spouse Pension Type", ["FERS", "Other (3% Cap)"], key="s_pension_type", on_change=force_update)
+                s_pension_type = csp1.selectbox("Spouse Pension Type", ["FERS", "Other (3% Cap)"], key="s_pension_type")
                 s_pension_est = csp2.number_input("Spouse Full Pension Est. ($)", min_value=0, step=1000, key="s_pension_est")
                 
                 if st.session_state.s_pension_type == "FERS":
