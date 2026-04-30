@@ -41,8 +41,7 @@ class StochasticRetirementEngine:
             [-0.15, 0.85,  0.85,  0.85,  1.00,  0.85],
             [-0.15, 0.85,  0.85,  0.85,  0.85,  1.00]
         ])
-        # Rebalanced baseline inflation volatility to 1.5%
-        vols = np.array([0.015, v_tsp, v_ira, v_roth, v_tax, v_hsa])
+        vols = np.array([0.020, v_tsp, v_ira, v_roth, v_tax, v_hsa])
         cov = np.outer(vols, vols) * corr
         return np.linalg.cholesky(cov)
 
@@ -62,20 +61,16 @@ class StochasticRetirementEngine:
         returns = np.exp(drifts + correlated_shocks) - 1
         inf_paths = np.zeros((self.iterations, self.years))
         
-        inf_base, kappa, jump_prob, dt = 0.025, 0.30, 0.03, 1.0            
+        inf_base, kappa, jump_prob, dt = 0.025, 0.15, 0.05, 1.0            
         sqrt_dt = np.sqrt(dt)
         current_inf = np.full(self.iterations, inf_base)
         
         for yr in range(self.years):
             dW = correlated_shocks[:, yr, 0] * sqrt_dt
-            # 3% probability of a 4% to 6% inflation shock
-            jumps = np.where(np.random.rand(self.iterations) < jump_prob, np.random.uniform(0.04, 0.06, self.iterations), 0)
-            
+            jumps = np.where(np.random.rand(self.iterations) < jump_prob, np.random.normal(0.06, 0.02, self.iterations), 0)
             current_inf = current_inf + kappa * (inf_base - current_inf) * dt + dW + jumps
-            inf_paths[:, yr] = np.clip(current_inf, -0.01, 0.12) 
-            
-            # Penalty only triggers in tail-risk scenarios (inflation > 5%)
-            stagflation_shock = np.where(inf_paths[:, yr] > 0.05, -1.5 * (inf_paths[:, yr] - 0.05), 0)
+            inf_paths[:, yr] = np.clip(current_inf, -0.01, 0.15) 
+            stagflation_shock = np.where(inf_paths[:, yr] > 0.04, -2.0 * (inf_paths[:, yr] - 0.04), 0)
             returns[:, yr, 1:] += stagflation_shock[:, None]
             
         return returns, inf_paths
@@ -102,7 +97,6 @@ class StochasticRetirementEngine:
         p_base_pension = np.full(self.iterations, float(self.inputs.get('pension_est', 0)))
         s_base_pension = np.full(self.iterations, float(self.inputs.get('s_pension_est', 0)))
         
-        # Primary Civilian Pension Rules
         p_surv_choice = self.inputs.get('survivor_benefit', 'No Survivor Benefit')
         if self.inputs.get('pension_type', 'FERS') == "FERS":
             p_pension_mult = 0.90 if p_surv_choice == 'Full Survivor Benefit' else (0.95 if p_surv_choice == 'Partial Survivor Benefit' else 1.0)
@@ -111,7 +105,6 @@ class StochasticRetirementEngine:
             p_pension_mult = 0.85 if "100%" in p_surv_choice else (0.925 if "50%" in p_surv_choice else (0.965 if "Present Value" in p_surv_choice else 1.0))
             p_fers_survivor_mult = 1.0 if "100%" in p_surv_choice else (0.50 if "50%" in p_surv_choice else 0.0)
 
-        # Spouse Civilian Pension Rules
         s_surv_choice = self.inputs.get('s_survivor_benefit', 'No Survivor Benefit')
         if self.inputs.get('s_pension_type', 'FERS') == "FERS":
             s_pension_mult = 0.90 if s_surv_choice == 'Full Survivor Benefit' else (0.95 if s_surv_choice == 'Partial Survivor Benefit' else 1.0)
@@ -120,7 +113,6 @@ class StochasticRetirementEngine:
             s_pension_mult = 0.85 if "100%" in s_surv_choice else (0.925 if "50%" in s_surv_choice else (0.965 if "Present Value" in s_surv_choice else 1.0))
             s_fers_survivor_mult = 1.0 if "100%" in s_surv_choice else (0.50 if "50%" in s_surv_choice else 0.0)
 
-        # Primary Military Pension Rules
         p_mil_active = self.inputs.get('mil_active', False)
         p_base_mil_gross = np.zeros(self.iterations)
         p_base_va = np.zeros(self.iterations)
@@ -141,7 +133,6 @@ class StochasticRetirementEngine:
                 p_base_va = np.full(self.iterations, self.inputs['mil_va_pay'] * 12)
                 p_crdp = self.inputs['mil_disability_rating'] in ["50% - 60%", "70% - 90%", "100%"] or self.inputs['mil_special_rating'] in ["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
 
-        # Spouse Military Pension Rules
         s_mil_active = self.inputs.get('s_mil_active', False)
         s_base_mil_gross = np.zeros(self.iterations)
         s_base_va = np.zeros(self.iterations)
@@ -162,7 +153,6 @@ class StochasticRetirementEngine:
                 s_base_va = np.full(self.iterations, self.inputs['s_mil_va_pay'] * 12)
                 s_crdp = self.inputs['s_mil_disability_rating'] in ["50% - 60%", "70% - 90%", "100%"] or self.inputs['s_mil_special_rating'] in ["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
 
-        # Social Security Base Setup
         p_ss_claim = self.inputs.get('ss_claim_age', 67)
         p_months_early, p_months_late = max(0, (67 - p_ss_claim) * 12), max(0, (p_ss_claim - 67) * 12)
         p_ss_modifier = 1.0 - ((min(36, p_months_early) * (5/900)) + (max(0, p_months_early - 36) * (5/1200))) + (p_months_late * (8/1200))
@@ -266,7 +256,7 @@ class StochasticRetirementEngine:
                     limit_max_pct = brackets[i][0] * cum_inf
                     break
             
-            home_value *= 1.035
+            home_value *= 1.03
             
             yr_salary = np.zeros(self.iterations)
             yr_pension = np.zeros(self.iterations)
@@ -525,13 +515,27 @@ class StochasticRetirementEngine:
             for i in range(len(brackets)):
                 prev_limit = (brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
                 limit = brackets[i][0] * cum_inf
-                base_tax_fed += np.clip(taxable_income - prev_limit, 0, limit - prev_limit) * brackets[i][1]
+                
+                # --- FIXED: EXACT MARGINAL OVERLAP FOR ORDINARY INCOME ---
+                taxable_in_bracket = np.clip(taxable_income, prev_limit, limit) - prev_limit
+                base_tax_fed += np.maximum(0, taxable_in_bracket) * brackets[i][1]
                 
             ltcg_tax = np.zeros(self.iterations)
             for i in range(len(ltcg_brackets)):
+                prev_limit = (ltcg_brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
                 limit = ltcg_brackets[i][0] * cum_inf
-                applicable_gains = np.clip(taxable_income + realized_gains - limit, 0, realized_gains)
-                ltcg_tax += applicable_gains * ltcg_brackets[i][1]
+                
+                # --- FIXED: EXACT MARGINAL OVERLAP FOR LTCG ---
+                # LTCG sits *on top* of ordinary income. 
+                gains_start = taxable_income
+                gains_end = taxable_income + realized_gains
+                
+                # Find how much of the gains stream falls inside this progressive bracket
+                overlap_start = np.maximum(gains_start, prev_limit)
+                overlap_end = np.minimum(gains_end, limit)
+                taxable_gains_in_bracket = np.maximum(0, overlap_end - overlap_start)
+                
+                ltcg_tax += taxable_gains_in_bracket * ltcg_brackets[i][1]
                 
             niit_tax = np.where(magi > (niit_threshold * cum_inf), realized_gains * 0.038, 0.0)
             base_tax_fed += (ltcg_tax + niit_tax)
@@ -600,13 +604,21 @@ class StochasticRetirementEngine:
                 for i in range(len(brackets)):
                     prev_limit = (brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
                     limit = brackets[i][0] * cum_inf
-                    new_tax_fed += np.clip(final_taxable_income - prev_limit, 0, limit - prev_limit) * brackets[i][1]
+                    taxable_in_bracket = np.clip(final_taxable_income, prev_limit, limit) - prev_limit
+                    new_tax_fed += np.maximum(0, taxable_in_bracket) * brackets[i][1]
                 
                 new_ltcg_tax = np.zeros(self.iterations)
                 for i in range(len(ltcg_brackets)):
+                    prev_limit = (ltcg_brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
                     limit = ltcg_brackets[i][0] * cum_inf
-                    applicable_gains = np.clip(final_taxable_income + realized_gains - limit, 0, realized_gains)
-                    new_ltcg_tax += applicable_gains * ltcg_brackets[i][1]
+                    
+                    gains_start = final_taxable_income
+                    gains_end = final_taxable_income + realized_gains
+                    overlap_start = np.maximum(gains_start, prev_limit)
+                    overlap_end = np.minimum(gains_end, limit)
+                    taxable_gains_in_bracket = np.maximum(0, overlap_end - overlap_start)
+                    
+                    new_ltcg_tax += taxable_gains_in_bracket * ltcg_brackets[i][1]
                     
                 new_niit_tax = np.where(final_magi > (niit_threshold * cum_inf), realized_gains * 0.038, 0.0)
                 extra_tax_fed = (new_tax_fed + new_ltcg_tax + new_niit_tax) - base_tax_fed
@@ -709,12 +721,11 @@ class StochasticRetirementEngine:
         target_floor = self.inputs.get('target_floor', 0.0)
         terminal_wealth = median_real_path[-1]
         
-        if terminal_wealth <= 1.0:
-            years_bankrupt = np.sum(median_real_path <= 1.0)
-            initial_wealth = median_real_path[0]
-            return -(years_bankrupt * initial_wealth * 0.05) - target_floor
-            
-        return terminal_wealth - target_floor
+        # PROBABILITY OF SUCCESS FIX: Use the actual simulated balance directly against the target floor.
+        if terminal_wealth < target_floor:
+            return terminal_wealth - target_floor
+        else:
+            return terminal_wealth - target_floor
 
     def optimize_iwr(self):
         try:

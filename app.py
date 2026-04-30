@@ -52,7 +52,7 @@ with nav1:
         's_ss_fra': 0, 's_ss_claim_age': 67,
         'target_floor': 0, 'min_spending': 0, 'max_spending': 0, 'add_exp': 0, 'max_tax_bracket': "24%", 'mortgage_pmt': 0, 'mortgage_yrs': 0, 'home_value': 0,
         'health_plan': "None/Self-Insure", 'health_cost': 0, 'oop_cost': 0,
-        'tsp_b': 0, 'tsp_strat': "Moderate (60% Stock / 40% Bond)",
+        'tsp_b': 0, 'tsp_roth_b': 0, 'tsp_strat': "Moderate (60% Stock / 40% Bond)",
         'ira_b': 0, 'ira_strat': "Moderate (60% Stock / 40% Bond)",
         'roth_b': 0, 'roth_strat': "Aggressive (100% Stock)",
         'tax_b': 0, 'tax_basis': None, 'tax_strat': "Moderate (60% Stock / 40% Bond)",
@@ -257,30 +257,37 @@ with nav1:
     with st.expander("🏛️ Savings & Assets", expanded=not has_run):
         st.markdown("**Current Portfolios & Strategies**")
         
-        c1, c2 = st.columns(2)
-        tsp_b = c1.number_input("TSP Balance ($)", min_value=0, step=10000, key="tsp_b")
-        tsp_strat = c2.selectbox("TSP Strategy", list(PORTFOLIOS.keys()), key="tsp_strat")
+        # --- FIXED: DYNAMIC TSP SPLIT ---
+        c1, c2, c3 = st.columns(3)
+        if st.session_state.pension_type == "FERS" or st.session_state.s_pension_type == "FERS":
+            tsp_b = c1.number_input("TSP Traditional Bal. ($)", min_value=0, step=10000, key="tsp_b")
+            tsp_roth_b = c2.number_input("TSP Roth Bal. ($)", min_value=0, step=10000, key="tsp_roth_b")
+            tsp_strat = c3.selectbox("TSP Strategy", list(PORTFOLIOS.keys()), key="tsp_strat")
+        else:
+            tsp_b = c1.number_input("Employer 401k Bal. ($)", min_value=0, step=10000, key="tsp_b")
+            tsp_roth_b = c2.number_input("Employer Roth 401k Bal. ($)", min_value=0, step=10000, key="tsp_roth_b")
+            tsp_strat = c3.selectbox("401k Strategy", list(PORTFOLIOS.keys()), key="tsp_strat")
         
-        c3, c4 = st.columns(2)
-        ira_b = c3.number_input("Trad. IRA Balance ($)", min_value=0, step=10000, key="ira_b")
-        ira_strat = c4.selectbox("Trad. IRA Strategy", list(PORTFOLIOS.keys()), key="ira_strat")
+        c4, c5 = st.columns(2)
+        ira_b = c4.number_input("Trad. IRA Balance ($)", min_value=0, step=10000, key="ira_b")
+        ira_strat = c5.selectbox("Trad. IRA Strategy", list(PORTFOLIOS.keys()), key="ira_strat")
         
-        c5, c6 = st.columns(2)
-        roth_b = c5.number_input("Roth IRA Balance ($)", min_value=0, step=10000, key="roth_b")
-        roth_strat = c6.selectbox("Roth IRA Strategy", list(PORTFOLIOS.keys()), key="roth_strat")
+        c6, c7 = st.columns(2)
+        roth_b = c6.number_input("Roth IRA Balance ($)", min_value=0, step=10000, key="roth_b")
+        roth_strat = c7.selectbox("Roth IRA Strategy", list(PORTFOLIOS.keys()), key="roth_strat")
         
-        c7, c8, c9 = st.columns(3)
-        tax_b = c7.number_input("Taxable Balance ($)", min_value=0, step=10000, key="tax_b")
-        tax_basis = c8.number_input("Taxable Cost Basis ($)", min_value=0, step=10000, key="tax_basis")
-        tax_strat = c9.selectbox("Taxable Strategy", list(PORTFOLIOS.keys()), key="tax_strat")
+        c8, c9, c10 = st.columns(3)
+        tax_b = c8.number_input("Taxable Balance ($)", min_value=0, step=10000, key="tax_b")
+        tax_basis = c9.number_input("Taxable Cost Basis ($)", min_value=0, step=10000, key="tax_basis")
+        tax_strat = c10.selectbox("Taxable Strategy", list(PORTFOLIOS.keys()), key="tax_strat")
         
-        c10, c11 = st.columns(2)
-        hsa_b = c10.number_input("HSA Balance (Optional)", min_value=0, step=1000, key="hsa_b")
-        hsa_strat = c11.selectbox("HSA Strategy", list(PORTFOLIOS.keys()), key="hsa_strat")
+        c11, c12 = st.columns(2)
+        hsa_b = c11.number_input("HSA Balance (Optional)", min_value=0, step=1000, key="hsa_b")
+        hsa_strat = c12.selectbox("HSA Strategy", list(PORTFOLIOS.keys()), key="hsa_strat")
         
-        c12, c13 = st.columns(2)
-        cash_b = c12.number_input("Money Market Balance ($)", min_value=0, step=1000, key="cash_b")
-        cash_r = c13.number_input("Money Market Yield %", min_value=0.0, step=0.1, key="cash_r")
+        c13, c14 = st.columns(2)
+        cash_b = c13.number_input("Money Market Balance ($)", min_value=0, step=1000, key="cash_b")
+        cash_r = c14.number_input("Money Market Yield %", min_value=0.0, step=0.1, key="cash_r")
         
         st.markdown("---")
         pay_taxes_from_cash = st.checkbox("Pay Roth Conversion Taxes from Cash Buffer?", key="pay_taxes_from_cash")
@@ -343,9 +350,11 @@ with nav1:
             'health_plan': st.session_state.health_plan, 'health_cost': safe_int(st.session_state.health_cost), 'oop_cost': safe_int(st.session_state.oop_cost), 
             'mortgage_pmt': safe_int(st.session_state.mortgage_pmt), 'mortgage_yrs': safe_int(st.session_state.mortgage_yrs),
             'home_value': safe_int(st.session_state.home_value), 'target_floor': safe_int(st.session_state.target_floor),
+            
+            # MERGE ROTH TSP WITH ROTH IRA FOR MATH ENGINE
             'tsp_bal': safe_int(st.session_state.tsp_b), 'tsp_strat': st.session_state.tsp_strat,
             'ira_bal': safe_int(st.session_state.ira_b), 'ira_strat': st.session_state.ira_strat,
-            'roth_bal': safe_int(st.session_state.roth_b), 'roth_strat': st.session_state.roth_strat,
+            'roth_bal': safe_int(st.session_state.roth_b) + safe_int(st.session_state.tsp_roth_b), 'roth_strat': st.session_state.roth_strat,
             'taxable_bal': safe_int(st.session_state.tax_b), 'taxable_basis': safe_int(final_tax_basis), 'taxable_strat': st.session_state.tax_strat,
             'hsa_bal': safe_int(st.session_state.hsa_b), 'hsa_strat': st.session_state.hsa_strat,
             'cash_bal': safe_int(st.session_state.cash_b), 'cash_ret': float(st.session_state.cash_r or 0)/100,
@@ -374,10 +383,9 @@ with nav1:
         years_arr = np.arange(datetime.datetime.now().year, datetime.datetime.now().year + engine_years)
         age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine_years)
         
-        # PROBABILITY OF SUCCESS FIX: Mathematically checks that ending total balance is >= $1.00 (not bankrupt)
         median_real_terminal = np.median(history['total_bal_real'][:, -1])
-        prob_success = np.mean(history['total_bal_real'][:, -1] >= 1.0) * 100
-        prob_legacy = np.mean(history['total_bal_real'][:, -1] >= max(1.0, inputs['target_floor'])) * 100
+        prob_success = np.mean(history['total_bal_real'][:, -1] > 0) * 100
+        prob_legacy = np.mean(history['total_bal_real'][:, -1] >= inputs['target_floor']) * 100
 
         ret_idx = max(0, inputs['ret_age'] - inputs['current_age'])
         
