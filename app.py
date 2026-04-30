@@ -374,9 +374,10 @@ with nav1:
         years_arr = np.arange(datetime.datetime.now().year, datetime.datetime.now().year + engine_years)
         age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine_years)
         
+        # PROBABILITY OF SUCCESS FIX: Mathematically checks that ending total balance is >= $1.00 (not bankrupt)
         median_real_terminal = np.median(history['total_bal_real'][:, -1])
-        prob_success = np.mean(history['total_bal_real'][:, -1] > 0) * 100
-        prob_legacy = np.mean(history['total_bal_real'][:, -1] >= inputs['target_floor']) * 100
+        prob_success = np.mean(history['total_bal_real'][:, -1] >= 1.0) * 100
+        prob_legacy = np.mean(history['total_bal_real'][:, -1] >= max(1.0, inputs['target_floor'])) * 100
 
         ret_idx = max(0, inputs['ret_age'] - inputs['current_age'])
         
