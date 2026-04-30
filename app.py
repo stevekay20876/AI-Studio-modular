@@ -44,20 +44,29 @@ with nav1:
     DEFAULT_STATE = {
         'cur_age': None, 'ret_age': None, 'life_exp': None, 'filing_status': "Single",
         'spouse_age': None, 's_ret_age': None, 'spouse_life_exp': None, 'state': "", 'county': "",
-        'current_salary': 0, 'annual_savings': 0, 'phased_ret_active': False, 'phased_ret_age': None, 'pension_type': "FERS", 'pension_est': 0, 'survivor_benefit': "Full Survivor Benefit", 
+        
+        'current_salary': 0, 'p_max_tsp': False, 'p_tsp_contrib': 0, 'p_taxable_contrib': 0, 'p_roth_contrib': 0, 'p_cash_contrib': 0, 'p_hsa_contrib': 0,
+        'phased_ret_active': False, 'phased_ret_age': None, 'pension_type': "FERS", 'pension_est': 0, 'survivor_benefit': "Full Survivor Benefit", 
         'mil_active': False, 'mil_component': "Active Duty", 'mil_years': 0, 'mil_months': 0, 'mil_days': 0, 'mil_points': 0, 'mil_rank': "O-4", 'mil_discharge': "Honorable Discharge", 'mil_diems': datetime.date(2005, 1, 1), 'mil_system': "High-36 (2.5%)", 'mil_pay_base': 0, 'mil_disability_rating': "0%", 'mil_special_rating': "None", 'mil_va_pay': 0, 'mil_sbp': "No SBP", 'mil_start_age': None,
         'ss_fra': 0, 'ss_claim_age': 67,
-        's_current_salary': 0, 's_annual_savings': 0, 's_phased_ret_active': False, 's_phased_ret_age': None, 's_pension_type': "FERS", 's_pension_est': 0, 's_survivor_benefit': "No Survivor Benefit", 
+        
+        's_current_salary': 0, 's_max_tsp': False, 's_tsp_contrib': 0, 's_taxable_contrib': 0, 's_roth_contrib': 0, 's_cash_contrib': 0, 's_hsa_contrib': 0,
+        's_phased_ret_active': False, 's_phased_ret_age': None, 's_pension_type': "FERS", 's_pension_est': 0, 's_survivor_benefit': "No Survivor Benefit", 
         's_mil_active': False, 's_mil_component': "Active Duty", 's_mil_years': 0, 's_mil_months': 0, 's_mil_days': 0, 's_mil_points': 0, 's_mil_rank': "O-4", 's_mil_discharge': "Honorable Discharge", 's_mil_diems': datetime.date(2005, 1, 1), 's_mil_system': "High-36 (2.5%)", 's_mil_pay_base': 0, 's_mil_disability_rating': "0%", 's_mil_special_rating': "None", 's_mil_va_pay': 0, 's_mil_sbp': "No SBP", 's_mil_start_age': None,
         's_ss_fra': 0, 's_ss_claim_age': 67,
+        
         'target_floor': 0, 'min_spending': 0, 'max_spending': 0, 'add_exp': 0, 'max_tax_bracket': "24%", 'mortgage_pmt': 0, 'mortgage_yrs': 0, 'home_value': 0,
         'health_plan': "None/Self-Insure", 'health_cost': 0, 'oop_cost': 0,
+        
         'tsp_b': 0, 'tsp_roth_b': 0, 'tsp_strat': "Moderate (60% Stock / 40% Bond)",
         'ira_b': 0, 'ira_strat': "Moderate (60% Stock / 40% Bond)",
         'roth_b': 0, 'roth_strat': "Aggressive (100% Stock)",
         'tax_b': 0, 'tax_basis': None, 'tax_strat': "Moderate (60% Stock / 40% Bond)",
         'hsa_b': 0, 'hsa_strat': "Moderate (60% Stock / 40% Bond)",
-        'cash_b': 0, 'cash_r': 4.0, 'pay_taxes_from_cash': True
+        'cash_b': 0, 'cash_r': 4.0, 'pay_taxes_from_cash': True,
+        
+        's_tsp_b': 0, 's_tsp_roth_b': 0, 's_ira_b': 0, 's_roth_b': 0,
+        'save_file_name': "client_profile"
     }
 
     for k, v in DEFAULT_STATE.items():
@@ -81,11 +90,16 @@ with nav1:
                     except Exception as e:
                         st.error("Error loading profile.")
         with col_save:
-            profile_name = st.text_input("Name your save file:", value="client_profile")
+            # FIXED: Bound explicitly to session_state key to ensure input registers before button press
+            st.text_input("Name your save file:", key="save_file_name")
+            
             state_dict = get_current_state()
             if isinstance(state_dict.get('mil_diems'), datetime.date): state_dict['mil_diems'] = state_dict['mil_diems'].isoformat()
             if isinstance(state_dict.get('s_mil_diems'), datetime.date): state_dict['s_mil_diems'] = state_dict['s_mil_diems'].isoformat()
-            safe_filename = profile_name.strip() if profile_name.strip().endswith(".json") else profile_name.strip() + ".json"
+            
+            safe_filename = st.session_state.save_file_name.strip()
+            if not safe_filename.endswith(".json"): safe_filename += ".json"
+            
             st.download_button("⬇️ Save Current Profile to Computer", data=json.dumps(state_dict, indent=4), file_name=safe_filename, mime="application/json", use_container_width=True)
 
     has_run = 'sim_data' in st.session_state
@@ -114,14 +128,21 @@ with nav1:
         t_inc_p, t_inc_s = st.tabs(["Primary", "Spouse (If MFJ)"])
             
         with t_inc_p:
-            st.markdown("**Primary Pre-Retirement & Phased Transition**")
+            st.markdown("**Primary Pre-Retirement Salary & Savings**")
             c1, c2 = st.columns(2)
             current_salary = c1.number_input("Current Annual Salary ($)", min_value=0, step=1000, key="current_salary")
-            annual_savings = c2.number_input("Total Annual Savings (Until Ret.) ($)", min_value=0, step=1000, key="annual_savings")
             
-            c3, c4 = st.columns(2)
-            phased_ret_active = c3.checkbox("Enable FERS Phased Retirement?", key="phased_ret_active")
-            phased_ret_age = c4.number_input("Phased Retirement Start Age", min_value=50, max_value=70, key="phased_ret_age")
+            p_max_tsp = c2.checkbox("Maximize IRS allowable TSP/401(k) limit?", key="p_max_tsp")
+            if p_max_tsp:
+                c2.info("IRS Max active: Engine automatically deposits $23,500/yr (or $31,000 if Age 50+).")
+            else:
+                p_tsp_contrib = c2.number_input("Annual TSP/401(k) Pre-Tax Contribution ($)", min_value=0, step=1000, key="p_tsp_contrib")
+            
+            c3, c4, c5, c6 = st.columns(4)
+            p_taxable_contrib = c3.number_input("Taxable Acct Savings ($/yr)", min_value=0, step=1000, key="p_taxable_contrib")
+            p_roth_contrib = c4.number_input("Roth IRA Savings ($/yr)", min_value=0, step=1000, key="p_roth_contrib")
+            p_cash_contrib = c5.number_input("Money Market Savings ($/yr)", min_value=0, step=1000, key="p_cash_contrib")
+            p_hsa_contrib = c6.number_input("HSA Savings ($/yr)", min_value=0, step=1000, key="p_hsa_contrib")
             
             st.markdown("**Primary Civilian Pension**")
             cp1, cp2, cp3 = st.columns(3)
@@ -140,10 +161,21 @@ with nav1:
             ss_claim_age = c8.number_input("Target SS Claiming Age", min_value=62, max_value=70, key="ss_claim_age")
             
         with t_inc_s:
-            st.markdown("**Spouse Pre-Retirement**")
+            st.markdown("**Spouse Pre-Retirement Salary & Savings**")
             cs1, cs2 = st.columns(2)
             s_current_salary = cs1.number_input("Spouse Current Annual Salary ($)", min_value=0, step=1000, key="s_current_salary")
-            s_annual_savings = cs2.number_input("Spouse Total Annual Savings ($)", min_value=0, step=1000, key="s_annual_savings")
+            
+            s_max_tsp = cs2.checkbox("Spouse: Maximize IRS allowable TSP/401(k)?", key="s_max_tsp")
+            if s_max_tsp:
+                cs2.info("IRS Max active: Engine automatically deposits $23,500/yr (or $31,000 if Age 50+).")
+            else:
+                s_tsp_contrib = cs2.number_input("Spouse TSP/401(k) Pre-Tax Contribution ($)", min_value=0, step=1000, key="s_tsp_contrib")
+            
+            cs3, cs4, cs5, cs6 = st.columns(4)
+            s_taxable_contrib = cs3.number_input("Spouse Taxable Savings ($/yr)", min_value=0, step=1000, key="s_taxable_contrib")
+            s_roth_contrib = cs4.number_input("Spouse Roth IRA Savings ($/yr)", min_value=0, step=1000, key="s_roth_contrib")
+            s_cash_contrib = cs5.number_input("Spouse Cash Savings ($/yr)", min_value=0, step=1000, key="s_cash_contrib")
+            s_hsa_contrib = cs6.number_input("Spouse HSA Savings ($/yr)", min_value=0, step=1000, key="s_hsa_contrib")
             
             st.markdown("**Spouse Civilian Pension**")
             csp1, csp2, csp3 = st.columns(3)
@@ -255,42 +287,53 @@ with nav1:
         oop_cost = c11.number_input("Typical Out-of-Pocket Medical ($)", min_value=0, step=100, key="oop_cost")
 
     with st.expander("🏛️ Savings & Assets", expanded=not has_run):
-        st.markdown("**Current Portfolios & Strategies**")
+        t_ast_p, t_ast_s = st.tabs(["Household Assets", "Spouse Assets (If MFJ)"])
         
-        # --- FIXED: DYNAMIC TSP SPLIT ---
-        c1, c2, c3 = st.columns(3)
-        if st.session_state.pension_type == "FERS" or st.session_state.s_pension_type == "FERS":
-            tsp_b = c1.number_input("TSP Traditional Bal. ($)", min_value=0, step=10000, key="tsp_b")
-            tsp_roth_b = c2.number_input("TSP Roth Bal. ($)", min_value=0, step=10000, key="tsp_roth_b")
-            tsp_strat = c3.selectbox("TSP Strategy", list(PORTFOLIOS.keys()), key="tsp_strat")
-        else:
-            tsp_b = c1.number_input("Employer 401k Bal. ($)", min_value=0, step=10000, key="tsp_b")
-            tsp_roth_b = c2.number_input("Employer Roth 401k Bal. ($)", min_value=0, step=10000, key="tsp_roth_b")
-            tsp_strat = c3.selectbox("401k Strategy", list(PORTFOLIOS.keys()), key="tsp_strat")
-        
-        c4, c5 = st.columns(2)
-        ira_b = c4.number_input("Trad. IRA Balance ($)", min_value=0, step=10000, key="ira_b")
-        ira_strat = c5.selectbox("Trad. IRA Strategy", list(PORTFOLIOS.keys()), key="ira_strat")
-        
-        c6, c7 = st.columns(2)
-        roth_b = c6.number_input("Roth IRA Balance ($)", min_value=0, step=10000, key="roth_b")
-        roth_strat = c7.selectbox("Roth IRA Strategy", list(PORTFOLIOS.keys()), key="roth_strat")
-        
-        c8, c9, c10 = st.columns(3)
-        tax_b = c8.number_input("Taxable Balance ($)", min_value=0, step=10000, key="tax_b")
-        tax_basis = c9.number_input("Taxable Cost Basis ($)", min_value=0, step=10000, key="tax_basis")
-        tax_strat = c10.selectbox("Taxable Strategy", list(PORTFOLIOS.keys()), key="tax_strat")
-        
-        c11, c12 = st.columns(2)
-        hsa_b = c11.number_input("HSA Balance (Optional)", min_value=0, step=1000, key="hsa_b")
-        hsa_strat = c12.selectbox("HSA Strategy", list(PORTFOLIOS.keys()), key="hsa_strat")
-        
-        c13, c14 = st.columns(2)
-        cash_b = c13.number_input("Money Market Balance ($)", min_value=0, step=1000, key="cash_b")
-        cash_r = c14.number_input("Money Market Yield %", min_value=0.0, step=0.1, key="cash_r")
-        
-        st.markdown("---")
-        pay_taxes_from_cash = st.checkbox("Pay Roth Conversion Taxes from Cash Buffer?", key="pay_taxes_from_cash")
+        with t_ast_p:
+            p_label = "TSP Traditional Bal. ($)" if st.session_state.pension_type == "FERS" else "401(k) Traditional Bal. ($)"
+            p_r_label = "TSP Roth Bal. ($)" if st.session_state.pension_type == "FERS" else "Roth 401(k) Bal. ($)"
+            
+            c1, c2, c3 = st.columns(3)
+            tsp_b = c1.number_input(p_label, min_value=0, step=10000, key="tsp_b")
+            tsp_roth_b = c2.number_input(p_r_label, min_value=0, step=10000, key="tsp_roth_b")
+            tsp_strat = c3.selectbox("TSP/401(k) Strategy", list(PORTFOLIOS.keys()), key="tsp_strat")
+            
+            c4, c5 = st.columns(2)
+            ira_b = c4.number_input("Trad. IRA Balance ($)", min_value=0, step=10000, key="ira_b")
+            ira_strat = c5.selectbox("Trad. IRA Strategy", list(PORTFOLIOS.keys()), key="ira_strat")
+            
+            c6, c7 = st.columns(2)
+            roth_b = c6.number_input("Roth IRA Balance ($)", min_value=0, step=10000, key="roth_b")
+            roth_strat = c7.selectbox("Roth IRA Strategy", list(PORTFOLIOS.keys()), key="roth_strat")
+            
+            c8, c9, c10 = st.columns(3)
+            tax_b = c8.number_input("Taxable Balance ($)", min_value=0, step=10000, key="tax_b")
+            tax_basis = c9.number_input("Taxable Cost Basis ($)", min_value=0, step=10000, key="tax_basis")
+            tax_strat = c10.selectbox("Taxable Strategy", list(PORTFOLIOS.keys()), key="tax_strat")
+            
+            c11, c12 = st.columns(2)
+            hsa_b = c11.number_input("HSA Balance (Optional)", min_value=0, step=1000, key="hsa_b")
+            hsa_strat = c12.selectbox("HSA Strategy", list(PORTFOLIOS.keys()), key="hsa_strat")
+            
+            c13, c14 = st.columns(2)
+            cash_b = c13.number_input("Money Market Balance ($)", min_value=0, step=1000, key="cash_b")
+            cash_r = c14.number_input("Money Market Yield %", min_value=0.0, step=0.1, key="cash_r")
+            
+            st.markdown("---")
+            pay_taxes_from_cash = st.checkbox("Pay Roth Conversion Taxes from Cash Buffer?", key="pay_taxes_from_cash")
+            
+        with t_ast_s:
+            st.info("Enter any accounts solely in the Spouse's name here. They will be mathematically merged into the household portfolio for calculation.")
+            s_label = "Spouse TSP Trad Bal. ($)" if st.session_state.s_pension_type == "FERS" else "Spouse 401(k) Trad Bal. ($)"
+            s_r_label = "Spouse TSP Roth Bal. ($)" if st.session_state.s_pension_type == "FERS" else "Spouse Roth 401(k) Bal. ($)"
+            
+            cs1, cs2 = st.columns(2)
+            s_tsp_b = cs1.number_input(s_label, min_value=0, step=10000, key="s_tsp_b")
+            s_tsp_roth_b = cs2.number_input(s_r_label, min_value=0, step=10000, key="s_tsp_roth_b")
+            
+            cs3, cs4 = st.columns(2)
+            s_ira_b = cs3.number_input("Spouse Trad. IRA Balance ($)", min_value=0, step=10000, key="s_ira_b")
+            s_roth_b = cs4.number_input("Spouse Roth IRA Balance ($)", min_value=0, step=10000, key="s_roth_b")
     
     submit = st.button("Run Projection Engine", type="primary")
 
@@ -319,7 +362,11 @@ with nav1:
             'spouse_life_exp': safe_int(st.session_state.spouse_life_exp) if st.session_state.spouse_life_exp else safe_int(st.session_state.life_exp),
             'filing_status': st.session_state.filing_status, 'state': st.session_state.state, 'county': st.session_state.county, 
             
-            'current_salary': safe_int(st.session_state.current_salary), 'annual_savings': safe_int(st.session_state.annual_savings),
+            'current_salary': safe_int(st.session_state.current_salary), 
+            'p_max_tsp': st.session_state.p_max_tsp, 'p_tsp_contrib': safe_int(st.session_state.p_tsp_contrib), 
+            'p_taxable_contrib': safe_int(st.session_state.p_taxable_contrib), 'p_roth_contrib': safe_int(st.session_state.p_roth_contrib), 
+            'p_cash_contrib': safe_int(st.session_state.p_cash_contrib), 'p_hsa_contrib': safe_int(st.session_state.p_hsa_contrib),
+            
             'phased_ret_active': st.session_state.phased_ret_active, 'phased_ret_age': safe_int(st.session_state.phased_ret_age or st.session_state.ret_age),
             'pension_type': st.session_state.pension_type, 'pension_est': safe_int(st.session_state.pension_est), 'survivor_benefit': st.session_state.survivor_benefit,
             
@@ -332,7 +379,11 @@ with nav1:
             
             'ss_fra': safe_int(st.session_state.ss_fra), 'ss_claim_age': safe_int(st.session_state.ss_claim_age),
             
-            's_current_salary': safe_int(st.session_state.s_current_salary), 's_annual_savings': safe_int(st.session_state.s_annual_savings),
+            's_current_salary': safe_int(st.session_state.s_current_salary), 
+            's_max_tsp': st.session_state.s_max_tsp, 's_tsp_contrib': safe_int(st.session_state.s_tsp_contrib), 
+            's_taxable_contrib': safe_int(st.session_state.s_taxable_contrib), 's_roth_contrib': safe_int(st.session_state.s_roth_contrib), 
+            's_cash_contrib': safe_int(st.session_state.s_cash_contrib), 's_hsa_contrib': safe_int(st.session_state.s_hsa_contrib),
+            
             's_pension_type': st.session_state.s_pension_type, 's_pension_est': safe_int(st.session_state.s_pension_est), 's_survivor_benefit': st.session_state.s_survivor_benefit,
             
             's_mil_active': st.session_state.s_mil_active, 's_mil_component': st.session_state.s_mil_component,
@@ -351,10 +402,13 @@ with nav1:
             'mortgage_pmt': safe_int(st.session_state.mortgage_pmt), 'mortgage_yrs': safe_int(st.session_state.mortgage_yrs),
             'home_value': safe_int(st.session_state.home_value), 'target_floor': safe_int(st.session_state.target_floor),
             
-            # MERGE ROTH TSP WITH ROTH IRA FOR MATH ENGINE
-            'tsp_bal': safe_int(st.session_state.tsp_b), 'tsp_strat': st.session_state.tsp_strat,
-            'ira_bal': safe_int(st.session_state.ira_b), 'ira_strat': st.session_state.ira_strat,
-            'roth_bal': safe_int(st.session_state.roth_b) + safe_int(st.session_state.tsp_roth_b), 'roth_strat': st.session_state.roth_strat,
+            # MERGED BALANCES
+            'tsp_bal': safe_int(st.session_state.tsp_b) + safe_int(st.session_state.s_tsp_b), 
+            'tsp_strat': st.session_state.tsp_strat,
+            'ira_bal': safe_int(st.session_state.ira_b) + safe_int(st.session_state.s_ira_b), 
+            'ira_strat': st.session_state.ira_strat,
+            'roth_bal': safe_int(st.session_state.roth_b) + safe_int(st.session_state.tsp_roth_b) + safe_int(st.session_state.s_roth_b) + safe_int(st.session_state.s_tsp_roth_b), 
+            'roth_strat': st.session_state.roth_strat,
             'taxable_bal': safe_int(st.session_state.tax_b), 'taxable_basis': safe_int(final_tax_basis), 'taxable_strat': st.session_state.tax_strat,
             'hsa_bal': safe_int(st.session_state.hsa_b), 'hsa_strat': st.session_state.hsa_strat,
             'cash_bal': safe_int(st.session_state.cash_b), 'cash_ret': float(st.session_state.cash_r or 0)/100,
@@ -384,8 +438,8 @@ with nav1:
         age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine_years)
         
         median_real_terminal = np.median(history['total_bal_real'][:, -1])
-        prob_success = np.mean(history['total_bal_real'][:, -1] > 0) * 100
-        prob_legacy = np.mean(history['total_bal_real'][:, -1] >= inputs['target_floor']) * 100
+        prob_success = np.mean(history['total_bal_real'][:, -1] >= 1.0) * 100
+        prob_legacy = np.mean(history['total_bal_real'][:, -1] >= max(1.0, inputs['target_floor'])) * 100
 
         ret_idx = max(0, inputs['ret_age'] - inputs['current_age'])
         

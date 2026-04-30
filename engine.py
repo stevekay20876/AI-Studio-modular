@@ -91,8 +91,21 @@ class StochasticRetirementEngine:
         
         p_base_salary = float(self.inputs.get('current_salary', 0))
         s_base_salary = float(self.inputs.get('s_current_salary', 0))
-        p_annual_savings = float(self.inputs.get('annual_savings', 0))
-        s_annual_savings = float(self.inputs.get('s_annual_savings', 0))
+        
+        # Parse Pre-Retirement Savings Fields
+        p_max_tsp = self.inputs.get('p_max_tsp', False)
+        p_tsp_c = float(self.inputs.get('p_tsp_contrib', 0))
+        p_tax_c = float(self.inputs.get('p_taxable_contrib', 0))
+        p_roth_c = float(self.inputs.get('p_roth_contrib', 0))
+        p_cash_c = float(self.inputs.get('p_cash_contrib', 0))
+        p_hsa_c = float(self.inputs.get('p_hsa_contrib', 0))
+
+        s_max_tsp = self.inputs.get('s_max_tsp', False)
+        s_tsp_c = float(self.inputs.get('s_tsp_contrib', 0))
+        s_tax_c = float(self.inputs.get('s_taxable_contrib', 0))
+        s_roth_c = float(self.inputs.get('s_roth_contrib', 0))
+        s_cash_c = float(self.inputs.get('s_cash_contrib', 0))
+        s_hsa_c = float(self.inputs.get('s_hsa_contrib', 0))
 
         p_base_pension = np.full(self.iterations, float(self.inputs.get('pension_est', 0)))
         s_base_pension = np.full(self.iterations, float(self.inputs.get('s_pension_est', 0)))
@@ -262,7 +275,6 @@ class StochasticRetirementEngine:
             yr_pension = np.zeros(self.iterations)
             yr_va = np.zeros(self.iterations)
             yr_ss = np.zeros(self.iterations)
-            yr_savings = np.zeros(self.iterations)
 
             inf_floor = np.maximum(0, inf_paths[:, yr])
             
@@ -301,7 +313,13 @@ class StochasticRetirementEngine:
                         yr_pension += p_base_pension * 0.50 * p_pension_mult
                     else:
                         yr_salary += p_salary_inf
-                        yr_savings += p_annual_savings
+                        p_actual_tsp_c = (31000 if age >= 50 else 23500) if p_max_tsp else p_tsp_c
+                        tsp += p_actual_tsp_c
+                        taxable += p_tax_c
+                        taxable_basis += p_tax_c
+                        roth += p_roth_c
+                        cash += p_cash_c
+                        hsa += p_hsa_c
                 else:
                     yr_pension += p_base_pension * p_pension_mult
                     
@@ -324,7 +342,13 @@ class StochasticRetirementEngine:
                         yr_pension += s_base_pension * 0.50 * s_pension_mult
                     else:
                         yr_salary += s_salary_inf
-                        yr_savings += s_annual_savings
+                        s_actual_tsp_c = (31000 if spouse_age >= 50 else 23500) if s_max_tsp else s_tsp_c
+                        tsp += s_actual_tsp_c
+                        taxable += s_tax_c
+                        taxable_basis += s_tax_c
+                        roth += s_roth_c
+                        cash += s_cash_c
+                        hsa += s_hsa_c
                 else:
                     yr_pension += s_base_pension * s_pension_mult
                     
@@ -361,11 +385,6 @@ class StochasticRetirementEngine:
             history['pension_income'][:, yr] = yr_pension
             history['va_income'][:, yr] = yr_va
             history['ss_income'][:, yr] = yr_ss
-            
-            tsp += (yr_savings * 0.70)
-            tax_savings_val = (yr_savings * 0.30)
-            taxable += tax_savings_val
-            taxable_basis += tax_savings_val
             
             prev_total_port = tsp + ira + roth + taxable + cash
             tsp *= (1 + returns[:, yr, 1])
@@ -515,8 +534,6 @@ class StochasticRetirementEngine:
             for i in range(len(brackets)):
                 prev_limit = (brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
                 limit = brackets[i][0] * cum_inf
-                
-                # --- FIXED: EXACT MARGINAL OVERLAP FOR ORDINARY INCOME ---
                 taxable_in_bracket = np.clip(taxable_income, prev_limit, limit) - prev_limit
                 base_tax_fed += np.maximum(0, taxable_in_bracket) * brackets[i][1]
                 
@@ -525,12 +542,8 @@ class StochasticRetirementEngine:
                 prev_limit = (ltcg_brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
                 limit = ltcg_brackets[i][0] * cum_inf
                 
-                # --- FIXED: EXACT MARGINAL OVERLAP FOR LTCG ---
-                # LTCG sits *on top* of ordinary income. 
                 gains_start = taxable_income
                 gains_end = taxable_income + realized_gains
-                
-                # Find how much of the gains stream falls inside this progressive bracket
                 overlap_start = np.maximum(gains_start, prev_limit)
                 overlap_end = np.minimum(gains_end, limit)
                 taxable_gains_in_bracket = np.maximum(0, overlap_end - overlap_start)
@@ -721,7 +734,6 @@ class StochasticRetirementEngine:
         target_floor = self.inputs.get('target_floor', 0.0)
         terminal_wealth = median_real_path[-1]
         
-        # PROBABILITY OF SUCCESS FIX: Use the actual simulated balance directly against the target floor.
         if terminal_wealth < target_floor:
             return terminal_wealth - target_floor
         else:
