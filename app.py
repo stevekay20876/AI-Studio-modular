@@ -1,3 +1,5 @@
+--- START OF FILE app.py ---
+
 import streamlit as st
 import streamlit.components.v1 as components
 import numpy as np
@@ -41,13 +43,11 @@ with nav1:
     st.title("Advanced Quantitative Retirement Planner")
     st.markdown("Institution-Grade Monte Carlo Simulator | Constant Amortization Spending Model (CASAM)")
 
+    curr_year = datetime.datetime.now().year
+
     DEFAULT_STATE = {
-        'cur_age': None, 'life_exp': None, 'filing_status': "Single",
-        'spouse_age': None, 'spouse_life_exp': None, 'state': "", 'county': "",
-        
-        # New split date logic defaults (5 years from today)
-        'p_ret_day': datetime.date.today().day, 'p_ret_month': datetime.date.today().month, 'p_ret_year': datetime.date.today().year + 5,
-        's_ret_day': datetime.date.today().day, 's_ret_month': datetime.date.today().month, 's_ret_year': datetime.date.today().year + 5,
+        'cur_age': None, 'ret_date': datetime.date(curr_year + 5, 1, 1), 'life_exp': None, 'filing_status': "Single",
+        'spouse_age': None, 's_ret_date': datetime.date(curr_year + 5, 1, 1), 'spouse_life_exp': None, 'state': "", 'county': "",
         
         'current_salary': 0, 'p_max_tsp': False, 'p_tsp_contrib': 0, 'p_taxable_contrib': 0, 'p_roth_contrib': 0, 'p_cash_contrib': 0, 'p_hsa_contrib': 0,
         'phased_ret_active': False, 'phased_ret_age': None, 'pension_type': "FERS", 'pension_est': 0, 'survivor_benefit': "Full Survivor Benefit", 
@@ -61,6 +61,7 @@ with nav1:
         
         'target_floor': 0, 'min_spending': 0, 'max_spending': 0, 'add_exp': 0, 'max_tax_bracket': "24%", 'mortgage_pmt': 0, 'mortgage_yrs': 0, 'home_value': 0,
         'health_plan': "None/Self-Insure", 'health_cost': 0, 'oop_cost': 0,
+        'has_40_quarters': True, 'intent_to_work_40_quarters': False, 'has_dependent_children': False, 'wants_dental_vision': False,
         
         'tsp_b': 0, 'tsp_roth_b': 0, 'tsp_strat': "Moderate (60% Stock / 40% Bond)",
         'ira_b': 0, 'ira_strat': "Moderate (60% Stock / 40% Bond)",
@@ -77,7 +78,11 @@ with nav1:
         if k not in st.session_state: st.session_state[k] = v
 
     def get_current_state():
-        return {k: st.session_state[k] for k in DEFAULT_STATE.keys() if k in st.session_state}
+        state_dict = {k: st.session_state[k] for k in DEFAULT_STATE.keys() if k in st.session_state}
+        for date_field in ['ret_date', 's_ret_date', 'mil_diems', 's_mil_diems']:
+            if isinstance(state_dict.get(date_field), datetime.date):
+                state_dict[date_field] = state_dict[date_field].isoformat()
+        return state_dict
 
     with st.expander("💾 Client Profile Management (Save / Load)", expanded=False):
         col_load, col_save = st.columns(2)
@@ -87,7 +92,11 @@ with nav1:
                 if "loaded_file" not in st.session_state or st.session_state.loaded_file != uploaded_profile.name:
                     try:
                         loaded_data = json.load(uploaded_profile)
-                        for key, value in loaded_data.items(): st.session_state[key] = value
+                        for key, value in loaded_data.items(): 
+                            if key in ['ret_date', 's_ret_date', 'mil_diems', 's_mil_diems'] and isinstance(value, str):
+                                st.session_state[key] = datetime.date.fromisoformat(value)
+                            else:
+                                st.session_state[key] = value
                         st.session_state.loaded_file = uploaded_profile.name
                         st.success("Profile Loaded Successfully!")
                         st.rerun() 
@@ -95,50 +104,41 @@ with nav1:
                         st.error("Error loading profile.")
         with col_save:
             profile_name = st.text_input("Name your save file:", key="save_file_name")
-            state_dict = get_current_state()
-            if isinstance(state_dict.get('mil_diems'), datetime.date): state_dict['mil_diems'] = state_dict['mil_diems'].isoformat()
-            if isinstance(state_dict.get('s_mil_diems'), datetime.date): state_dict['s_mil_diems'] = state_dict['s_mil_diems'].isoformat()
-            
             safe_filename = st.session_state.save_file_name.strip()
             if not safe_filename.endswith(".json"): safe_filename += ".json"
-            st.download_button("⬇️ Save Current Profile to Computer", data=json.dumps(state_dict, indent=4), file_name=safe_filename, mime="application/json", use_container_width=True)
+            st.download_button("⬇️ Save Current Profile to Computer", data=json.dumps(get_current_state(), indent=4), file_name=safe_filename, mime="application/json", use_container_width=True)
 
     has_run = 'sim_data' in st.session_state
 
     st.markdown("### Build Your Profile")
     
     with st.expander("👤 Personal & Tax Details", expanded=not has_run):
-        st.markdown("**Household Tax Details**")
+        st.markdown("**Household & Tax Settings**")
         c4, c5, c6 = st.columns(3)
         filing_status = c4.selectbox("Tax Filing Status", ["Single", "MFJ"], key="filing_status")
         state_in = c5.text_input("State of Residence", key="state")
         county_in = c6.text_input("County of Residence", key="county")
-
-        t_per_p, t_per_s = st.tabs(["Primary", "Spouse (If MFJ)"])
         
-        with t_per_p:
-            st.markdown("**Primary Demographics**")
-            c1, c_gap, c3 = st.columns([1, 1.5, 1])
+        st.markdown("<hr style='margin-top:0.5rem; margin-bottom:1rem;'/>", unsafe_allow_html=True)
+        t_pers_p, t_pers_s = st.tabs(["Primary Individual", "Spouse (If MFJ)"])
+        
+        with t_pers_p:
+            c1, c2, c3 = st.columns(3)
             cur_age = c1.number_input("Primary Current Age", min_value=18, max_value=100, key="cur_age")
+            
+            default_ret = st.session_state.ret_date if isinstance(st.session_state.ret_date, datetime.date) else datetime.date.fromisoformat(st.session_state.ret_date)
+            ret_date = c2.date_input("Target Date of Retirement", value=default_ret, format="MM/DD/YYYY", key="ret_date", help="The exact calendar date you plan to separate from service. Used to prorate transition year salary and savings.")
             life_exp = c3.number_input("Primary Life Expectancy Age", min_value=50, max_value=120, key="life_exp")
             
-            st.markdown("**Primary Target Retirement Date (DD/MM/YYYY)**")
-            cd1, cd2, cd3 = st.columns(3)
-            p_ret_day = cd1.number_input("Day", min_value=1, max_value=31, key="p_ret_day")
-            p_ret_month = cd2.number_input("Month", min_value=1, max_value=12, key="p_ret_month")
-            p_ret_year = cd3.number_input("Year", min_value=datetime.date.today().year, max_value=2100, key="p_ret_year")
-
-        with t_per_s:
-            st.info("If Married Filing Jointly (MFJ), please complete the Spouse details below.")
-            c_sp1, c_sp_gap, c_sp3 = st.columns([1, 1.5, 1])
-            spouse_age = c_sp1.number_input("Spouse Current Age (If MFJ)", min_value=18, max_value=100, key="spouse_age")
-            spouse_life_exp = c_sp3.number_input("Spouse Life Expectancy (If MFJ)", min_value=50, max_value=120, key="spouse_life_exp")
-            
-            st.markdown("**Spouse Target Retirement Date (DD/MM/YYYY)**")
-            scd1, scd2, scd3 = st.columns(3)
-            s_ret_day = scd1.number_input("Spouse Day", min_value=1, max_value=31, key="s_ret_day")
-            s_ret_month = scd2.number_input("Spouse Month", min_value=1, max_value=12, key="s_ret_month")
-            s_ret_year = scd3.number_input("Spouse Year", min_value=datetime.date.today().year, max_value=2100, key="s_ret_year")
+        with t_pers_s:
+            if st.session_state.filing_status == "MFJ":
+                c_sp1, c_sp2, c_sp3 = st.columns(3)
+                spouse_age = c_sp1.number_input("Spouse Current Age", min_value=18, max_value=100, key="spouse_age")
+                s_default_ret = st.session_state.s_ret_date if isinstance(st.session_state.s_ret_date, datetime.date) else datetime.date.fromisoformat(st.session_state.s_ret_date)
+                s_ret_date = c_sp2.date_input("Spouse Date of Retirement", value=s_default_ret, format="MM/DD/YYYY", key="s_ret_date")
+                spouse_life_exp = c_sp3.number_input("Spouse Life Expectancy", min_value=50, max_value=120, key="spouse_life_exp")
+            else:
+                st.info("Select 'MFJ' (Married Filing Jointly) above to enable Spouse inputs.")
 
     with st.expander("💼 Income & Social Security", expanded=not has_run):
         t_inc_p, t_inc_s = st.tabs(["Primary", "Spouse (If MFJ)"])
@@ -153,10 +153,8 @@ with nav1:
             st.markdown("**Primary Annual Savings (Until Retirement)**")
             c_sav1, c_sav2, c_sav3 = st.columns(3)
             p_max_tsp = c_sav1.checkbox("Maximize IRS allowable TSP/401(k)?", key="p_max_tsp")
-            if p_max_tsp:
-                c_sav1.info("IRS Max active: Automatically scales by age ($24,500 to $35,750).")
-            else:
-                p_tsp_contrib = c_sav1.number_input("TSP/401(k) Pre-Tax Savings ($/yr)", min_value=0, step=1000, key="p_tsp_contrib")
+            if p_max_tsp: c_sav1.info("IRS Max active: Automatically scales by age ($24,500 to $35,750).")
+            else: p_tsp_contrib = c_sav1.number_input("TSP/401(k) Pre-Tax Savings ($/yr)", min_value=0, step=1000, key="p_tsp_contrib")
             
             p_roth_contrib = c_sav2.number_input("Roth IRA Savings ($/yr)", min_value=0, step=1000, key="p_roth_contrib")
             p_taxable_contrib = c_sav3.number_input("Taxable Acct Savings ($/yr)", min_value=0, step=1000, key="p_taxable_contrib")
@@ -191,10 +189,8 @@ with nav1:
             st.markdown("**Spouse Annual Savings (Until Retirement)**")
             cs_sav1, cs_sav2, cs_sav3 = st.columns(3)
             s_max_tsp = cs_sav1.checkbox("Spouse: Maximize IRS allowable TSP/401(k)?", key="s_max_tsp")
-            if s_max_tsp:
-                cs_sav1.info("IRS Max active: Automatically scales by age ($24,500 to $35,750).")
-            else:
-                s_tsp_contrib = cs_sav1.number_input("Spouse TSP/401k Pre-Tax Savings ($/yr)", min_value=0, step=1000, key="s_tsp_contrib")
+            if s_max_tsp: cs_sav1.info("IRS Max active.")
+            else: s_tsp_contrib = cs_sav1.number_input("Spouse TSP/401k Pre-Tax Savings ($/yr)", min_value=0, step=1000, key="s_tsp_contrib")
             
             s_roth_contrib = cs_sav2.number_input("Spouse Roth IRA Savings ($/yr)", min_value=0, step=1000, key="s_roth_contrib")
             s_taxable_contrib = cs_sav3.number_input("Spouse Taxable Savings ($/yr)", min_value=0, step=1000, key="s_taxable_contrib")
@@ -235,7 +231,7 @@ with nav1:
             mil_years = mc1.number_input("Active Years", min_value=0, max_value=40, key="mil_years")
             mil_months = mc2.number_input("Active Months", min_value=0, max_value=11, key="mil_months")
             mil_days = mc3.number_input("Active Days", min_value=0, max_value=30, key="mil_days")
-            mil_points = mc4.number_input("Total Career Points", min_value=0, help="For Guard/Reserve or Mixed components. Enter your GRAND TOTAL points (which already includes 1 point/day for your active duty time).", key="mil_points")
+            mil_points = mc4.number_input("Total Career Points", min_value=0, key="mil_points")
 
             st.markdown("**Rank, System & Pay**")
             mr1, mr2 = st.columns(2)
@@ -243,15 +239,10 @@ with nav1:
             mil_discharge = mr2.selectbox("Character of Service", ["Honorable Discharge", "General Discharge (Under Honorable Conditions)", "Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge", "Uncharacterized Separation"], key="mil_discharge")
             
             md1, md2, md3 = st.columns(3)
-            # Replaced date_input with 3 exact number fields to bypass Streamlit format overrides
-            mil_diems_d = md1.number_input("DIEMS Day", min_value=1, max_value=31, value=1, key="mil_diems_d")
-            mil_diems_m = md2.number_input("DIEMS Month", min_value=1, max_value=12, value=1, key="mil_diems_m")
-            mil_diems_y = md3.number_input("DIEMS Year", min_value=1950, max_value=2030, value=2005, key="mil_diems_y")
-            st.session_state.mil_diems = datetime.date(mil_diems_y, mil_diems_m, mil_diems_d).isoformat()
-            
-            ms1, ms2 = st.columns(2)
-            mil_system = ms1.selectbox("Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="mil_system")
-            mil_pay_base = ms2.number_input("Pay Base (High-36 Avg or Final Base Pay $/mo)", min_value=0, step=100, key="mil_pay_base")
+            default_diems = datetime.date.fromisoformat(st.session_state.mil_diems) if isinstance(st.session_state.mil_diems, str) else st.session_state.mil_diems
+            mil_diems = md1.date_input("DIEMS Date", value=default_diems, format="MM/DD/YYYY", key="mil_diems")
+            mil_system = md2.selectbox("Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="mil_system")
+            mil_pay_base = md3.number_input("Pay Base (High-36 Avg or Final Base Pay $/mo)", min_value=0, step=100, key="mil_pay_base")
             
             st.markdown("**Disability & Survivor Options**")
             mv1, mv2, mv3 = st.columns(3)
@@ -281,15 +272,10 @@ with nav1:
             s_mil_discharge = smr2.selectbox("Spouse Character of Service", ["Honorable Discharge", "General Discharge (Under Honorable Conditions)", "Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge", "Uncharacterized Separation"], key="s_mil_discharge")
             
             smd1, smd2, smd3 = st.columns(3)
-            # Replaced date_input with 3 exact number fields to bypass Streamlit format overrides
-            s_mil_diems_d = smd1.number_input("Spouse DIEMS Day", min_value=1, max_value=31, value=1, key="s_mil_diems_d")
-            s_mil_diems_m = smd2.number_input("Spouse DIEMS Month", min_value=1, max_value=12, value=1, key="s_mil_diems_m")
-            s_mil_diems_y = smd3.number_input("Spouse DIEMS Year", min_value=1950, max_value=2030, value=2005, key="s_mil_diems_y")
-            st.session_state.s_mil_diems = datetime.date(s_mil_diems_y, s_mil_diems_m, s_mil_diems_d).isoformat()
-            
-            sms1, sms2 = st.columns(2)
-            s_mil_system = sms1.selectbox("Spouse Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="s_mil_system")
-            s_mil_pay_base = sms2.number_input("Spouse Pay Base ($/mo)", min_value=0, step=100, key="s_mil_pay_base")
+            s_default_diems = datetime.date.fromisoformat(st.session_state.s_mil_diems) if isinstance(st.session_state.s_mil_diems, str) else st.session_state.s_mil_diems
+            s_mil_diems = smd1.date_input("Spouse DIEMS Date", value=s_default_diems, format="MM/DD/YYYY", key="s_mil_diems")
+            s_mil_system = smd2.selectbox("Spouse Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="s_mil_system")
+            s_mil_pay_base = smd3.number_input("Spouse Pay Base ($/mo)", min_value=0, step=100, key="s_mil_pay_base")
             
             st.markdown("**Spouse Disability & Survivor Options**")
             smv1, smv2, smv3 = st.columns(3)
@@ -317,10 +303,32 @@ with nav1:
         
         st.markdown("**Healthcare**")
         c9, c10, c11 = st.columns(3)
-        health_options = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard", "Aetna Open Access", "Aetna Direct", "Aetna Advantage", "Cigna", "TRICARE for Life", "None/Self-Insure"]
+        health_options = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard", "Aetna Open Access", "Aetna Direct", "Aetna Advantage", "Cigna", "TRICARE for Life", "None/Self-Insure", "Spouse's Insurance", "Affordable Care Act"]
         health_plan = c9.selectbox("Retiree Health Coverage", health_options, key="health_plan")
         health_cost = c10.number_input("Annual Health Premium ($)", min_value=0, step=100, key="health_cost")
         oop_cost = c11.number_input("Typical Out-of-Pocket Medical ($)", min_value=0, step=100, key="oop_cost")
+
+        if health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
+            st.markdown("---")
+            st.markdown("#### 🏥 Medicare vs. ACA Transition Logic")
+            st.info("Because you selected a non-federal or unsupported private insurance path, the stochastic engine must determine exactly when and how you transition to Medicare. Please answer the following:")
+            
+            c_aca1, c_aca2 = st.columns(2)
+            has_40_q = c_aca1.radio("Do you (or your spouse) have 40 quarters (10 years) of Medicare-taxed work history?", ["Yes", "No"], index=0 if st.session_state.has_40_quarters else 1)
+            st.session_state.has_40_quarters = (has_40_q == "Yes")
+            
+            if not st.session_state.has_40_quarters:
+                intent_to_work = c_aca2.radio("Do you intend to work and gain 40 quarters before age 65?", ["Yes", "No"], index=0 if st.session_state.intent_to_work_40_quarters else 1)
+                st.session_state.intent_to_work_40_quarters = (intent_to_work == "Yes")
+            else:
+                st.session_state.intent_to_work_40_quarters = False
+
+            c_aca3, c_aca4 = st.columns(2)
+            has_kids = c_aca3.radio("Are there dependent children (under age 26) currently covered on your plan?", ["Yes", "No"], index=0 if st.session_state.has_dependent_children else 1)
+            st.session_state.has_dependent_children = (has_kids == "Yes")
+
+            wants_dv = c_aca4.radio("Do you plan to maintain standalone routine dental/vision coverage after 65?", ["Yes", "No"], index=0 if st.session_state.wants_dental_vision else 1)
+            st.session_state.wants_dental_vision = (wants_dv == "Yes")
 
     with st.expander("🏛️ Savings & Assets", expanded=not has_run):
         st.markdown("**Current Portfolios & Strategies**")
@@ -377,9 +385,10 @@ with nav1:
     if submit:
         final_tax_basis = st.session_state.tax_basis if st.session_state.tax_basis is not None else st.session_state.tax_b
         
-        vital_checks = {"Primary Current Age": st.session_state.cur_age, "Primary Life Expectancy": st.session_state.life_exp}
+        vital_checks = {"Primary Current Age": st.session_state.cur_age, "Primary Date of Retirement": st.session_state.ret_date, "Primary Life Expectancy": st.session_state.life_exp}
         if st.session_state.filing_status == 'MFJ':
             vital_checks["Spouse Current Age"] = st.session_state.spouse_age
+            vital_checks["Spouse Date of Retirement"] = st.session_state.s_ret_date
             vital_checks["Spouse Life Exp"] = st.session_state.spouse_life_exp
             
         missing_vitals = [name for name, val in vital_checks.items() if val is None or val == 0]
@@ -391,23 +400,10 @@ with nav1:
             try: return int(float(val)) if val else 0
             except: return 0
 
-        # Create python date objects out of the new UI boxes to pass cleanly to the engine
-        ret_year_val = safe_int(st.session_state.p_ret_year)
-        ret_month_val = safe_int(st.session_state.p_ret_month)
-        
-        s_ret_year_val = safe_int(st.session_state.s_ret_year)
-        s_ret_month_val = safe_int(st.session_state.s_ret_month)
-        
-        current_yr = datetime.date.today().year
-        
-        calc_ret_age = safe_int(st.session_state.cur_age) + max(0, ret_year_val - current_yr)
-        calc_s_ret_age = safe_int(st.session_state.spouse_age) + max(0, s_ret_year_val - current_yr)
-
         inputs = {
-            'current_age': safe_int(st.session_state.cur_age), 'life_expectancy': safe_int(st.session_state.life_exp),
-            'ret_year': ret_year_val, 'ret_month': ret_month_val, 'ret_age': calc_ret_age,
+            'current_age': safe_int(st.session_state.cur_age), 'ret_date': st.session_state.ret_date.isoformat() if isinstance(st.session_state.ret_date, datetime.date) else st.session_state.ret_date, 'life_expectancy': safe_int(st.session_state.life_exp),
             'spouse_age': safe_int(st.session_state.spouse_age) if st.session_state.spouse_age else safe_int(st.session_state.cur_age), 
-            's_ret_year': s_ret_year_val, 's_ret_month': s_ret_month_val, 's_ret_age': calc_s_ret_age,
+            's_ret_date': st.session_state.s_ret_date.isoformat() if isinstance(st.session_state.s_ret_date, datetime.date) else st.session_state.s_ret_date, 
             'spouse_life_exp': safe_int(st.session_state.spouse_life_exp) if st.session_state.spouse_life_exp else safe_int(st.session_state.life_exp),
             'filing_status': st.session_state.filing_status, 'state': st.session_state.state, 'county': st.session_state.county, 
             
@@ -416,7 +412,7 @@ with nav1:
             'p_taxable_contrib': safe_int(st.session_state.p_taxable_contrib), 'p_roth_contrib': safe_int(st.session_state.p_roth_contrib), 
             'p_cash_contrib': safe_int(st.session_state.p_cash_contrib), 'p_hsa_contrib': safe_int(st.session_state.p_hsa_contrib),
             
-            'phased_ret_active': st.session_state.phased_ret_active, 'phased_ret_age': safe_int(st.session_state.phased_ret_age or calc_ret_age),
+            'phased_ret_active': st.session_state.phased_ret_active, 'phased_ret_age': safe_int(st.session_state.phased_ret_age or 65),
             'pension_type': st.session_state.pension_type, 'pension_est': safe_int(st.session_state.pension_est), 'survivor_benefit': st.session_state.survivor_benefit,
             
             'mil_active': st.session_state.mil_active, 'mil_component': st.session_state.mil_component,
@@ -433,7 +429,6 @@ with nav1:
             's_taxable_contrib': safe_int(st.session_state.s_taxable_contrib), 's_roth_contrib': safe_int(st.session_state.s_roth_contrib), 
             's_cash_contrib': safe_int(st.session_state.s_cash_contrib), 's_hsa_contrib': safe_int(st.session_state.s_hsa_contrib),
             
-            's_phased_ret_active': st.session_state.s_phased_ret_active, 's_phased_ret_age': safe_int(st.session_state.s_phased_ret_age or calc_s_ret_age),
             's_pension_type': st.session_state.s_pension_type, 's_pension_est': safe_int(st.session_state.s_pension_est), 's_survivor_benefit': st.session_state.s_survivor_benefit,
             
             's_mil_active': st.session_state.s_mil_active, 's_mil_component': st.session_state.s_mil_component,
@@ -448,7 +443,11 @@ with nav1:
             'min_spending': safe_int(st.session_state.min_spending), 'max_spending': safe_int(st.session_state.max_spending),
             'additional_expenses': safe_int(st.session_state.add_exp),
             'max_tax_bracket': float(st.session_state.max_tax_bracket.strip('%'))/100,
+            
             'health_plan': st.session_state.health_plan, 'health_cost': safe_int(st.session_state.health_cost), 'oop_cost': safe_int(st.session_state.oop_cost), 
+            'has_40_quarters': st.session_state.has_40_quarters, 'intent_to_work_40_quarters': st.session_state.intent_to_work_40_quarters,
+            'has_dependent_children': st.session_state.has_dependent_children, 'wants_dental_vision': st.session_state.wants_dental_vision,
+            
             'mortgage_pmt': safe_int(st.session_state.mortgage_pmt), 'mortgage_yrs': safe_int(st.session_state.mortgage_yrs),
             'home_value': safe_int(st.session_state.home_value), 'target_floor': safe_int(st.session_state.target_floor),
             
@@ -491,7 +490,9 @@ with nav1:
         prob_success = np.mean(history['total_bal_real'][:, -1] >= 1.0) * 100
         prob_legacy = np.mean(history['total_bal_real'][:, -1] >= max(1.0, inputs['target_floor'])) * 100
 
-        ret_idx = max(0, inputs['ret_year'] - datetime.date.today().year)
+        ret_year = int(inputs['ret_date'].split("-")[0])
+        ret_idx = max(0, ret_year - datetime.datetime.now().year)
+        if ret_idx >= engine_years: ret_idx = engine_years - 1
         
         raw_expenses = np.median(history['taxes_fed'] + history['taxes_state'] + history['medicare_cost'] + history['health_cost'] + history['mortgage_cost'] + history['additional_expenses'], axis=0)[ret_idx]
         raw_spendable = np.median(history['net_spendable'], axis=0)[ret_idx]
@@ -511,7 +512,13 @@ with nav1:
         wealth_increase = roth_results[winner]['wealth'] - roth_results['Baseline (None)']['wealth']
         
         fed_plans = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard"]
-        med_verdict = "Waive Part B & Rely on Retiree Coverage" if inputs['health_plan'] in fed_plans or "TRICARE" in inputs['health_plan'] else "Enroll in Medicare Part B"
+        if inputs['health_plan'] in fed_plans or "TRICARE" in inputs['health_plan']:
+            med_verdict = "Waive Part B & Rely on Retiree Coverage"
+        elif inputs['health_plan'] in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
+            med_verdict = "Medicare Required (40 Quarters Verified)" if inputs.get('has_40_quarters') else "Evaluate Medicare vs ACA Costs"
+        else:
+            med_verdict = "Enroll in Medicare Part B"
+            
         total_medicare_cost = np.sum(np.median(history['medicare_cost'], axis=0))
         
         moop_idx = 1 if inputs['filing_status'] == 'MFJ' else 0
@@ -594,7 +601,7 @@ with nav1:
             col1, col2 = st.columns(2)
             with col1: st.plotly_chart(plot_withdrawal_hierarchy(history, years_arr), use_container_width=True)
             with col2: st.plotly_chart(plot_taxes_and_rmds(history, years_arr), use_container_width=True)
-                
+            
             st.markdown("### Tax-Efficient Withdrawal Strategy Analysis")
             st.table(pd.DataFrame({"Strategy Component": ["Tax-Efficient Withdrawal Order", "Dynamic Downturn Strategy", "Capital Gains (LTCG)", "Impact of Inflation"], "Analysis / Value": ["Normal Years: Fund lifestyle purely from TSP/IRA, allowing Roth to compound tax-free.", "Crash Years: Halt TSP withdrawals. Deplete Cash -> Taxable -> Roth to avoid Sequence Risk.", "The engine tracks your Taxable Cost Basis. When Taxable funds are sold, it applies 0/15/20% LTCG brackets + 3.8% NIIT.", "Expenses rise geometrically with CPI. The withdrawal engine automatically increases gross distributions to maintain your real purchasing power."]}))
 
@@ -665,11 +672,13 @@ with nav1:
             else:
                 st.info(f"🛡️ **Plan Protection Active**: Your {inputs['health_plan']} correctly caps out-of-pocket medical tail-risk at **${moop_cap:,.0f}** per year (inflation adjusted).")
                 
-            fed_plans = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard"]
             if inputs['health_plan'] in fed_plans or "TRICARE" in inputs['health_plan']:
                 st.success("Verdict: **Waive Part B & Rely on Retiree Coverage**")
-            else:
-                st.warning("Verdict: **Enroll in Medicare Part B**")
+            elif inputs['health_plan'] in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
+                if inputs.get('has_40_quarters', False):
+                    st.warning("Verdict: **Enroll in Medicare (40 Quarters Verified)** - You must drop your ACA/Private medical plan at 65 to avoid lifelong Part B penalties.")
+                else:
+                    st.info("Verdict: **Dynamic Transition** - Because you lack 40 quarters, the engine evaluated ACA subsidies versus paying Medicare Part A & B premiums. See chart for actual transitions.")
 
         with t11:
             st.subheader("Strict-Format CSV Data Exports")
@@ -705,15 +714,15 @@ with nav2:
     st.header("Step 1 - Build Your Profile")
     st.subheader("1. Personal & Tax Details")
     st.markdown("""
-    - **Age Inputs:** Enter your current age and the date you plan to fully retire.
+    - **Age & Date Inputs:** Enter your current age and the exact calendar date you plan to separate from service. The engine uses this date to mathematically prorate your salary, savings, and pension in your final working year.
     - **Life Expectancy:** Be conservative. We recommend setting this to 90 or 95. The engine will ensure your money lasts at least until this age.
-    - **Filing Status:** This is critical for tax modeling. If you select MFJ (Married Filing Jointly), ensure you also fill out the Spouse age and life expectancy.
+    - **Filing Status:** This is critical for tax modeling. If you select MFJ (Married Filing Jointly), ensure you also fill out the Spouse age and life expectancy under their respective tab.
     - **Location:** Enter your State and County. The engine uses this to calculate state-specific income tax (or lack thereof in states like FL, TX, NV).
     """)
 
     st.subheader("2. Income & Social Security")
     st.markdown("""
-    - **Current Salary & Savings:** Enter what you earn and save today. The engine assumes you continue this habit until the day you retire.
+    - **Current Salary & Savings:** Enter what you earn and save today. The engine assumes you continue this habit until the date you retire.
     - **Federal & Military Pensions:** 
       - Enter estimated FERS/CSRS unreduced pension alongside any Military pensions. 
       - Adjust survivor benefit options (FERS SBP / Military SBP) which inherently model the 5-10% cost premium reductions while simultaneously protecting the surviving spouse's cash flow in the later years.
@@ -727,7 +736,7 @@ with nav2:
     - **Spending Floors & Caps (optional):**
       - **Minimum:** The absolute lowest "survival" budget you could live on if the markets crashed.
       - **Maximum:** The most you would realistically want to spend even if you became incredibly wealthy.
-    - **Retiree Healthcare:** Select your specific health plan. This allows the engine to model your Maximum Out-of-Pocket (MOOP) risk and Medicare Part B/IRMAA costs.
+    - **Retiree Healthcare:** Select your specific health plan. If you select "Affordable Care Act", "None", or "Spouse's Insurance", the engine will prompt you for additional Quarters of Coverage data to dynamically model your transition to Medicare.
     """)
 
     st.subheader("4. Savings & Assets")
@@ -735,7 +744,7 @@ with nav2:
     - **Current Balances:** Enter the current market value of your accounts.
     - **Strategies:** Choose a strategy for each account.
     - **Money Market (Cash):** This is your "Safety Net." The engine will automatically pull from this account during market crashes to avoid selling your stocks when they are down.
-    - **Health Savings Account (HSA):** *Please Note:* HSA funds are strictly segregated for out-of-pocket medical expenses and are NOT included in the core portfolio survival probability or the Initial Withdrawal Rate (IWR) optimization. Excluding these funds makes the model structurally pessimistic in a non-transparent way, though it is fully expected that these funds will be utilized during your lifetime.
+    - **Health Savings Account (HSA):** *Please Note:* HSA funds are strictly segregated for out-of-pocket medical expenses and are NOT included in the core portfolio survival probability or the Initial Withdrawal Rate (IWR) optimization.
     """)
 
     st.header("Run the Engine")
