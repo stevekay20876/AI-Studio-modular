@@ -42,8 +42,8 @@ with nav1:
     st.markdown("Institution-Grade Monte Carlo Simulator | Constant Amortization Spending Model (CASAM)")
 
     DEFAULT_STATE = {
-        'cur_age': None, 'ret_age': None, 'life_exp': None, 'filing_status': "Single",
-        'spouse_age': None, 's_ret_age': None, 'spouse_life_exp': None, 'state': "", 'county': "",
+        'cur_age': None, 'ret_date': datetime.date.today() + datetime.timedelta(days=365*5), 'life_exp': None, 'filing_status': "Single",
+        'spouse_age': None, 's_ret_date': datetime.date.today() + datetime.timedelta(days=365*5), 'spouse_life_exp': None, 'state': "", 'county': "",
         
         'current_salary': 0, 'p_max_tsp': False, 'p_tsp_contrib': 0, 'p_taxable_contrib': 0, 'p_roth_contrib': 0, 'p_cash_contrib': 0, 'p_hsa_contrib': 0,
         'phased_ret_active': False, 'phased_ret_age': None, 'pension_type': "FERS", 'pension_est': 0, 'survivor_benefit': "Full Survivor Benefit", 
@@ -94,6 +94,9 @@ with nav1:
             state_dict = get_current_state()
             if isinstance(state_dict.get('mil_diems'), datetime.date): state_dict['mil_diems'] = state_dict['mil_diems'].isoformat()
             if isinstance(state_dict.get('s_mil_diems'), datetime.date): state_dict['s_mil_diems'] = state_dict['s_mil_diems'].isoformat()
+            if isinstance(state_dict.get('ret_date'), datetime.date): state_dict['ret_date'] = state_dict['ret_date'].isoformat()
+            if isinstance(state_dict.get('s_ret_date'), datetime.date): state_dict['s_ret_date'] = state_dict['s_ret_date'].isoformat()
+            
             safe_filename = st.session_state.save_file_name.strip()
             if not safe_filename.endswith(".json"): safe_filename += ".json"
             st.download_button("⬇️ Save Current Profile to Computer", data=json.dumps(state_dict, indent=4), file_name=safe_filename, mime="application/json", use_container_width=True)
@@ -105,7 +108,10 @@ with nav1:
     with st.expander("👤 Personal & Tax Details", expanded=not has_run):
         c1, c2, c3 = st.columns(3)
         cur_age = c1.number_input("Primary Current Age", min_value=18, max_value=100, key="cur_age")
-        ret_age = c2.number_input("Primary Full Retirement Age", min_value=18, max_value=100, key="ret_age")
+        
+        p_def_ret_date = datetime.date.fromisoformat(st.session_state.ret_date) if isinstance(st.session_state.ret_date, str) else st.session_state.ret_date
+        ret_date = c2.date_input("Primary Date of Retirement", value=p_def_ret_date, key="ret_date")
+        
         life_exp = c3.number_input("Primary Life Expectancy Age", min_value=50, max_value=120, key="life_exp")
         
         st.markdown("**Tax & Spouse Details**")
@@ -117,7 +123,10 @@ with nav1:
         st.info("If Married Filing Jointly (MFJ), please complete the Spouse details below.")
         c_sp1, c_sp2, c_sp3 = st.columns(3)
         spouse_age = c_sp1.number_input("Spouse Current Age (If MFJ)", min_value=18, max_value=100, key="spouse_age")
-        s_ret_age = c_sp2.number_input("Spouse Retirement Age (If MFJ)", min_value=18, max_value=100, key="s_ret_age")
+        
+        s_def_ret_date = datetime.date.fromisoformat(st.session_state.s_ret_date) if isinstance(st.session_state.s_ret_date, str) else st.session_state.s_ret_date
+        s_ret_date = c_sp2.date_input("Spouse Date of Retirement (If MFJ)", value=s_def_ret_date, key="s_ret_date")
+        
         spouse_life_exp = c_sp3.number_input("Spouse Life Expectancy (If MFJ)", min_value=50, max_value=120, key="spouse_life_exp")
 
     with st.expander("💼 Income & Social Security", expanded=not has_run):
@@ -215,7 +224,7 @@ with nav1:
             mil_years = mc1.number_input("Active Years", min_value=0, max_value=40, key="mil_years")
             mil_months = mc2.number_input("Active Months", min_value=0, max_value=11, key="mil_months")
             mil_days = mc3.number_input("Active Days", min_value=0, max_value=30, key="mil_days")
-            mil_points = mc4.number_input("Total Career Points", min_value=0, help="For Guard/Reserve or Mixed components. Enter your GRAND TOTAL points (which already includes 1 point/day for your active duty time).", key="mil_points")
+            mil_points = mc4.number_input("Total Career Points", min_value=0, help="For Guard/Reserve or Mixed components.", key="mil_points")
 
             st.markdown("**Rank, System & Pay**")
             mr1, mr2 = st.columns(2)
@@ -347,10 +356,9 @@ with nav1:
     if submit:
         final_tax_basis = st.session_state.tax_basis if st.session_state.tax_basis is not None else st.session_state.tax_b
         
-        vital_checks = {"Primary Current Age": st.session_state.cur_age, "Primary Retirement Age": st.session_state.ret_age, "Primary Life Expectancy": st.session_state.life_exp}
+        vital_checks = {"Primary Current Age": st.session_state.cur_age, "Primary Life Expectancy": st.session_state.life_exp}
         if st.session_state.filing_status == 'MFJ':
             vital_checks["Spouse Current Age"] = st.session_state.spouse_age
-            vital_checks["Spouse Retirement Age"] = st.session_state.s_ret_age
             vital_checks["Spouse Life Exp"] = st.session_state.spouse_life_exp
             
         missing_vitals = [name for name, val in vital_checks.items() if val is None or val == 0]
@@ -362,11 +370,24 @@ with nav1:
             try: return int(float(val)) if val else 0
             except: return 0
 
+        # Handle string parsing for dates
+        ret_d = st.session_state.ret_date
+        if isinstance(ret_d, str): ret_d = datetime.date.fromisoformat(ret_d)
+        s_ret_d = st.session_state.s_ret_date
+        if isinstance(s_ret_d, str): s_ret_d = datetime.date.fromisoformat(s_ret_d)
+        
+        current_yr = datetime.date.today().year
+        
+        # We calculate the age they will be based on the year they selected
+        calc_ret_age = safe_int(st.session_state.cur_age) + max(0, ret_d.year - current_yr)
+        calc_s_ret_age = safe_int(st.session_state.spouse_age) + max(0, s_ret_d.year - current_yr)
+
         inputs = {
-            'current_age': safe_int(st.session_state.cur_age), 'ret_age': safe_int(st.session_state.ret_age), 'life_expectancy': safe_int(st.session_state.life_exp),
+            'current_age': safe_int(st.session_state.cur_age), 'life_expectancy': safe_int(st.session_state.life_exp),
+            'ret_year': ret_d.year, 'ret_month': ret_d.month, 'ret_age': calc_ret_age,
             'spouse_age': safe_int(st.session_state.spouse_age) if st.session_state.spouse_age else safe_int(st.session_state.cur_age), 
-            's_ret_age': safe_int(st.session_state.s_ret_age) if st.session_state.s_ret_age else safe_int(st.session_state.ret_age), 
             'spouse_life_exp': safe_int(st.session_state.spouse_life_exp) if st.session_state.spouse_life_exp else safe_int(st.session_state.life_exp),
+            's_ret_year': s_ret_d.year, 's_ret_month': s_ret_d.month, 's_ret_age': calc_s_ret_age,
             'filing_status': st.session_state.filing_status, 'state': st.session_state.state, 'county': st.session_state.county, 
             
             'current_salary': safe_int(st.session_state.current_salary), 
@@ -374,7 +395,7 @@ with nav1:
             'p_taxable_contrib': safe_int(st.session_state.p_taxable_contrib), 'p_roth_contrib': safe_int(st.session_state.p_roth_contrib), 
             'p_cash_contrib': safe_int(st.session_state.p_cash_contrib), 'p_hsa_contrib': safe_int(st.session_state.p_hsa_contrib),
             
-            'phased_ret_active': st.session_state.phased_ret_active, 'phased_ret_age': safe_int(st.session_state.phased_ret_age or st.session_state.ret_age),
+            'phased_ret_active': st.session_state.phased_ret_active, 'phased_ret_age': safe_int(st.session_state.phased_ret_age or calc_ret_age),
             'pension_type': st.session_state.pension_type, 'pension_est': safe_int(st.session_state.pension_est), 'survivor_benefit': st.session_state.survivor_benefit,
             
             'mil_active': st.session_state.mil_active, 'mil_component': st.session_state.mil_component,
@@ -391,6 +412,7 @@ with nav1:
             's_taxable_contrib': safe_int(st.session_state.s_taxable_contrib), 's_roth_contrib': safe_int(st.session_state.s_roth_contrib), 
             's_cash_contrib': safe_int(st.session_state.s_cash_contrib), 's_hsa_contrib': safe_int(st.session_state.s_hsa_contrib),
             
+            's_phased_ret_active': st.session_state.s_phased_ret_active, 's_phased_ret_age': safe_int(st.session_state.s_phased_ret_age or calc_s_ret_age),
             's_pension_type': st.session_state.s_pension_type, 's_pension_est': safe_int(st.session_state.s_pension_est), 's_survivor_benefit': st.session_state.s_survivor_benefit,
             
             's_mil_active': st.session_state.s_mil_active, 's_mil_component': st.session_state.s_mil_component,
@@ -448,7 +470,7 @@ with nav1:
         prob_success = np.mean(history['total_bal_real'][:, -1] >= 1.0) * 100
         prob_legacy = np.mean(history['total_bal_real'][:, -1] >= max(1.0, inputs['target_floor'])) * 100
 
-        ret_idx = max(0, inputs['ret_age'] - inputs['current_age'])
+        ret_idx = max(0, inputs['ret_year'] - datetime.date.today().year)
         
         raw_expenses = np.median(history['taxes_fed'] + history['taxes_state'] + history['medicare_cost'] + history['health_cost'] + history['mortgage_cost'] + history['additional_expenses'], axis=0)[ret_idx]
         raw_spendable = np.median(history['net_spendable'], axis=0)[ret_idx]

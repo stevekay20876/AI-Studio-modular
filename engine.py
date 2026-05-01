@@ -198,12 +198,18 @@ class StochasticRetirementEngine:
         }
 
         age = self.inputs['current_age']
-        ret_age = self.inputs['ret_age']
+        
+        # --- FIXED: Extract Ret_Year strictly from the user's Date object ---
+        ret_year = self.inputs['ret_year']
+        ret_month = self.inputs['ret_month']
+        
         spouse_age = self.inputs.get('spouse_age', age)
-        s_ret_age = self.inputs.get('s_ret_age', ret_age)
+        s_ret_year = self.inputs.get('s_ret_year', ret_year)
+        s_ret_month = self.inputs.get('s_ret_month', 1)
+        
         primary_life_exp = self.inputs['life_expectancy']
         spouse_life_exp = self.inputs.get('spouse_life_exp', 95)
-        current_year = datetime.datetime.now().year
+        current_year = datetime.date.today().year
         
         base_filing_status = self.inputs['filing_status']
         pay_taxes_from_cash = self.inputs.get('pay_taxes_from_cash', True)
@@ -231,6 +237,13 @@ class StochasticRetirementEngine:
             age += 1
             spouse_age += 1
             current_year += 1
+            
+            # --- FIXED: Apply Fractional Year Math ---
+            p_work_frac = 1.0 if current_year < ret_year else (ret_month/12.0 if current_year == ret_year else 0.0)
+            p_ret_frac = 0.0 if current_year < ret_year else ((12.0 - ret_month)/12.0 if current_year == ret_year else 1.0)
+            
+            s_work_frac = 1.0 if current_year < s_ret_year else (s_ret_month/12.0 if current_year == s_ret_year else 0.0)
+            s_ret_frac = 0.0 if current_year < s_ret_year else ((12.0 - s_ret_month)/12.0 if current_year == s_ret_year else 1.0)
             
             primary_alive = age <= primary_life_exp
             spouse_alive = spouse_age <= spouse_life_exp if base_filing_status == 'MFJ' else False
@@ -275,7 +288,6 @@ class StochasticRetirementEngine:
             yr_pension = np.zeros(self.iterations)
             yr_va = np.zeros(self.iterations)
             yr_ss = np.zeros(self.iterations)
-            yr_savings = np.zeros(self.iterations)
 
             inf_floor = np.maximum(0, inf_paths[:, yr])
             
@@ -308,26 +320,31 @@ class StochasticRetirementEngine:
             p_active_ss = p_base_ss * p_ss_modifier * ss_haircut
             
             if primary_alive:
-                if age < ret_age:
-                    if self.inputs.get('phased_ret_active', False) and age >= self.inputs.get('phased_ret_age', ret_age):
-                        yr_salary += p_salary_inf * 0.50
-                        yr_pension += p_base_pension * 0.50 * p_pension_mult
-                    else:
-                        yr_salary += p_salary_inf
-                        if p_max_tsp:
-                            if age < 50: p_tsp_c_yr = 24500 * cum_inf
-                            elif 50 <= age <= 59: p_tsp_c_yr = 32500 * cum_inf
-                            elif 60 <= age <= 63: p_tsp_c_yr = 35750 * cum_inf
-                            else: p_tsp_c_yr = 32500 * cum_inf
-                        else: p_tsp_c_yr = p_tsp_c * cum_inf
-                        tsp += p_tsp_c_yr
-                        taxable += p_tax_c * cum_inf
-                        taxable_basis += p_tax_c * cum_inf
-                        roth += p_roth_c * cum_inf
-                        cash += p_cash_c * cum_inf
-                        hsa += p_hsa_c * cum_inf
+                is_p_phased = self.inputs.get('phased_ret_active', False) and age >= self.inputs.get('phased_ret_age', 999) and current_year < ret_year
+                
+                if is_p_phased:
+                    yr_salary += p_salary_inf * 0.50
+                    yr_pension += p_base_pension * 0.50 * p_pension_mult
+                    p_work_frac_eff = 0.50
                 else:
-                    yr_pension += p_base_pension * p_pension_mult
+                    yr_salary += p_salary_inf * p_work_frac
+                    yr_pension += p_base_pension * p_pension_mult * p_ret_frac
+                    p_work_frac_eff = p_work_frac
+                    
+                if p_work_frac_eff > 0:
+                    if p_max_tsp:
+                        if age < 50: p_tsp_c_yr = 24500 * cum_inf
+                        elif 50 <= age <= 59: p_tsp_c_yr = 32500 * cum_inf
+                        elif 60 <= age <= 63: p_tsp_c_yr = 35750 * cum_inf
+                        else: p_tsp_c_yr = 32500 * cum_inf
+                    else: p_tsp_c_yr = p_tsp_c * cum_inf
+                    
+                    tsp += p_tsp_c_yr * p_work_frac_eff
+                    taxable += p_tax_c * cum_inf * p_work_frac_eff
+                    taxable_basis += p_tax_c * cum_inf * p_work_frac_eff
+                    roth += p_roth_c * cum_inf * p_work_frac_eff
+                    cash += p_cash_c * cum_inf * p_work_frac_eff
+                    hsa += p_hsa_c * cum_inf * p_work_frac_eff
                     
                 if age >= p_mil_start_age:
                     offset = p_base_va if not p_crdp else np.zeros(self.iterations)
@@ -342,26 +359,31 @@ class StochasticRetirementEngine:
 
             s_active_ss = s_base_ss * s_ss_modifier * ss_haircut
             if spouse_alive:
-                if spouse_age < s_ret_age:
-                    if self.inputs.get('s_phased_ret_active', False) and spouse_age >= self.inputs.get('s_phased_ret_age', s_ret_age):
-                        yr_salary += s_salary_inf * 0.50
-                        yr_pension += s_base_pension * 0.50 * s_pension_mult
-                    else:
-                        yr_salary += s_salary_inf
-                        if s_max_tsp:
-                            if spouse_age < 50: s_tsp_c_yr = 24500 * cum_inf
-                            elif 50 <= spouse_age <= 59: s_tsp_c_yr = 32500 * cum_inf
-                            elif 60 <= spouse_age <= 63: s_tsp_c_yr = 35750 * cum_inf
-                            else: s_tsp_c_yr = 32500 * cum_inf
-                        else: s_tsp_c_yr = s_tsp_c * cum_inf
-                        tsp += s_tsp_c_yr
-                        taxable += s_tax_c * cum_inf
-                        taxable_basis += s_tax_c * cum_inf
-                        roth += s_roth_c * cum_inf
-                        cash += s_cash_c * cum_inf
-                        hsa += s_hsa_c * cum_inf
+                is_s_phased = self.inputs.get('s_phased_ret_active', False) and spouse_age >= self.inputs.get('s_phased_ret_age', 999) and current_year < s_ret_year
+                
+                if is_s_phased:
+                    yr_salary += s_salary_inf * 0.50
+                    yr_pension += s_base_pension * 0.50 * s_pension_mult
+                    s_work_frac_eff = 0.50
                 else:
-                    yr_pension += s_base_pension * s_pension_mult
+                    yr_salary += s_salary_inf * s_work_frac
+                    yr_pension += s_base_pension * s_pension_mult * s_ret_frac
+                    s_work_frac_eff = s_work_frac
+                    
+                if s_work_frac_eff > 0:
+                    if s_max_tsp:
+                        if spouse_age < 50: s_tsp_c_yr = 24500 * cum_inf
+                        elif 50 <= spouse_age <= 59: s_tsp_c_yr = 32500 * cum_inf
+                        elif 60 <= spouse_age <= 63: s_tsp_c_yr = 35750 * cum_inf
+                        else: s_tsp_c_yr = 32500 * cum_inf
+                    else: s_tsp_c_yr = s_tsp_c * cum_inf
+                    
+                    tsp += s_tsp_c_yr * s_work_frac_eff
+                    taxable += s_tax_c * cum_inf * s_work_frac_eff
+                    taxable_basis += s_tax_c * cum_inf * s_work_frac_eff
+                    roth += s_roth_c * cum_inf * s_work_frac_eff
+                    cash += s_cash_c * cum_inf * s_work_frac_eff
+                    hsa += s_hsa_c * cum_inf * s_work_frac_eff
                     
                 if spouse_age >= s_mil_start_age:
                     offset = s_base_va if not s_crdp else np.zeros(self.iterations)
@@ -397,8 +419,8 @@ class StochasticRetirementEngine:
             history['va_income'][:, yr] = yr_va
             history['ss_income'][:, yr] = yr_ss
             
-            total_guaranteed = yr_pension + yr_va + yr_ss + yr_salary
-            history['guaranteed_income'][:, yr] = total_guaranteed
+            total_guaranteed_actual = yr_pension + yr_va + yr_ss + yr_salary
+            history['guaranteed_income'][:, yr] = total_guaranteed_actual
             
             prev_total_port = tsp + ira + roth + taxable + cash
             tsp *= (1 + returns[:, yr, 1])
@@ -418,17 +440,21 @@ class StochasticRetirementEngine:
             w_needed = np.zeros(self.iterations)
             constraint_flag = np.zeros(self.iterations)
             
-            if age == ret_age or (yr == 0 and age >= ret_age):
-                target_lifestyle = (current_total_port * iwr) + total_guaranteed
+            # Use Primary ret_year as the master lock-in for the Target Lifestyle
+            if current_year == ret_year or (yr == 0 and current_year > ret_year):
+                # Calculate what the full steady-state guaranteed income would be (not partial)
+                ann_pension = (p_base_pension * p_pension_mult if primary_alive else 0) + (s_base_pension * s_pension_mult if spouse_alive else 0)
+                ann_guaranteed = ann_pension + yr_va + yr_ss
+                target_lifestyle = (current_total_port * iwr) + ann_guaranteed
                 ref_draw = current_total_port * iwr 
                 
-            if age >= ret_age:
-                if yr > 0 and age > ret_age:
+            if current_year >= ret_year:
+                if yr > 0 and current_year > ret_year:
                     port_ret_prev = history['port_return'][:, yr-1]
                     inf_adj = np.where(port_ret_prev <= -0.10, 0, inf_paths[:, yr])
                     target_lifestyle *= (1 + inf_adj)
                     
-                    w_needed = np.maximum(0, target_lifestyle - total_guaranteed)
+                    w_needed = np.maximum(0, target_lifestyle - total_guaranteed_actual)
                     ref_gap = ref_draw * cum_inf
                     
                     prosperity = w_needed < (ref_gap * 0.8)
@@ -454,15 +480,20 @@ class StochasticRetirementEngine:
                 inflated_min_spend = min_spending * cum_inf
                 inflated_max_spend = max_spending * cum_inf if max_spending > 0 else np.full(self.iterations, np.inf)
                 
-                target_lifestyle = np.clip(target_lifestyle, inflated_min_spend + total_guaranteed, inflated_max_spend + total_guaranteed)
-                w_needed = np.maximum(0, target_lifestyle - total_guaranteed)
+                target_lifestyle = np.clip(target_lifestyle, inflated_min_spend + total_guaranteed_actual, inflated_max_spend + total_guaranteed_actual)
+                w_needed = np.maximum(0, target_lifestyle - total_guaranteed_actual)
 
             history['constraint_active'][:, yr] = constraint_flag
             history['income_gap'][:, yr] = w_needed
             
-            rmd_divisor = IRS_RMD_DIVISORS.get(age, 1.9 if age > 120 else 0.0)
-            s_rmd_divisor = IRS_RMD_DIVISORS.get(spouse_age, 1.9 if spouse_age > 120 else 0.0)
+            # Use exact calculated age for RMD divisors
+            p_rmd_age = self.inputs['ret_age'] + yr if yr > 0 else self.inputs['current_age']
+            s_rmd_age = self.inputs['s_ret_age'] + yr if yr > 0 else self.inputs['spouse_age']
             
+            rmd_divisor = IRS_RMD_DIVISORS.get(p_rmd_age, 1.9 if p_rmd_age > 120 else 0.0)
+            s_rmd_divisor = IRS_RMD_DIVISORS.get(s_rmd_age, 1.9 if s_rmd_age > 120 else 0.0)
+            
+            # Simplified pooled RMD
             rmd_tsp = tsp * (1.0 / rmd_divisor if rmd_divisor > 0 else 0.0)
             rmd_ira = ira * (1.0 / rmd_divisor if rmd_divisor > 0 else 0.0)
             rmds = rmd_tsp + rmd_ira
@@ -477,7 +508,7 @@ class StochasticRetirementEngine:
             
             w_tsp, w_ira, w_cash, w_taxable, w_roth = np.zeros(self.iterations), np.zeros(self.iterations), np.zeros(self.iterations), np.zeros(self.iterations), np.zeros(self.iterations)
             
-            if age >= ret_age:
+            if current_year >= ret_year:
                 downturn_state = history['port_return'][:, yr-1] <= -0.10 if yr > 0 else np.zeros(self.iterations, dtype=bool)
                 normal_state = ~downturn_state
                 
@@ -732,8 +763,8 @@ class StochasticRetirementEngine:
             current_mortgage = np.full(self.iterations, mortgage_pmt if yr < mortgage_yrs else 0.0)
             history['mortgage_cost'][:, yr] = current_mortgage
             
-            if age >= ret_age:
-                years_in_ret = age - ret_age
+            if current_year >= ret_year:
+                years_in_ret = current_year - ret_year
                 smile_mult = 1.0 - (0.015 * years_in_ret) + (0.0005 * (years_in_ret ** 2))
                 current_add_exp = base_add_exp * cum_inf * smile_mult
             else:
@@ -747,7 +778,7 @@ class StochasticRetirementEngine:
             history['cash_bal'][:, yr] = cash
             history['hsa_bal'][:, yr] = hsa
             
-            if age >= ret_age:
+            if current_year >= ret_year:
                 total_deductions = total_tax_fed + total_tax_state + medicare_cost + history['health_cost'][:, yr] + current_mortgage + current_add_exp
                 history['net_spendable'][:, yr] = actual_portfolio_withdrawal + yr_pension + yr_va + yr_ss + yr_salary - total_deductions
             else:
