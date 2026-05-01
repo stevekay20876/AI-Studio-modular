@@ -106,30 +106,36 @@ with nav1:
     st.markdown("### Build Your Profile")
     
     with st.expander("👤 Personal & Tax Details", expanded=not has_run):
-        c1, c2, c3 = st.columns(3)
-        cur_age = c1.number_input("Primary Current Age", min_value=18, max_value=100, key="cur_age")
-        
-        p_def_ret_date = datetime.date.fromisoformat(st.session_state.ret_date) if isinstance(st.session_state.ret_date, str) else st.session_state.ret_date
-        # FIXED FORMAT: MM/DD/YYYY
-        ret_date = c2.date_input("Primary Date of Retirement", value=p_def_ret_date, format="DD/MM/YYYY", key="ret_date")
-        
-        life_exp = c3.number_input("Primary Life Expectancy Age", min_value=50, max_value=120, key="life_exp")
-        
-        st.markdown("**Tax & Spouse Details**")
+        st.markdown("**Household Tax Details**")
         c4, c5, c6 = st.columns(3)
         filing_status = c4.selectbox("Tax Filing Status", ["Single", "MFJ"], key="filing_status")
         state_in = c5.text_input("State of Residence", key="state")
         county_in = c6.text_input("County of Residence", key="county")
+
+        t_per_p, t_per_s = st.tabs(["Primary", "Spouse (If MFJ)"])
         
-        st.info("If Married Filing Jointly (MFJ), please complete the Spouse details below.")
-        c_sp1, c_sp2, c_sp3 = st.columns(3)
-        spouse_age = c_sp1.number_input("Spouse Current Age (If MFJ)", min_value=18, max_value=100, key="spouse_age")
-        
-        s_def_ret_date = datetime.date.fromisoformat(st.session_state.s_ret_date) if isinstance(st.session_state.s_ret_date, str) else st.session_state.s_ret_date
-        # FIXED FORMAT: MM/DD/YYYY
-        s_ret_date = c_sp2.date_input("Spouse Date of Retirement (If MFJ)", value=s_def_ret_date, format="DD/MM/YYYY", key="s_ret_date")
-        
-        spouse_life_exp = c_sp3.number_input("Spouse Life Expectancy (If MFJ)", min_value=50, max_value=120, key="spouse_life_exp")
+        with t_per_p:
+            c1, c2, c3 = st.columns(3)
+            cur_age = c1.number_input("Primary Current Age", min_value=18, max_value=100, key="cur_age")
+            
+            # --- FULLY FIXED: Using string representation directly to force format ---
+            p_def_ret_date_str = st.session_state.ret_date.strftime("%Y-%m-%d") if isinstance(st.session_state.ret_date, datetime.date) else st.session_state.ret_date
+            ret_date_raw = c2.date_input("Primary Date of Retirement", value=datetime.date.fromisoformat(p_def_ret_date_str), format="DD/MM/YYYY", key="ret_date_widget")
+            st.session_state.ret_date = ret_date_raw # Sync back to state
+            
+            life_exp = c3.number_input("Primary Life Expectancy Age", min_value=50, max_value=120, key="life_exp")
+
+        with t_per_s:
+            st.info("If Married Filing Jointly (MFJ), please complete the Spouse details below.")
+            c_sp1, c_sp2, c_sp3 = st.columns(3)
+            spouse_age = c_sp1.number_input("Spouse Current Age (If MFJ)", min_value=18, max_value=100, key="spouse_age")
+            
+            # --- FULLY FIXED: Using string representation directly to force format ---
+            s_def_ret_date_str = st.session_state.s_ret_date.strftime("%Y-%m-%d") if isinstance(st.session_state.s_ret_date, datetime.date) else st.session_state.s_ret_date
+            s_ret_date_raw = c_sp2.date_input("Spouse Date of Retirement (If MFJ)", value=datetime.date.fromisoformat(s_def_ret_date_str), format="DD/MM/YYYY", key="s_ret_date_widget")
+            st.session_state.s_ret_date = s_ret_date_raw # Sync back to state
+            
+            spouse_life_exp = c_sp3.number_input("Spouse Life Expectancy (If MFJ)", min_value=50, max_value=120, key="spouse_life_exp")
 
     with st.expander("💼 Income & Social Security", expanded=not has_run):
         t_inc_p, t_inc_s = st.tabs(["Primary", "Spouse (If MFJ)"])
@@ -236,7 +242,9 @@ with nav1:
             md1, md2, md3 = st.columns(3)
             default_diems = datetime.date.fromisoformat(st.session_state.mil_diems) if isinstance(st.session_state.mil_diems, str) else st.session_state.mil_diems
             # FIXED FORMAT: DD/MM/YYYY
-            mil_diems = md1.date_input("DIEMS Date", value=default_diems, format="DD/MM/YYYY", key="mil_diems")
+            mil_diems = md1.date_input("DIEMS Date", value=default_diems, format="DD/MM/YYYY", key="mil_diems_widget")
+            st.session_state.mil_diems = mil_diems
+            
             mil_system = md2.selectbox("Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="mil_system")
             mil_pay_base = md3.number_input("Pay Base (High-36 Avg or Final Base Pay $/mo)", min_value=0, step=100, key="mil_pay_base")
             
@@ -270,7 +278,9 @@ with nav1:
             smd1, smd2, smd3 = st.columns(3)
             s_default_diems = datetime.date.fromisoformat(st.session_state.s_mil_diems) if isinstance(st.session_state.s_mil_diems, str) else st.session_state.s_mil_diems
             # FIXED FORMAT: DD/MM/YYYY
-            s_mil_diems = smd1.date_input("Spouse DIEMS Date", value=s_default_diems, format="DD/MM/YYYY", key="s_mil_diems")
+            s_mil_diems = smd1.date_input("Spouse DIEMS Date", value=s_default_diems, format="DD/MM/YYYY", key="s_mil_diems_widget")
+            st.session_state.s_mil_diems = s_mil_diems
+            
             s_mil_system = smd2.selectbox("Spouse Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="s_mil_system")
             s_mil_pay_base = smd3.number_input("Spouse Pay Base ($/mo)", min_value=0, step=100, key="s_mil_pay_base")
             
@@ -432,6 +442,7 @@ with nav1:
             'mortgage_pmt': safe_int(st.session_state.mortgage_pmt), 'mortgage_yrs': safe_int(st.session_state.mortgage_yrs),
             'home_value': safe_int(st.session_state.home_value), 'target_floor': safe_int(st.session_state.target_floor),
             
+            # MERGED BALANCES
             'tsp_bal': safe_int(st.session_state.tsp_b) + safe_int(st.session_state.s_tsp_b), 
             'tsp_strat': st.session_state.tsp_strat,
             'ira_bal': safe_int(st.session_state.ira_b) + safe_int(st.session_state.s_ira_b), 
@@ -684,7 +695,7 @@ with nav2:
     st.header("Step 1 - Build Your Profile")
     st.subheader("1. Personal & Tax Details")
     st.markdown("""
-    - **Age Inputs:** Enter your current age and the age you plan to fully retire.
+    - **Age Inputs:** Enter your current age and the date you plan to fully retire.
     - **Life Expectancy:** Be conservative. We recommend setting this to 90 or 95. The engine will ensure your money lasts at least until this age.
     - **Filing Status:** This is critical for tax modeling. If you select MFJ (Married Filing Jointly), ensure you also fill out the Spouse age and life expectancy.
     - **Location:** Enter your State and County. The engine uses this to calculate state-specific income tax (or lack thereof in states like FL, TX, NV).
