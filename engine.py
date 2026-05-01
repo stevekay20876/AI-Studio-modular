@@ -61,9 +61,6 @@ class StochasticRetirementEngine:
         returns = np.exp(drifts + correlated_shocks) - 1
         inf_paths = np.zeros((self.iterations, self.years))
         
-        # --- FIXED INFLATION DRIFT CALIBRATION ---
-        # The base is lowered to 2.1%. With a 4% chance of a +4% jump and kappa at 0.25,
-        # the mathematical expected value (the median path) balances perfectly at ~2.7% CPI.
         inf_base, kappa, jump_prob, dt = 0.021, 0.25, 0.04, 1.0            
         sqrt_dt = np.sqrt(dt)
         current_inf = np.full(self.iterations, inf_base)
@@ -73,8 +70,6 @@ class StochasticRetirementEngine:
             jumps = np.where(np.random.rand(self.iterations) < jump_prob, np.random.uniform(0.03, 0.05, self.iterations), 0)
             current_inf = current_inf + kappa * (inf_base - current_inf) * dt + dW + jumps
             inf_paths[:, yr] = np.clip(current_inf, -0.01, 0.15) 
-            
-            # Equity penalty only applies in severe shock environments (CPI > 5%)
             stagflation_shock = np.where(inf_paths[:, yr] > 0.05, -1.5 * (inf_paths[:, yr] - 0.05), 0)
             returns[:, yr, 1:] += stagflation_shock[:, None]
             
@@ -178,9 +173,6 @@ class StochasticRetirementEngine:
         s_months_early, s_months_late = max(0, (67 - s_ss_claim) * 12), max(0, (s_ss_claim - 67) * 12)
         s_ss_modifier = 1.0 - ((min(36, s_months_early) * (5/900)) + (max(0, s_months_early - 36) * (5/1200))) + (s_months_late * (8/1200))
         s_base_ss = np.full(self.iterations, float(self.inputs.get('s_ss_fra', 0)))
-        
-        scheduled_withdrawal = np.zeros(self.iterations)
-        initial_withdrawal_arr = np.zeros(self.iterations)
         
         history = {
             'total_bal': np.zeros((self.iterations, self.years)), 'total_bal_real': np.zeros((self.iterations, self.years)), 
@@ -322,15 +314,12 @@ class StochasticRetirementEngine:
                         yr_pension += p_base_pension * 0.50 * p_pension_mult
                     else:
                         yr_salary += p_salary_inf
-                        
                         if p_max_tsp:
                             if age < 50: p_tsp_c_yr = 24500 * cum_inf
                             elif 50 <= age <= 59: p_tsp_c_yr = 32500 * cum_inf
                             elif 60 <= age <= 63: p_tsp_c_yr = 35750 * cum_inf
                             else: p_tsp_c_yr = 32500 * cum_inf
-                        else:
-                            p_tsp_c_yr = p_tsp_c * cum_inf
-                            
+                        else: p_tsp_c_yr = p_tsp_c * cum_inf
                         tsp += p_tsp_c_yr
                         taxable += p_tax_c * cum_inf
                         taxable_basis += p_tax_c * cum_inf
@@ -359,15 +348,12 @@ class StochasticRetirementEngine:
                         yr_pension += s_base_pension * 0.50 * s_pension_mult
                     else:
                         yr_salary += s_salary_inf
-                        
                         if s_max_tsp:
                             if spouse_age < 50: s_tsp_c_yr = 24500 * cum_inf
                             elif 50 <= spouse_age <= 59: s_tsp_c_yr = 32500 * cum_inf
                             elif 60 <= spouse_age <= 63: s_tsp_c_yr = 35750 * cum_inf
                             else: s_tsp_c_yr = 32500 * cum_inf
-                        else:
-                            s_tsp_c_yr = s_tsp_c * cum_inf
-                            
+                        else: s_tsp_c_yr = s_tsp_c * cum_inf
                         tsp += s_tsp_c_yr
                         taxable += s_tax_c * cum_inf
                         taxable_basis += s_tax_c * cum_inf
@@ -775,7 +761,6 @@ class StochasticRetirementEngine:
         target_floor = self.inputs.get('target_floor', 0.0)
         terminal_wealth = median_real_path[-1]
         
-        # PROBABILITY OF SUCCESS FIX: Target Floor is directly solved against terminal wealth 
         if terminal_wealth < target_floor:
             return terminal_wealth - target_floor
         else:

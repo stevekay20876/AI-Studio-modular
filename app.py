@@ -124,20 +124,26 @@ with nav1:
         t_inc_p, t_inc_s = st.tabs(["Primary", "Spouse (If MFJ)"])
             
         with t_inc_p:
-            st.markdown("**Primary Pre-Retirement Salary & Savings**")
-            c1, c2 = st.columns(2)
+            st.markdown("**Primary Pre-Retirement Salary & Phased Transition**")
+            c1, c2, c3 = st.columns(3)
             current_salary = c1.number_input("Current Annual Salary ($)", min_value=0, step=1000, key="current_salary")
-            p_max_tsp = c2.checkbox("Maximize IRS allowable TSP/401(k) limit?", key="p_max_tsp")
-            if p_max_tsp:
-                c2.info("IRS Max active: Engine automatically scales contributions by age ($24,500 to $35,750).")
-            else:
-                p_tsp_contrib = c2.number_input("Annual TSP/401(k) Pre-Tax Contribution ($)", min_value=0, step=1000, key="p_tsp_contrib")
+            phased_ret_active = c2.checkbox("Enable FERS Phased Retirement?", key="phased_ret_active")
+            phased_ret_age = c3.number_input("Phased Retirement Start Age", min_value=50, max_value=70, key="phased_ret_age")
             
-            c3, c4, c5, c6 = st.columns(4)
-            p_taxable_contrib = c3.number_input("Taxable Acct Savings ($/yr)", min_value=0, step=1000, key="p_taxable_contrib")
-            p_roth_contrib = c4.number_input("Roth Savings ($/yr)", min_value=0, step=1000, key="p_roth_contrib")
-            p_cash_contrib = c5.number_input("Money Market Savings ($/yr)", min_value=0, step=1000, key="p_cash_contrib")
-            p_hsa_contrib = c6.number_input("HSA Savings ($/yr)", min_value=0, step=1000, key="p_hsa_contrib")
+            st.markdown("**Primary Annual Savings (Until Retirement)**")
+            c_sav1, c_sav2, c_sav3 = st.columns(3)
+            p_max_tsp = c_sav1.checkbox("Maximize IRS allowable TSP/401(k)?", key="p_max_tsp")
+            if p_max_tsp:
+                c_sav1.info("IRS Max active: Automatically scales by age ($24,500 to $35,750).")
+            else:
+                p_tsp_contrib = c_sav1.number_input("TSP/401(k) Pre-Tax Savings ($/yr)", min_value=0, step=1000, key="p_tsp_contrib")
+            
+            p_roth_contrib = c_sav2.number_input("Roth IRA Savings ($/yr)", min_value=0, step=1000, key="p_roth_contrib")
+            p_taxable_contrib = c_sav3.number_input("Taxable Acct Savings ($/yr)", min_value=0, step=1000, key="p_taxable_contrib")
+            
+            c_sav4, c_sav5 = st.columns(2)
+            p_cash_contrib = c_sav4.number_input("Money Market Savings ($/yr)", min_value=0, step=1000, key="p_cash_contrib")
+            p_hsa_contrib = c_sav5.number_input("HSA Savings ($/yr)", min_value=0, step=1000, key="p_hsa_contrib")
             
             st.markdown("**Primary Civilian Pension**")
             cp1, cp2, cp3 = st.columns(3)
@@ -156,20 +162,26 @@ with nav1:
             ss_claim_age = c8.number_input("Target SS Claiming Age", min_value=62, max_value=70, key="ss_claim_age")
             
         with t_inc_s:
-            st.markdown("**Spouse Pre-Retirement Salary & Savings**")
-            cs1, cs2 = st.columns(2)
+            st.markdown("**Spouse Pre-Retirement Salary & Phased Transition**")
+            cs1, cs2, cs3 = st.columns(3)
             s_current_salary = cs1.number_input("Spouse Current Annual Salary ($)", min_value=0, step=1000, key="s_current_salary")
-            s_max_tsp = cs2.checkbox("Spouse: Maximize IRS allowable TSP/401(k)?", key="s_max_tsp")
-            if s_max_tsp:
-                cs2.info("IRS Max active: Engine automatically scales contributions by age ($24,500 to $35,750).")
-            else:
-                s_tsp_contrib = cs2.number_input("Spouse TSP/401(k) Pre-Tax Contribution ($)", min_value=0, step=1000, key="s_tsp_contrib")
+            s_phased_ret_active = cs2.checkbox("Enable Spouse Phased Retirement?", key="s_phased_ret_active")
+            s_phased_ret_age = cs3.number_input("Spouse Phased Ret. Start Age", min_value=50, max_value=70, key="s_phased_ret_age")
             
-            cs3, cs4, cs5, cs6 = st.columns(4)
-            s_taxable_contrib = cs3.number_input("Spouse Taxable Savings ($/yr)", min_value=0, step=1000, key="s_taxable_contrib")
-            s_roth_contrib = cs4.number_input("Spouse Roth Savings ($/yr)", min_value=0, step=1000, key="s_roth_contrib")
-            s_cash_contrib = cs5.number_input("Spouse Cash Savings ($/yr)", min_value=0, step=1000, key="s_cash_contrib")
-            s_hsa_contrib = cs6.number_input("Spouse HSA Savings ($/yr)", min_value=0, step=1000, key="s_hsa_contrib")
+            st.markdown("**Spouse Annual Savings (Until Retirement)**")
+            cs_sav1, cs_sav2, cs_sav3 = st.columns(3)
+            s_max_tsp = cs_sav1.checkbox("Spouse: Maximize IRS allowable TSP/401(k)?", key="s_max_tsp")
+            if s_max_tsp:
+                cs_sav1.info("IRS Max active: Automatically scales by age ($24,500 to $35,750).")
+            else:
+                s_tsp_contrib = cs_sav1.number_input("Spouse TSP/401k Pre-Tax Savings ($/yr)", min_value=0, step=1000, key="s_tsp_contrib")
+            
+            s_roth_contrib = cs_sav2.number_input("Spouse Roth IRA Savings ($/yr)", min_value=0, step=1000, key="s_roth_contrib")
+            s_taxable_contrib = cs_sav3.number_input("Spouse Taxable Savings ($/yr)", min_value=0, step=1000, key="s_taxable_contrib")
+            
+            cs_sav4, cs_sav5 = st.columns(2)
+            s_cash_contrib = cs_sav4.number_input("Spouse Cash Savings ($/yr)", min_value=0, step=1000, key="s_cash_contrib")
+            s_hsa_contrib = cs_sav5.number_input("Spouse HSA Savings ($/yr)", min_value=0, step=1000, key="s_hsa_contrib")
             
             st.markdown("**Spouse Civilian Pension**")
             csp1, csp2, csp3 = st.columns(3)
@@ -397,6 +409,7 @@ with nav1:
             'mortgage_pmt': safe_int(st.session_state.mortgage_pmt), 'mortgage_yrs': safe_int(st.session_state.mortgage_yrs),
             'home_value': safe_int(st.session_state.home_value), 'target_floor': safe_int(st.session_state.target_floor),
             
+            # MERGED BALANCES
             'tsp_bal': safe_int(st.session_state.tsp_b) + safe_int(st.session_state.s_tsp_b), 
             'tsp_strat': st.session_state.tsp_strat,
             'ira_bal': safe_int(st.session_state.ira_b) + safe_int(st.session_state.s_ira_b), 
