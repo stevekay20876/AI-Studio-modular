@@ -106,28 +106,32 @@ with nav1:
     st.markdown("### Build Your Profile")
     
     with st.expander("👤 Personal & Tax Details", expanded=not has_run):
-        c1, c2, c3 = st.columns(3)
-        cur_age = c1.number_input("Primary Current Age", min_value=18, max_value=100, key="cur_age")
-        
-        p_def_ret_date = datetime.date.fromisoformat(st.session_state.ret_date) if isinstance(st.session_state.ret_date, str) else st.session_state.ret_date
-        ret_date = c2.date_input("Primary Date of Retirement", value=p_def_ret_date, key="ret_date")
-        
-        life_exp = c3.number_input("Primary Life Expectancy Age", min_value=50, max_value=120, key="life_exp")
-        
-        st.markdown("**Tax & Spouse Details**")
+        st.markdown("**Household Tax Details**")
         c4, c5, c6 = st.columns(3)
         filing_status = c4.selectbox("Tax Filing Status", ["Single", "MFJ"], key="filing_status")
         state_in = c5.text_input("State of Residence", key="state")
         county_in = c6.text_input("County of Residence", key="county")
+
+        t_per_p, t_per_s = st.tabs(["Primary", "Spouse (If MFJ)"])
         
-        st.info("If Married Filing Jointly (MFJ), please complete the Spouse details below.")
-        c_sp1, c_sp2, c_sp3 = st.columns(3)
-        spouse_age = c_sp1.number_input("Spouse Current Age (If MFJ)", min_value=18, max_value=100, key="spouse_age")
-        
-        s_def_ret_date = datetime.date.fromisoformat(st.session_state.s_ret_date) if isinstance(st.session_state.s_ret_date, str) else st.session_state.s_ret_date
-        s_ret_date = c_sp2.date_input("Spouse Date of Retirement (If MFJ)", value=s_def_ret_date, key="s_ret_date")
-        
-        spouse_life_exp = c_sp3.number_input("Spouse Life Expectancy (If MFJ)", min_value=50, max_value=120, key="spouse_life_exp")
+        with t_per_p:
+            c1, c2, c3 = st.columns(3)
+            cur_age = c1.number_input("Primary Current Age", min_value=18, max_value=100, key="cur_age")
+            
+            p_def_ret_date = datetime.date.fromisoformat(st.session_state.ret_date) if isinstance(st.session_state.ret_date, str) else st.session_state.ret_date
+            ret_date = c2.date_input("Primary Date of Retirement", value=p_def_ret_date, format="DD/MM/YYYY", key="ret_date")
+            
+            life_exp = c3.number_input("Primary Life Expectancy Age", min_value=50, max_value=120, key="life_exp")
+
+        with t_per_s:
+            st.info("If Married Filing Jointly (MFJ), please complete the Spouse details below.")
+            c_sp1, c_sp2, c_sp3 = st.columns(3)
+            spouse_age = c_sp1.number_input("Spouse Current Age (If MFJ)", min_value=18, max_value=100, key="spouse_age")
+            
+            s_def_ret_date = datetime.date.fromisoformat(st.session_state.s_ret_date) if isinstance(st.session_state.s_ret_date, str) else st.session_state.s_ret_date
+            s_ret_date = c_sp2.date_input("Spouse Date of Retirement (If MFJ)", value=s_def_ret_date, format="DD/MM/YYYY", key="s_ret_date")
+            
+            spouse_life_exp = c_sp3.number_input("Spouse Life Expectancy (If MFJ)", min_value=50, max_value=120, key="spouse_life_exp")
 
     with st.expander("💼 Income & Social Security", expanded=not has_run):
         t_inc_p, t_inc_s = st.tabs(["Primary", "Spouse (If MFJ)"])
@@ -224,7 +228,7 @@ with nav1:
             mil_years = mc1.number_input("Active Years", min_value=0, max_value=40, key="mil_years")
             mil_months = mc2.number_input("Active Months", min_value=0, max_value=11, key="mil_months")
             mil_days = mc3.number_input("Active Days", min_value=0, max_value=30, key="mil_days")
-            mil_points = mc4.number_input("Total Career Points", min_value=0, help="For Guard/Reserve or Mixed components.", key="mil_points")
+            mil_points = mc4.number_input("Total Career Points", min_value=0, help="For Guard/Reserve or Mixed components. Enter your GRAND TOTAL points (which already includes 1 point/day for your active duty time).", key="mil_points")
 
             st.markdown("**Rank, System & Pay**")
             mr1, mr2 = st.columns(2)
@@ -233,7 +237,7 @@ with nav1:
             
             md1, md2, md3 = st.columns(3)
             default_diems = datetime.date.fromisoformat(st.session_state.mil_diems) if isinstance(st.session_state.mil_diems, str) else st.session_state.mil_diems
-            mil_diems = md1.date_input("DIEMS Date", value=default_diems, key="mil_diems")
+            mil_diems = md1.date_input("DIEMS Date", value=default_diems, format="DD/MM/YYYY", key="mil_diems")
             mil_system = md2.selectbox("Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="mil_system")
             mil_pay_base = md3.number_input("Pay Base (High-36 Avg or Final Base Pay $/mo)", min_value=0, step=100, key="mil_pay_base")
             
@@ -266,7 +270,7 @@ with nav1:
             
             smd1, smd2, smd3 = st.columns(3)
             s_default_diems = datetime.date.fromisoformat(st.session_state.s_mil_diems) if isinstance(st.session_state.s_mil_diems, str) else st.session_state.s_mil_diems
-            s_mil_diems = smd1.date_input("Spouse DIEMS Date", value=s_default_diems, key="s_mil_diems")
+            s_mil_diems = smd1.date_input("Spouse DIEMS Date", value=s_default_diems, format="DD/MM/YYYY", key="s_mil_diems")
             s_mil_system = smd2.selectbox("Spouse Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="s_mil_system")
             s_mil_pay_base = smd3.number_input("Spouse Pay Base ($/mo)", min_value=0, step=100, key="s_mil_pay_base")
             
@@ -370,7 +374,6 @@ with nav1:
             try: return int(float(val)) if val else 0
             except: return 0
 
-        # Handle string parsing for dates
         ret_d = st.session_state.ret_date
         if isinstance(ret_d, str): ret_d = datetime.date.fromisoformat(ret_d)
         s_ret_d = st.session_state.s_ret_date
@@ -378,7 +381,6 @@ with nav1:
         
         current_yr = datetime.date.today().year
         
-        # We calculate the age they will be based on the year they selected
         calc_ret_age = safe_int(st.session_state.cur_age) + max(0, ret_d.year - current_yr)
         calc_s_ret_age = safe_int(st.session_state.spouse_age) + max(0, s_ret_d.year - current_yr)
 
