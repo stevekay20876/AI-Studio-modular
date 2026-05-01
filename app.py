@@ -42,8 +42,12 @@ with nav1:
     st.markdown("Institution-Grade Monte Carlo Simulator | Constant Amortization Spending Model (CASAM)")
 
     DEFAULT_STATE = {
-        'cur_age': None, 'ret_date': datetime.date.today() + datetime.timedelta(days=365*5), 'life_exp': None, 'filing_status': "Single",
-        'spouse_age': None, 's_ret_date': datetime.date.today() + datetime.timedelta(days=365*5), 'spouse_life_exp': None, 'state': "", 'county': "",
+        'cur_age': None, 'life_exp': None, 'filing_status': "Single",
+        'spouse_age': None, 'spouse_life_exp': None, 'state': "", 'county': "",
+        
+        # New split date logic defaults (5 years from today)
+        'p_ret_day': datetime.date.today().day, 'p_ret_month': datetime.date.today().month, 'p_ret_year': datetime.date.today().year + 5,
+        's_ret_day': datetime.date.today().day, 's_ret_month': datetime.date.today().month, 's_ret_year': datetime.date.today().year + 5,
         
         'current_salary': 0, 'p_max_tsp': False, 'p_tsp_contrib': 0, 'p_taxable_contrib': 0, 'p_roth_contrib': 0, 'p_cash_contrib': 0, 'p_hsa_contrib': 0,
         'phased_ret_active': False, 'phased_ret_age': None, 'pension_type': "FERS", 'pension_est': 0, 'survivor_benefit': "Full Survivor Benefit", 
@@ -94,8 +98,6 @@ with nav1:
             state_dict = get_current_state()
             if isinstance(state_dict.get('mil_diems'), datetime.date): state_dict['mil_diems'] = state_dict['mil_diems'].isoformat()
             if isinstance(state_dict.get('s_mil_diems'), datetime.date): state_dict['s_mil_diems'] = state_dict['s_mil_diems'].isoformat()
-            if isinstance(state_dict.get('ret_date'), datetime.date): state_dict['ret_date'] = state_dict['ret_date'].isoformat()
-            if isinstance(state_dict.get('s_ret_date'), datetime.date): state_dict['s_ret_date'] = state_dict['s_ret_date'].isoformat()
             
             safe_filename = st.session_state.save_file_name.strip()
             if not safe_filename.endswith(".json"): safe_filename += ".json"
@@ -115,27 +117,28 @@ with nav1:
         t_per_p, t_per_s = st.tabs(["Primary", "Spouse (If MFJ)"])
         
         with t_per_p:
-            c1, c2, c3 = st.columns(3)
+            st.markdown("**Primary Demographics**")
+            c1, c_gap, c3 = st.columns([1, 1.5, 1])
             cur_age = c1.number_input("Primary Current Age", min_value=18, max_value=100, key="cur_age")
-            
-            # --- FULLY FIXED: Using string representation directly to force format ---
-            p_def_ret_date_str = st.session_state.ret_date.strftime("%Y-%m-%d") if isinstance(st.session_state.ret_date, datetime.date) else st.session_state.ret_date
-            ret_date_raw = c2.date_input("Primary Date of Retirement", value=datetime.date.fromisoformat(p_def_ret_date_str), format="DD/MM/YYYY", key="ret_date_widget")
-            st.session_state.ret_date = ret_date_raw # Sync back to state
-            
             life_exp = c3.number_input("Primary Life Expectancy Age", min_value=50, max_value=120, key="life_exp")
+            
+            st.markdown("**Primary Target Retirement Date (DD/MM/YYYY)**")
+            cd1, cd2, cd3 = st.columns(3)
+            p_ret_day = cd1.number_input("Day", min_value=1, max_value=31, key="p_ret_day")
+            p_ret_month = cd2.number_input("Month", min_value=1, max_value=12, key="p_ret_month")
+            p_ret_year = cd3.number_input("Year", min_value=datetime.date.today().year, max_value=2100, key="p_ret_year")
 
         with t_per_s:
             st.info("If Married Filing Jointly (MFJ), please complete the Spouse details below.")
-            c_sp1, c_sp2, c_sp3 = st.columns(3)
+            c_sp1, c_sp_gap, c_sp3 = st.columns([1, 1.5, 1])
             spouse_age = c_sp1.number_input("Spouse Current Age (If MFJ)", min_value=18, max_value=100, key="spouse_age")
-            
-            # --- FULLY FIXED: Using string representation directly to force format ---
-            s_def_ret_date_str = st.session_state.s_ret_date.strftime("%Y-%m-%d") if isinstance(st.session_state.s_ret_date, datetime.date) else st.session_state.s_ret_date
-            s_ret_date_raw = c_sp2.date_input("Spouse Date of Retirement (If MFJ)", value=datetime.date.fromisoformat(s_def_ret_date_str), format="DD/MM/YYYY", key="s_ret_date_widget")
-            st.session_state.s_ret_date = s_ret_date_raw # Sync back to state
-            
             spouse_life_exp = c_sp3.number_input("Spouse Life Expectancy (If MFJ)", min_value=50, max_value=120, key="spouse_life_exp")
+            
+            st.markdown("**Spouse Target Retirement Date (DD/MM/YYYY)**")
+            scd1, scd2, scd3 = st.columns(3)
+            s_ret_day = scd1.number_input("Spouse Day", min_value=1, max_value=31, key="s_ret_day")
+            s_ret_month = scd2.number_input("Spouse Month", min_value=1, max_value=12, key="s_ret_month")
+            s_ret_year = scd3.number_input("Spouse Year", min_value=datetime.date.today().year, max_value=2100, key="s_ret_year")
 
     with st.expander("💼 Income & Social Security", expanded=not has_run):
         t_inc_p, t_inc_s = st.tabs(["Primary", "Spouse (If MFJ)"])
@@ -240,13 +243,15 @@ with nav1:
             mil_discharge = mr2.selectbox("Character of Service", ["Honorable Discharge", "General Discharge (Under Honorable Conditions)", "Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge", "Uncharacterized Separation"], key="mil_discharge")
             
             md1, md2, md3 = st.columns(3)
-            default_diems = datetime.date.fromisoformat(st.session_state.mil_diems) if isinstance(st.session_state.mil_diems, str) else st.session_state.mil_diems
-            # FIXED FORMAT: DD/MM/YYYY
-            mil_diems = md1.date_input("DIEMS Date", value=default_diems, format="DD/MM/YYYY", key="mil_diems_widget")
-            st.session_state.mil_diems = mil_diems
+            # Replaced date_input with 3 exact number fields to bypass Streamlit format overrides
+            mil_diems_d = md1.number_input("DIEMS Day", min_value=1, max_value=31, value=1, key="mil_diems_d")
+            mil_diems_m = md2.number_input("DIEMS Month", min_value=1, max_value=12, value=1, key="mil_diems_m")
+            mil_diems_y = md3.number_input("DIEMS Year", min_value=1950, max_value=2030, value=2005, key="mil_diems_y")
+            st.session_state.mil_diems = datetime.date(mil_diems_y, mil_diems_m, mil_diems_d).isoformat()
             
-            mil_system = md2.selectbox("Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="mil_system")
-            mil_pay_base = md3.number_input("Pay Base (High-36 Avg or Final Base Pay $/mo)", min_value=0, step=100, key="mil_pay_base")
+            ms1, ms2 = st.columns(2)
+            mil_system = ms1.selectbox("Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="mil_system")
+            mil_pay_base = ms2.number_input("Pay Base (High-36 Avg or Final Base Pay $/mo)", min_value=0, step=100, key="mil_pay_base")
             
             st.markdown("**Disability & Survivor Options**")
             mv1, mv2, mv3 = st.columns(3)
@@ -276,13 +281,15 @@ with nav1:
             s_mil_discharge = smr2.selectbox("Spouse Character of Service", ["Honorable Discharge", "General Discharge (Under Honorable Conditions)", "Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge", "Uncharacterized Separation"], key="s_mil_discharge")
             
             smd1, smd2, smd3 = st.columns(3)
-            s_default_diems = datetime.date.fromisoformat(st.session_state.s_mil_diems) if isinstance(st.session_state.s_mil_diems, str) else st.session_state.s_mil_diems
-            # FIXED FORMAT: DD/MM/YYYY
-            s_mil_diems = smd1.date_input("Spouse DIEMS Date", value=s_default_diems, format="DD/MM/YYYY", key="s_mil_diems_widget")
-            st.session_state.s_mil_diems = s_mil_diems
+            # Replaced date_input with 3 exact number fields to bypass Streamlit format overrides
+            s_mil_diems_d = smd1.number_input("Spouse DIEMS Day", min_value=1, max_value=31, value=1, key="s_mil_diems_d")
+            s_mil_diems_m = smd2.number_input("Spouse DIEMS Month", min_value=1, max_value=12, value=1, key="s_mil_diems_m")
+            s_mil_diems_y = smd3.number_input("Spouse DIEMS Year", min_value=1950, max_value=2030, value=2005, key="s_mil_diems_y")
+            st.session_state.s_mil_diems = datetime.date(s_mil_diems_y, s_mil_diems_m, s_mil_diems_d).isoformat()
             
-            s_mil_system = smd2.selectbox("Spouse Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="s_mil_system")
-            s_mil_pay_base = smd3.number_input("Spouse Pay Base ($/mo)", min_value=0, step=100, key="s_mil_pay_base")
+            sms1, sms2 = st.columns(2)
+            s_mil_system = sms1.selectbox("Spouse Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="s_mil_system")
+            s_mil_pay_base = sms2.number_input("Spouse Pay Base ($/mo)", min_value=0, step=100, key="s_mil_pay_base")
             
             st.markdown("**Spouse Disability & Survivor Options**")
             smv1, smv2, smv3 = st.columns(3)
@@ -384,20 +391,23 @@ with nav1:
             try: return int(float(val)) if val else 0
             except: return 0
 
-        ret_d = st.session_state.ret_date
-        if isinstance(ret_d, str): ret_d = datetime.date.fromisoformat(ret_d)
-        s_ret_d = st.session_state.s_ret_date
-        if isinstance(s_ret_d, str): s_ret_d = datetime.date.fromisoformat(s_ret_d)
+        # Create python date objects out of the new UI boxes to pass cleanly to the engine
+        ret_year_val = safe_int(st.session_state.p_ret_year)
+        ret_month_val = safe_int(st.session_state.p_ret_month)
+        
+        s_ret_year_val = safe_int(st.session_state.s_ret_year)
+        s_ret_month_val = safe_int(st.session_state.s_ret_month)
         
         current_yr = datetime.date.today().year
-        calc_ret_age = safe_int(st.session_state.cur_age) + max(0, ret_d.year - current_yr)
-        calc_s_ret_age = safe_int(st.session_state.spouse_age) + max(0, s_ret_d.year - current_yr)
+        
+        calc_ret_age = safe_int(st.session_state.cur_age) + max(0, ret_year_val - current_yr)
+        calc_s_ret_age = safe_int(st.session_state.spouse_age) + max(0, s_ret_year_val - current_yr)
 
         inputs = {
             'current_age': safe_int(st.session_state.cur_age), 'life_expectancy': safe_int(st.session_state.life_exp),
-            'ret_year': ret_d.year, 'ret_month': ret_d.month, 'ret_age': calc_ret_age,
+            'ret_year': ret_year_val, 'ret_month': ret_month_val, 'ret_age': calc_ret_age,
             'spouse_age': safe_int(st.session_state.spouse_age) if st.session_state.spouse_age else safe_int(st.session_state.cur_age), 
-            's_ret_year': s_ret_d.year, 's_ret_month': s_ret_d.month, 's_ret_age': calc_s_ret_age,
+            's_ret_year': s_ret_year_val, 's_ret_month': s_ret_month_val, 's_ret_age': calc_s_ret_age,
             'spouse_life_exp': safe_int(st.session_state.spouse_life_exp) if st.session_state.spouse_life_exp else safe_int(st.session_state.life_exp),
             'filing_status': st.session_state.filing_status, 'state': st.session_state.state, 'county': st.session_state.county, 
             
