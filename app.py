@@ -59,6 +59,7 @@ with nav1:
         
         'target_floor': 0, 'min_spending': 0, 'max_spending': 0, 'add_exp': 0, 'max_tax_bracket': "24%", 'mortgage_pmt': 0, 'mortgage_yrs': 0, 'home_value': 0,
         'health_plan': "None/Self-Insure", 'health_cost': 0, 'oop_cost': 0,
+        's_health_plan': "None/Self-Insure", 's_health_cost': 0, 's_oop_cost': 0,
         'has_40_quarters': True, 'intent_to_work_40_quarters': False, 'has_dependent_children': False, 'wants_dental_vision': False,
         
         'tsp_b': 0, 'tsp_roth_b': 0, 'tsp_strat': "Moderate (60% Stock / 40% Bond)",
@@ -285,12 +286,12 @@ with nav1:
     with st.expander("📉 Expenses & Goals", expanded=not has_run):
         st.markdown("**Spending Limits & Legacy Goals (In Today's Dollars)**")
         c1, c2, c3 = st.columns(3)
-        target_floor = c1.number_input("Target Legacy Floor (Today's $) ($)", min_value=0, step=10000, key="target_floor")
-        min_spending = c2.number_input("Minimum Spending Floor (Today's $) ($)", min_value=0, step=1000, key="min_spending")
-        max_spending = c3.number_input("Maximum Spending Cap (Today's $) ($)", min_value=0, step=1000, key="max_spending")
+        target_floor = c1.number_input("Target Legacy Floor ($)", min_value=0, step=10000, key="target_floor")
+        min_spending = c2.number_input("Minimum Spending Floor ($)", min_value=0, step=1000, key="min_spending")
+        max_spending = c3.number_input("Maximum Spending Cap ($)", min_value=0, step=1000, key="max_spending")
         
         c4, c5 = st.columns(2)
-        add_exp = c4.number_input("Additional Expenses (Retirement Smile) ($)", min_value=0, step=1000, key="add_exp")
+        add_exp = c4.number_input("Additional Expenses ($)", min_value=0, step=1000, key="add_exp")
         max_tax_bracket = c5.selectbox("Maximum Target Tax Bracket (Roth Cap)", ["12%", "22%", "24%", "32%", "35%", "37%"], index=2, key="max_tax_bracket")
         
         st.markdown("**Property & Debt**")
@@ -300,16 +301,36 @@ with nav1:
         mortgage_yrs = c8.number_input("Mortgage Years Remaining", min_value=0, key="mortgage_yrs")
         
         st.markdown("**Healthcare**")
-        c9, c10, c11 = st.columns(3)
         health_options = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard", "Aetna Open Access", "Aetna Direct", "Aetna Advantage", "Cigna", "TRICARE for Life", "None/Self-Insure", "Spouse's Insurance", "Affordable Care Act"]
-        health_plan = c9.selectbox("Retiree Health Coverage", health_options, key="health_plan")
-        health_cost = c10.number_input("Annual Health Premium ($)", min_value=0, step=100, key="health_cost")
-        oop_cost = c11.number_input("Typical Out-of-Pocket Medical ($)", min_value=0, step=100, key="oop_cost")
+        
+        if st.session_state.filing_status == 'MFJ':
+            t_hc_p, t_hc_s = st.tabs(["Household", "Spouse"])
+            with t_hc_p:
+                c9, c10, c11 = st.columns(3)
+                health_plan = c9.selectbox("Household Retiree Health Coverage", health_options, key="health_plan")
+                health_cost = c10.number_input("Household Annual Health Premium ($)", min_value=0, step=100, key="health_cost")
+                oop_cost = c11.number_input("Household Typical Out-of-Pocket ($)", min_value=0, step=100, key="oop_cost")
+            with t_hc_s:
+                cs9, cs10, cs11 = st.columns(3)
+                s_health_plan = cs9.selectbox("Spouse Retiree Health Coverage", health_options, key="s_health_plan")
+                s_health_cost = cs10.number_input("Spouse Annual Health Premium ($)", min_value=0, step=100, key="s_health_cost")
+                s_oop_cost = cs11.number_input("Spouse Typical Out-of-Pocket ($)", min_value=0, step=100, key="s_oop_cost")
+        else:
+            c9, c10, c11 = st.columns(3)
+            health_plan = c9.selectbox("Retiree Health Coverage", health_options, key="health_plan")
+            health_cost = c10.number_input("Annual Health Premium ($)", min_value=0, step=100, key="health_cost")
+            oop_cost = c11.number_input("Typical Out-of-Pocket Medical ($)", min_value=0, step=100, key="oop_cost")
+            st.session_state.s_health_plan = "None/Self-Insure"
+            st.session_state.s_health_cost = 0
+            st.session_state.s_oop_cost = 0
 
-        if health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
+        p_needs_aca = st.session_state.health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]
+        s_needs_aca = (st.session_state.filing_status == 'MFJ') and (st.session_state.s_health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"])
+
+        if p_needs_aca or s_needs_aca:
             st.markdown("---")
             st.markdown("#### 🏥 Medicare vs. ACA Transition Logic")
-            st.info("Because you selected a non-federal or unsupported private insurance path, the stochastic engine must determine exactly when and how you transition to Medicare. Please answer the following:")
+            st.info("Because you selected a non-federal or unsupported private insurance path, we must determine exactly when and how you transition to Medicare. Please answer the following:")
             
             c_aca1, c_aca2 = st.columns(2)
             has_40_q = c_aca1.radio("Do you (or your spouse) have 40 quarters (10 years) of Medicare-taxed work history?", ["Yes", "No"], index=0 if st.session_state.has_40_quarters else 1)
@@ -442,7 +463,9 @@ with nav1:
             'additional_expenses': safe_int(st.session_state.add_exp),
             'max_tax_bracket': float(st.session_state.max_tax_bracket.strip('%'))/100,
             
-            'health_plan': st.session_state.health_plan, 'health_cost': safe_int(st.session_state.health_cost), 'oop_cost': safe_int(st.session_state.oop_cost), 
+            'health_plan': st.session_state.health_plan, 
+            'health_cost': safe_int(st.session_state.health_cost) + safe_int(st.session_state.get('s_health_cost', 0)), 
+            'oop_cost': safe_int(st.session_state.oop_cost) + safe_int(st.session_state.get('s_oop_cost', 0)), 
             'has_40_quarters': st.session_state.has_40_quarters, 'intent_to_work_40_quarters': st.session_state.intent_to_work_40_quarters,
             'has_dependent_children': st.session_state.has_dependent_children, 'wants_dental_vision': st.session_state.wants_dental_vision,
             
