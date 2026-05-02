@@ -700,7 +700,7 @@ class StochasticRetirementEngine:
                 extra_tax_state = extra_state_taxable * combined_state_local_rate
                 extra_tax_total = extra_tax_fed + extra_tax_state
                 
-                if pay_taxes_from_cash:
+if pay_taxes_from_cash:
                     w_tax_cash_roth = np.minimum(cash, extra_tax_total)
                     cash -= w_tax_cash_roth
                     rem_tax = extra_tax_total - w_tax_cash_roth
@@ -708,9 +708,9 @@ class StochasticRetirementEngine:
                     taxable -= w_tax_taxable
                     gains_ratio_tax = np.maximum(0, 1.0 - (taxable_basis / np.maximum(taxable + w_tax_taxable, 1.0)))
                     taxable_basis -= (w_tax_taxable - (w_tax_taxable * gains_ratio_tax))
-                    net_to_roth = conv_amt - (rem_tax - w_tax_taxable)
+                    net_to_roth = np.maximum(0, conv_amt - (rem_tax - w_tax_taxable))
                 else:
-                    net_to_roth = conv_amt - extra_tax_total
+                    net_to_roth = np.maximum(0, conv_amt - extra_tax_total)
                     
                 roth += net_to_roth
                 total_tax_fed = new_tax_fed + new_ltcg_tax + new_niit_tax
@@ -845,10 +845,7 @@ class StochasticRetirementEngine:
         target_floor = self.inputs.get('target_floor', 0.0)
         terminal_wealth = median_real_path[-1]
         
-        if terminal_wealth < target_floor:
-            return terminal_wealth - target_floor
-        else:
-            return terminal_wealth - target_floor
+        return terminal_wealth - target_floor
 
     def optimize_iwr(self):
         try:
