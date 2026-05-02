@@ -681,8 +681,15 @@ with nav1:
             st.plotly_chart(plot_ss_breakeven(inputs['ss_fra'], age_arr, years_arr), use_container_width=True)
             ss_base = inputs['ss_fra']
             st.table(pd.DataFrame({"Claiming Age": ["Age 62 (Early)", "Age 67 (FRA)", "Age 70 (Delayed)"], "Annual Benefit (Pre-2035)": [f"${ss_base * 0.7:,.0f}", f"${ss_base:,.0f}", f"${ss_base * 1.24:,.0f}"], "Probability of Portfolio Success": [f"{max(0, prob_success - 8):.1f}%", f"{prob_success:.1f}%", f"{min(100, prob_success + 6):.1f}%"]}))
-            st.success("**Verdict: Delay Claiming until Age 70**")
-            st.write("**Why delay to 70? The 'Longevity Insurance' Concept:** Actuarially, Social Security is one of the few guaranteed, inflation-adjusted, market-immune income streams you possess alongside your FERS pension. By delaying to Age 70, your payout permanently increases by 8% per year. This creates massive 'Longevity Insurance.' If you live deep into your 90s, this vastly inflated SS paycheck drastically reduces the withdrawal pressure placed on your TSP/Roth, virtually guaranteeing you will not outlive your portfolio.")
+            if inputs['life_expectancy'] < 80:
+                st.warning("**Actuarial Verdict: Claim Early (Age 62 or Current Age)**")
+                st.write("**Reasoning:** Because your entered life expectancy is below the mathematical crossover point (~Age 80-82), claiming early allows you to capture more total guaranteed income during your lifetime than if you delayed.")
+            elif inputs['ss_claim_age'] < 70:
+                st.info(f"**Actuarial Verdict: You selected to claim at {inputs['ss_claim_age']}.**")
+                st.write(f"**Reasoning:** While delaying to 70 maximizes 'Longevity Insurance' by permanently increasing your payout by 8% per year, your chosen claiming age of {inputs['ss_claim_age']} has been fully modeled and stress-tested against your portfolio.")
+            else:
+                st.success("**Actuarial Verdict: Delay Claiming until Age 70**")
+                st.write("**Reasoning:** Alongside your Federal/Military Pension, Social Security is one of the few guaranteed, inflation-adjusted, market-immune income streams you possess. Delaying to 70 maximizes this 'Longevity Insurance', drastically reducing the withdrawal pressure placed on your TSP/Roth deep into retirement.")
 
         with t10:
             st.subheader("Medicare Part B & Actuarial Healthcare OOP")
