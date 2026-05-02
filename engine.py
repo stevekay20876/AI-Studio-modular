@@ -209,12 +209,10 @@ class StochasticRetirementEngine:
         pay_taxes_from_cash = self.inputs.get('pay_taxes_from_cash', True)
         min_spending = float(self.inputs.get('min_spending', 0))
         max_spending = float(self.inputs.get('max_spending', 0))
-        base_add_exp = float(self.inputs.get('additional_expenses', 0))
+	base_add_exp = float(self.inputs.get('additional_expenses', 0))
         user_max_bracket = float(self.inputs.get('max_tax_bracket', '0.24'))
-        base_health_premium = float(self.inputs.get('health_cost', 0))
         base_oop_cost = float(self.inputs.get('oop_cost', 0))
-        health_plan = self.inputs.get('health_plan', "None/Self-Insure")
-        mortgage_pmt = float(self.inputs.get('mortgage_pmt', 0))
+        health_plan = self.inputs.get('health_plan', "None/Self-Insure")        mortgage_pmt = float(self.inputs.get('mortgage_pmt', 0))
         mortgage_yrs = int(self.inputs.get('mortgage_yrs', 0))
         
         has_40_quarters = self.inputs.get('has_40_quarters', True)
@@ -719,12 +717,18 @@ class StochasticRetirementEngine:
             history['roth_taxes_from_cash'][:, yr] = w_tax_cash_roth 
             
             # Healthcare Base Costs
-            base_p_health = float(self.inputs.get('p_health_cost', 0))
+base_p_health = float(self.inputs.get('p_health_cost', 0))
             base_s_health = float(self.inputs.get('s_health_cost', 0))
             MEDICARE_PART_A_BASE = 505.0
 
             age_morbidity = 1.025 ** max(0, age - self.inputs['current_age'])
-            med_cpi_cum = np.prod(1 + (np.maximum(0, inf_paths[:, :yr+1]) * 1.5), axis=1) if yr > 0 else np.ones(self.iterations)
+            if yr == 0:
+                med_cpi_cum = np.ones(self.iterations)
+            elif yr == 1:
+                med_cpi_cum = (1 + (np.maximum(0, inf_paths[:, 0]) * 1.5)) * (1 + (np.maximum(0, inf_paths[:, 1]) * 1.5))
+            else:
+                med_cpi_cum *= (1 + (np.maximum(0, inf_paths[:, yr]) * 1.5))
+                
             raw_oop = base_oop_cost * med_cpi_cum * age_morbidity
             inflated_oop = np.minimum(raw_oop, base_moop * cum_inf)
             
