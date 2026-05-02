@@ -718,10 +718,10 @@ class StochasticRetirementEngine:
             history['magi'][:, yr] = final_magi
             history['roth_taxes_from_cash'][:, yr] = w_tax_cash_roth 
             
-# Healthcare Base Costs
+            # Healthcare Base Costs
             base_p_health = float(self.inputs.get('p_health_cost', 0))
             base_s_health = float(self.inputs.get('s_health_cost', 0))
-            MEDICARE_PART_A_BASE = 505.0 # Fixed missing variable
+            MEDICARE_PART_A_BASE = 505.0
 
             age_morbidity = 1.025 ** max(0, age - self.inputs['current_age'])
             med_cpi_cum = np.prod(1 + (np.maximum(0, inf_paths[:, :yr+1]) * 1.5), axis=1) if yr > 0 else np.ones(self.iterations)
@@ -740,7 +740,7 @@ class StochasticRetirementEngine:
             primary_medicare_age = 65 + intent_delay
 
             if age >= primary_medicare_age:
-                if health_plan in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
+                if health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
                     if has_40_quarters or intent_delay > 0:
                         # RULE 1: Transition to Medicare (Or finally hit 40 quarters via intent)
                         p_med_cost += MEDICARE_PART_B_BASE * cum_inf
@@ -768,7 +768,6 @@ class StochasticRetirementEngine:
                         stay_on_aca = aca_sub_cost < med_tot_cost
                         p_med_cost = np.where(stay_on_aca, 0, med_tot_cost)
                         
-                        # Fix Bug: Dependent children accounted for if switching to Medicare
                         dep_cost = (base_p_health * 0.5) * cum_inf if has_dependent_children else 0
                         den_cost = 600 * cum_inf if wants_dental_vision else 0
                         p_health_prem = np.where(stay_on_aca, aca_sub_cost, den_cost + dep_cost)
@@ -785,7 +784,7 @@ class StochasticRetirementEngine:
             # ==========================================
             s_health_plan = self.inputs.get('s_health_plan', "None/Self-Insure")
             if spouse_alive and spouse_age >= 65:
-                if s_health_plan in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
+                if s_health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
                     if has_40_quarters:
                         s_med_cost += MEDICARE_PART_B_BASE * cum_inf
                         for i in range(len(irmaa_brackets)):
@@ -809,6 +808,21 @@ class StochasticRetirementEngine:
             
             current_mortgage = np.full(self.iterations, mortgage_pmt if yr < mortgage_yrs else 0.0)
             history['mortgage_cost'][:, yr] = current_mortgage
+            
+            if current_year >= self.ret_year:
+                years_in_ret = current_year - self.ret_year
+                smile_mult = 1.0 - (0.015 * years_in_ret) + (0.0005 * (years_in_ret ** 2))
+                current_add_exp = base_add_exp * cum_inf * smile_mult
+            else:
+                current_add_exp = np.zeros(self.iterations)
+            history['additional_expenses'][:, yr] = current_add_exp
+            
+            history['tsp_bal'][:, yr] = tsp
+            history['ira_bal'][:, yr] = ira
+            history['roth_bal'][:, yr] = roth
+            history['taxable_bal'][:, yr] = taxable
+            history['cash_bal'][:, yr] = cash
+            history['hsa_bal'][:, yr] = hsa
             
             if current_year >= self.ret_year:
                 total_deductions = total_tax_fed + total_tax_state + history['medicare_cost'][:, yr] + history['health_cost'][:, yr] + current_mortgage + current_add_exp
