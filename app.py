@@ -532,9 +532,11 @@ with nav1:
         if yr1_burn > 0:
             safe_years_val = total_cash_short_term / yr1_burn
             safe_years_display = f"{safe_years_val:.1f} Years"
+            pdf_safe_years = f"{safe_years_val:.1f} Years"
         else:
             safe_years_val = float('inf')
             safe_years_display = "∞ / N/A"
+            pdf_safe_years = "Infinite / N/A"  # ASCII-safe string for the PDF
        
         tax_savings = roth_results['Baseline (None)']['taxes'] - roth_results[winner]['taxes']
         rmd_reduction = roth_results['Baseline (None)']['rmds'] - roth_results[winner]['rmds']
@@ -559,7 +561,7 @@ with nav1:
         with colB:
             pdf_data = {
                 'prob_success': prob_success, 'prob_legacy': prob_legacy, 'terminal_wealth': median_real_terminal, 'yr1_burn': yr1_burn,
-                'safe_years': safe_years_display, 'roth_winner': winner, 'tax_savings': tax_savings, 'rmd_reduction': rmd_reduction, 'wealth_increase': wealth_increase, 'health_plan': inputs['health_plan'],
+                'safe_years': pdf_safe_years, 'roth_winner': winner, 'tax_savings': tax_savings, 'rmd_reduction': rmd_reduction, 'wealth_increase': wealth_increase, 'health_plan': inputs['health_plan'],
                 'total_medicare': total_medicare_cost, 'medicare_verdict': med_verdict, 'life_exp': inputs['life_expectancy'], 'ss_claim_age': inputs['ss_claim_age']
             }
             st.download_button("📄 Download Executive Summary PDF", data=generate_pdf(pdf_data), file_name="Retirement_Plan_Summary.pdf", mime="application/pdf", use_container_width=True)
