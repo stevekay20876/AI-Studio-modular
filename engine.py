@@ -700,7 +700,7 @@ class StochasticRetirementEngine:
                 extra_tax_state = extra_state_taxable * combined_state_local_rate
                 extra_tax_total = extra_tax_fed + extra_tax_state
                 
-if pay_taxes_from_cash:
+               if pay_taxes_from_cash:
                     w_tax_cash_roth = np.minimum(cash, extra_tax_total)
                     cash -= w_tax_cash_roth
                     rem_tax = extra_tax_total - w_tax_cash_roth
