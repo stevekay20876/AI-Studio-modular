@@ -438,8 +438,8 @@ with nav1:
             'mil_years': safe_int(st.session_state.mil_years), 'mil_months': safe_int(st.session_state.mil_months), 'mil_days': safe_int(st.session_state.mil_days),
             'mil_points': safe_int(st.session_state.mil_points), 'mil_rank': st.session_state.mil_rank, 'mil_discharge': st.session_state.mil_discharge,
             'mil_system': st.session_state.mil_system, 'mil_pay_base': safe_int(st.session_state.mil_pay_base),
-            'mil_disability_rating': st.session_state.mil_disability_rating, 'mil_special_rating': st.session_state.mil_special_rating,
-            'mil_va_pay': safe_int(st.session_state.mil_va_pay), 'mil_sbp': st.session_state.mil_sbp, 'mil_start_age': safe_int(st.session_state.mil_start_age or st.session_state.cur_age),
+ 'mil_disability_rating': st.session_state.mil_disability_rating, 'mil_special_rating': st.session_state.mil_special_rating,
+            'mil_va_pay': safe_int(st.session_state.mil_va_pay), 'mil_sbp': st.session_state.mil_sbp, 'mil_start_age': safe_int(st.session_state.mil_start_age) or safe_int(st.session_state.cur_age) or 60,
             
             'ss_fra': safe_int(st.session_state.ss_fra), 'ss_claim_age': safe_int(st.session_state.ss_claim_age),
             
@@ -455,7 +455,7 @@ with nav1:
             's_mil_points': safe_int(st.session_state.s_mil_points), 's_mil_rank': st.session_state.s_mil_rank, 's_mil_discharge': st.session_state.s_mil_discharge,
             's_mil_system': st.session_state.s_mil_system, 's_mil_pay_base': safe_int(st.session_state.s_mil_pay_base),
             's_mil_disability_rating': st.session_state.s_mil_disability_rating, 's_mil_special_rating': st.session_state.s_mil_special_rating,
-            's_mil_va_pay': safe_int(st.session_state.s_mil_va_pay), 's_mil_sbp': st.session_state.s_mil_sbp, 's_mil_start_age': safe_int(st.session_state.s_mil_start_age or st.session_state.spouse_age),
+            's_mil_va_pay': safe_int(st.session_state.s_mil_va_pay), 's_mil_sbp': st.session_state.s_mil_sbp, 's_mil_start_age': safe_int(st.session_state.s_mil_start_age) or safe_int(st.session_state.spouse_age) or 60,
             
             's_ss_fra': safe_int(st.session_state.s_ss_fra), 's_ss_claim_age': safe_int(st.session_state.s_ss_claim_age),
             
