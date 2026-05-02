@@ -32,7 +32,8 @@ def generate_pdf(data):
                          f"Probability of Meeting Target Legacy: {data['prob_legacy']:.1f}%\n"
                          f"Median Terminal Legacy (Today's Dollars): ${data['terminal_wealth']:,.0f}\n"
                          f"Estimated Year 1 Portfolio Burn Rate: ${data['yr1_burn']:,.0f}\n"
-                         f"Years of Safe Liquidity Buffer: {data['safe_years']:.1f} Years")
+                         f"Years of Safe Liquidity Buffer: {data['safe_years']}")
+    
     pdf.ln(5)
 
     # 2. ROTH OPTIMIZATION

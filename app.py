@@ -528,8 +528,14 @@ with nav1:
         raw_cash = np.median(history['cash_bal'], axis=0)[ret_idx]
         raw_taxable = np.median(history['taxable_bal'], axis=0)[ret_idx]
         total_cash_short_term = raw_cash + raw_taxable
-        safe_years = total_cash_short_term / max(yr1_burn, 1)
-
+        
+        if yr1_burn > 0:
+            safe_years_val = total_cash_short_term / yr1_burn
+            safe_years_display = f"{safe_years_val:.1f} Years"
+        else:
+            safe_years_val = float('inf')
+            safe_years_display = "∞ / N/A"
+       
         tax_savings = roth_results['Baseline (None)']['taxes'] - roth_results[winner]['taxes']
         rmd_reduction = roth_results['Baseline (None)']['rmds'] - roth_results[winner]['rmds']
         wealth_increase = roth_results[winner]['wealth'] - roth_results['Baseline (None)']['wealth']
@@ -553,7 +559,7 @@ with nav1:
         with colB:
             pdf_data = {
                 'prob_success': prob_success, 'prob_legacy': prob_legacy, 'terminal_wealth': median_real_terminal, 'yr1_burn': yr1_burn,
-                'safe_years': safe_years, 'roth_winner': winner, 'tax_savings': tax_savings, 'rmd_reduction': rmd_reduction, 'wealth_increase': wealth_increase, 'health_plan': inputs['health_plan'],
+                'safe_years': safe_years_display, 'roth_winner': winner, 'tax_savings': tax_savings, 'rmd_reduction': rmd_reduction, 'wealth_increase': wealth_increase, 'health_plan': inputs['health_plan'],
                 'total_medicare': total_medicare_cost, 'medicare_verdict': med_verdict, 'life_exp': inputs['life_expectancy'], 'ss_claim_age': inputs['ss_claim_age']
             }
             st.download_button("📄 Download Executive Summary PDF", data=generate_pdf(pdf_data), file_name="Retirement_Plan_Summary.pdf", mime="application/pdf", use_container_width=True)
@@ -612,7 +618,7 @@ with nav1:
             c1, c2, c3 = st.columns(3)
             c1.metric("Highly Liquid Assets (Cash + Taxable)", f"${total_cash_short_term:,.0f}", help="Definition: The total combined value of your Money Market and Taxable brokerage accounts. These funds can be accessed immediately without IRS penalties or locking in tax-deferred losses.")
             c2.metric("Year 1 Est. Portfolio Burn Rate", f"${yr1_burn:,.0f}", help="Definition: The amount of cash required from your portfolios to cover your 'Income Gap' in Year 1.")
-            c3.metric("Years of Safe Liquidity Buffer", f"{safe_years:.1f} Years", help="Definition: How many years you can survive strictly off your cash and taxable accounts without selling a single share of your TSP or IRA.\n\nExample: A 3.0 ratio means you can comfortably outlast a 3-year market crash without touching your tax-deferred stocks.")
+            c3.metric("Years of Safe Liquidity Buffer", safe_years_display, help="Definition: How many years you can survive strictly off your cash and taxable accounts without selling a single share of your TSP or IRA.\n\nExample: A 3.0 ratio means you can comfortably outlast a 3-year market crash. (Displays ∞ / N/A if guaranteed income fully covers expenses without needing portfolio withdrawals).")
 
         with t5:
             st.subheader("Taxes & Dynamic Withdrawals")
