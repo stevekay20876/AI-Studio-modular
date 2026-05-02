@@ -464,8 +464,10 @@ with nav1:
             'max_tax_bracket': float(st.session_state.max_tax_bracket.strip('%'))/100,
             
             'health_plan': st.session_state.health_plan, 
-            'health_cost': safe_int(st.session_state.health_cost) + safe_int(st.session_state.get('s_health_cost', 0)), 
-            'oop_cost': safe_int(st.session_state.oop_cost) + safe_int(st.session_state.get('s_oop_cost', 0)), 
+            's_health_plan': st.session_state.get('s_health_plan', "None/Self-Insure"), 
+            'p_health_cost': safe_int(st.session_state.health_cost), 
+            's_health_cost': safe_int(st.session_state.get('s_health_cost', 0)),
+            'oop_cost': safe_int(st.session_state.oop_cost) + safe_int(st.session_state.get('s_oop_cost', 0)),
             'has_40_quarters': st.session_state.has_40_quarters, 'intent_to_work_40_quarters': st.session_state.intent_to_work_40_quarters,
             'has_dependent_children': st.session_state.has_dependent_children, 'wants_dental_vision': st.session_state.wants_dental_vision,
             

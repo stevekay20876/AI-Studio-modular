@@ -724,51 +724,94 @@ class StochasticRetirementEngine:
             history['magi'][:, yr] = final_magi
             history['roth_taxes_from_cash'][:, yr] = w_tax_cash_roth 
             
-            current_health_premium = base_health_premium * cum_inf
+# Healthcare Base Costs
+            base_p_health = float(self.inputs.get('p_health_cost', 0))
+            base_s_health = float(self.inputs.get('s_health_cost', 0))
+            MEDICARE_PART_A_BASE = 505.0 # Fixed missing variable
+
             age_morbidity = 1.025 ** max(0, age - self.inputs['current_age'])
             med_cpi_cum = np.prod(1 + (np.maximum(0, inf_paths[:, :yr+1]) * 1.5), axis=1) if yr > 0 else np.ones(self.iterations)
             raw_oop = base_oop_cost * med_cpi_cum * age_morbidity
             inflated_oop = np.minimum(raw_oop, base_moop * cum_inf)
             
-            medicare_cost = np.zeros(self.iterations)
-            
-            if age >= 65:
-                if health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
-                    if has_40_quarters:
-                        medicare_cost += MEDICARE_PART_B_BASE * cum_inf
-                        for i in range(len(irmaa_brackets)):
-                            prev_limit = (irmaa_brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
-                            medicare_cost = np.where(final_magi > prev_limit, (MEDICARE_PART_B_BASE + irmaa_brackets[i][1]) * cum_inf, medicare_cost)
-                        
-                        current_health_premium = np.zeros(self.iterations)
-                        if wants_dental_vision:
-                            current_health_premium += 600 * cum_inf 
-                        if has_dependent_children:
-                            current_health_premium += (base_health_premium * 0.5) * cum_inf 
-                    else:
-                        aca_subsidized_cost = np.minimum(base_health_premium * cum_inf, final_magi * 0.085)
-                        medicare_total_cost = (MEDICARE_PART_A_BASE + MEDICARE_PART_B_BASE) * cum_inf
-                        
-                        for i in range(len(irmaa_brackets)):
-                            prev_limit = (irmaa_brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
-                            medicare_total_cost = np.where(final_magi > prev_limit, medicare_total_cost + (irmaa_brackets[i][1] * cum_inf), medicare_total_cost)
+            p_med_cost = np.zeros(self.iterations)
+            s_med_cost = np.zeros(self.iterations)
+            p_health_prem = base_p_health * cum_inf
+            s_health_prem = base_s_health * cum_inf
 
-                        stay_on_aca = aca_subsidized_cost < medicare_total_cost
+            # ==========================================
+            # PRIMARY MEDICARE vs ACA LOGIC
+            # ==========================================
+            intent_delay = 3 if self.inputs.get('intent_to_work_40_quarters', False) else 0
+            primary_medicare_age = 65 + intent_delay
+
+            if age >= primary_medicare_age:
+                if health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
+                    if has_40_quarters or intent_delay > 0:
+                        # RULE 1: Transition to Medicare (Or finally hit 40 quarters via intent)
+                        p_med_cost += MEDICARE_PART_B_BASE * cum_inf
                         
-                        medicare_cost = np.where(stay_on_aca, 0, medicare_total_cost)
-                        current_health_premium = np.where(stay_on_aca, aca_subsidized_cost, (600 * cum_inf if wants_dental_vision else 0))
+                        # RULE 2: Apply 10% Part B Penalty per year delayed
+                        if intent_delay > 0:
+                            p_med_cost *= (1.0 + (0.10 * intent_delay))
+                            
+                        for i in range(len(irmaa_brackets)):
+                            prev_limit = (irmaa_brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
+                            p_med_cost = np.where(final_magi > prev_limit, p_med_cost + (irmaa_brackets[i][1] * cum_inf), p_med_cost)
+                        
+                        p_health_prem = np.zeros(self.iterations)
+                        if wants_dental_vision: p_health_prem += 600 * cum_inf
+                        if has_dependent_children: p_health_prem += (base_p_health * 0.5) * cum_inf
+                    else:
+                        # RULE 1b: No 40 Quarters -> Cost Benefit Analysis
+                        aca_sub_cost = np.minimum(base_p_health * cum_inf, final_magi * 0.085)
+                        med_tot_cost = (MEDICARE_PART_A_BASE + MEDICARE_PART_B_BASE) * cum_inf
+                        
+                        for i in range(len(irmaa_brackets)):
+                            prev_limit = (irmaa_brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
+                            med_tot_cost = np.where(final_magi > prev_limit, med_tot_cost + (irmaa_brackets[i][1] * cum_inf), med_tot_cost)
+
+                        stay_on_aca = aca_sub_cost < med_tot_cost
+                        p_med_cost = np.where(stay_on_aca, 0, med_tot_cost)
+                        
+                        # Fix Bug: Dependent children accounted for if switching to Medicare
+                        dep_cost = (base_p_health * 0.5) * cum_inf if has_dependent_children else 0
+                        den_cost = 600 * cum_inf if wants_dental_vision else 0
+                        p_health_prem = np.where(stay_on_aca, aca_sub_cost, den_cost + dep_cost)
                 
                 elif "FEHB" not in health_plan and "TRICARE" not in health_plan:
-                    medicare_cost += MEDICARE_PART_B_BASE * cum_inf
+                    # Standard Private Insurance transition
+                    p_med_cost += MEDICARE_PART_B_BASE * cum_inf
                     for i in range(len(irmaa_brackets)):
                         prev_limit = (irmaa_brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
-                        medicare_cost = np.where(final_magi > prev_limit, (MEDICARE_PART_B_BASE + irmaa_brackets[i][1]) * cum_inf, medicare_cost)
+                        p_med_cost = np.where(final_magi > prev_limit, p_med_cost + (irmaa_brackets[i][1] * cum_inf), p_med_cost)
 
-            history['medicare_cost'][:, yr] = medicare_cost
+            # ==========================================
+            # SPOUSE MEDICARE LOGIC (Independent Age Trigger)
+            # ==========================================
+            s_health_plan = self.inputs.get('s_health_plan', "None/Self-Insure")
+            if spouse_alive and spouse_age >= 65:
+                if s_health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
+                    if has_40_quarters:
+                        s_med_cost += MEDICARE_PART_B_BASE * cum_inf
+                        for i in range(len(irmaa_brackets)):
+                            prev_limit = (irmaa_brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
+                            s_med_cost = np.where(final_magi > prev_limit, s_med_cost + (irmaa_brackets[i][1] * cum_inf), s_med_cost)
+                        
+                        s_health_prem = np.zeros(self.iterations)
+                        if wants_dental_vision: s_health_prem += 600 * cum_inf
+                
+                elif "FEHB" not in s_health_plan and "TRICARE" not in s_health_plan:
+                    s_med_cost += MEDICARE_PART_B_BASE * cum_inf
+                    for i in range(len(irmaa_brackets)):
+                        prev_limit = (irmaa_brackets[i-1][0] * cum_inf) if i > 0 else np.zeros(self.iterations)
+                        s_med_cost = np.where(final_magi > prev_limit, s_med_cost + (irmaa_brackets[i][1] * cum_inf), s_med_cost)
+
+            history['medicare_cost'][:, yr] = p_med_cost + s_med_cost
 
             w_hsa = np.minimum(hsa, inflated_oop)
             hsa -= w_hsa
-            history['health_cost'][:, yr] = current_health_premium + (inflated_oop - w_hsa)
+            history['health_cost'][:, yr] = (p_health_prem + s_health_prem) + (inflated_oop - w_hsa)
             
             current_mortgage = np.full(self.iterations, mortgage_pmt if yr < mortgage_yrs else 0.0)
             history['mortgage_cost'][:, yr] = current_mortgage
