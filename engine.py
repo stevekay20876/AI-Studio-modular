@@ -41,13 +41,7 @@ class StochasticRetirementEngine:
         _, v_tax = self.get_port_params('taxable_strat', override_port)
         _, v_hsa = self.get_port_params('hsa_strat', override_port)
         
-        corr = np.array([
-            [1.00, -0.15, -0.15, -0.15, -0.15, -0.15],
-            [-0.15, 1.00,  0.85,  0.85,  0.85,  0.85],
-            [-0.15, 0.85,  1.00,  0.85,  0.85,  0.85],
-            [-0.15, 0.85,  0.85,  1.00,  0.85,  0.85],
-            [-0.15, 0.85,  0.85,  0.85,  1.00,  0.85],
-            [-0.15, 0.85,  0.85,  0.85,  0.85,  1.00]
+        corr = np.array([[1.00, -0.15, -0.15, -0.15, -0.15, -0.15],[-0.15, 1.00,  0.85,  0.85,  0.85,  0.85],[-0.15, 0.85,  1.00,  0.85,  0.85,  0.85],[-0.15, 0.85,  0.85,  1.00,  0.85,  0.85],[-0.15, 0.85,  0.85,  0.85,  1.00,  0.85],[-0.15, 0.85,  0.85,  0.85,  0.85,  1.00]
         ])
         vols = np.array([0.020, v_tsp, v_ira, v_roth, v_tax, v_hsa])
         cov = np.outer(vols, vols) * corr
@@ -140,8 +134,8 @@ class StochasticRetirementEngine:
         p_mil_start_age = self.inputs.get('mil_start_age', 60)
         
         if p_mil_active:
-            if self.inputs['mil_discharge'] not in ["Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge"]:
-                if self.inputs['mil_component'] in ["National Guard / Reserve", "Mixed (Active + Guard/Reserve)"]:
+            if self.inputs['mil_discharge'] not in["Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge"]:
+                if self.inputs['mil_component'] in["National Guard / Reserve", "Mixed (Active + Guard/Reserve)"]:
                     eq_years = self.inputs['mil_points'] / 360.0
                 else:
                     eq_years = self.inputs['mil_years'] + (self.inputs['mil_months'] / 12.0) + (self.inputs['mil_days'] / 360.0)
@@ -150,7 +144,7 @@ class StochasticRetirementEngine:
                 p_base_mil_gross = np.full(self.iterations, self.inputs['mil_pay_base'] * mult * 12)
                 p_mil_sbp = "Full SBP" in self.inputs['mil_sbp']
                 p_base_va = np.full(self.iterations, self.inputs['mil_va_pay'] * 12)
-                p_crdp = self.inputs['mil_disability_rating'] in ["50% - 60%", "70% - 90%", "100%"] or self.inputs['mil_special_rating'] in ["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
+                p_crdp = self.inputs['mil_disability_rating'] in["50% - 60%", "70% - 90%", "100%"] or self.inputs['mil_special_rating'] in ["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
 
         s_mil_active = self.inputs.get('s_mil_active', False)
         s_base_mil_gross = np.zeros(self.iterations)
@@ -160,8 +154,8 @@ class StochasticRetirementEngine:
         s_mil_start_age = self.inputs.get('s_mil_start_age', 60)
         
         if s_mil_active:
-            if self.inputs['s_mil_discharge'] not in ["Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge"]:
-                if self.inputs['s_mil_component'] in ["National Guard / Reserve", "Mixed (Active + Guard/Reserve)"]:
+            if self.inputs['s_mil_discharge'] not in["Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge"]:
+                if self.inputs['s_mil_component'] in["National Guard / Reserve", "Mixed (Active + Guard/Reserve)"]:
                     s_eq_years = self.inputs['s_mil_points'] / 360.0
                 else:
                     s_eq_years = self.inputs['s_mil_years'] + (self.inputs['s_mil_months'] / 12.0) + (self.inputs['s_mil_days'] / 360.0)
@@ -170,7 +164,7 @@ class StochasticRetirementEngine:
                 s_base_mil_gross = np.full(self.iterations, self.inputs['s_mil_pay_base'] * s_mult * 12)
                 s_mil_sbp = "Full SBP" in self.inputs['s_mil_sbp']
                 s_base_va = np.full(self.iterations, self.inputs['s_mil_va_pay'] * 12)
-                s_crdp = self.inputs['s_mil_disability_rating'] in ["50% - 60%", "70% - 90%", "100%"] or self.inputs['s_mil_special_rating'] in ["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
+                s_crdp = self.inputs['s_mil_disability_rating'] in["50% - 60%", "70% - 90%", "100%"] or self.inputs['s_mil_special_rating'] in["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
 
         p_ss_claim = self.inputs.get('ss_claim_age', 67)
         p_months_early, p_months_late = max(0, (67 - p_ss_claim) * 12), max(0, (p_ss_claim - 67) * 12)
@@ -230,7 +224,7 @@ class StochasticRetirementEngine:
         state_str = self.inputs.get('state', '').strip().upper()
         county_str = self.inputs.get('county', '').strip().upper()
         state_tax_rate = STATE_TAX_RATES.get(state_str, 0.045) if state_str not in RETIREMENT_TAX_FREE_STATES else 0.0
-        local_tax_rate = 0.025 if county_str != "" and state_str in ["MD", "IN", "PA", "OH", "NY"] else (0.010 if county_str != "" else 0.0)
+        local_tax_rate = 0.025 if county_str != "" and state_str in["MD", "IN", "PA", "OH", "NY"] else (0.010 if county_str != "" else 0.0)
         combined_state_local_rate = state_tax_rate + local_tax_rate
         cum_inf = np.ones(self.iterations)
         
@@ -700,7 +694,7 @@ class StochasticRetirementEngine:
                 extra_tax_state = extra_state_taxable * combined_state_local_rate
                 extra_tax_total = extra_tax_fed + extra_tax_state
                 
-               if pay_taxes_from_cash:
+                if pay_taxes_from_cash:
                     w_tax_cash_roth = np.minimum(cash, extra_tax_total)
                     cash -= w_tax_cash_roth
                     rem_tax = extra_tax_total - w_tax_cash_roth
@@ -746,7 +740,7 @@ class StochasticRetirementEngine:
             primary_medicare_age = 65 + intent_delay
 
             if age >= primary_medicare_age:
-                if health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
+                if health_plan in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
                     if has_40_quarters or intent_delay > 0:
                         # RULE 1: Transition to Medicare (Or finally hit 40 quarters via intent)
                         p_med_cost += MEDICARE_PART_B_BASE * cum_inf
@@ -791,7 +785,7 @@ class StochasticRetirementEngine:
             # ==========================================
             s_health_plan = self.inputs.get('s_health_plan', "None/Self-Insure")
             if spouse_alive and spouse_age >= 65:
-                if s_health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
+                if s_health_plan in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
                     if has_40_quarters:
                         s_med_cost += MEDICARE_PART_B_BASE * cum_inf
                         for i in range(len(irmaa_brackets)):
@@ -815,21 +809,6 @@ class StochasticRetirementEngine:
             
             current_mortgage = np.full(self.iterations, mortgage_pmt if yr < mortgage_yrs else 0.0)
             history['mortgage_cost'][:, yr] = current_mortgage
-            
-            if current_year >= self.ret_year:
-                years_in_ret = current_year - self.ret_year
-                smile_mult = 1.0 - (0.015 * years_in_ret) + (0.0005 * (years_in_ret ** 2))
-                current_add_exp = base_add_exp * cum_inf * smile_mult
-            else:
-                current_add_exp = np.zeros(self.iterations)
-            history['additional_expenses'][:, yr] = current_add_exp
-            
-            history['tsp_bal'][:, yr] = tsp
-            history['ira_bal'][:, yr] = ira
-            history['roth_bal'][:, yr] = roth
-            history['taxable_bal'][:, yr] = taxable
-            history['cash_bal'][:, yr] = cash
-            history['hsa_bal'][:, yr] = hsa
             
             if current_year >= self.ret_year:
                 total_deductions = total_tax_fed + total_tax_state + history['medicare_cost'][:, yr] + history['health_cost'][:, yr] + current_mortgage + current_add_exp
@@ -860,7 +839,7 @@ class StochasticRetirementEngine:
         del hist_custom
         gc.collect()
         
-        for port in ["Conservative (20% Stock / 80% Bond)", "Moderate (60% Stock / 40% Bond)", "Aggressive (100% Stock)"]:
+        for port in["Conservative (20% Stock / 80% Bond)", "Moderate (60% Stock / 40% Bond)", "Aggressive (100% Stock)"]:
             hist = self.run_mc(opt_iwr, seed=42, roth_strategy=roth_strategy, override_port=port)
             results[port] = {'wealth': np.median(hist['total_bal_real'][:, -1]), 'cut_prob': np.mean(np.any(hist['constraint_active'] == 1, axis=1)) * 100}
             del hist
@@ -870,7 +849,7 @@ class StochasticRetirementEngine:
 
     def analyze_roth_strategies(self, opt_iwr):
         user_max = float(self.inputs.get("max_tax_bracket", 0.24)) * 100
-        strats = [(0, 'Baseline (None)'), (1, 'Fill Current Bracket (IRMAA Protected)'), (2, 'Target IRMAA Tier 1'), (3, 'Target IRMAA Tier 2'), (4, f'Max User Bracket Fill ({user_max:.0f}%)')]
+        strats =[(0, 'Baseline (None)'), (1, 'Fill Current Bracket (IRMAA Protected)'), (2, 'Target IRMAA Tier 1'), (3, 'Target IRMAA Tier 2'), (4, f'Max User Bracket Fill ({user_max:.0f}%)')]
         
         results, best_wealth, winner_name, winner_hist = {}, -np.inf, 'Baseline (None)', None
         
