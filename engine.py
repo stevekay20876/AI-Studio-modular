@@ -831,7 +831,7 @@ if pay_taxes_from_cash:
             history['cash_bal'][:, yr] = cash
             history['hsa_bal'][:, yr] = hsa
             
- if current_year >= self.ret_year:
+            if current_year >= self.ret_year:
                 total_deductions = total_tax_fed + total_tax_state + history['medicare_cost'][:, yr] + history['health_cost'][:, yr] + current_mortgage + current_add_exp
                 history['net_spendable'][:, yr] = actual_portfolio_withdrawal + yr_pension + yr_va + yr_ss + yr_salary - total_deductions
             else:
