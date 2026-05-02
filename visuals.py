@@ -19,7 +19,6 @@ def plot_wealth_trajectory(history, target_floor, years_arr):
     return fig
 
 def plot_fan_chart(history, years_arr):
-    # FIXED: Shifted from nominal 'total_bal' to 'total_bal_real' to maintain unit consistency
     p10 = np.percentile(history['total_bal_real'], 10, axis=0)
     p25 = np.percentile(history['total_bal_real'], 25, axis=0)
     p50 = np.median(history['total_bal_real'], axis=0)
@@ -211,9 +210,9 @@ def plot_roth_tax_impact(roth_results, winner, years_arr):
     )
     return fig
 
-def plot_ss_breakeven(ss_fra, age_arr, years_arr):
+def plot_ss_breakeven(ss_fra, age_arr, years_arr, fra_age=67):
     early_stream = [(ss_fra * 0.7) * (0.79 if yr >= 2035 else 1.0) if age >= 62 else 0 for age, yr in zip(age_arr, years_arr)]
-    fra_stream = [(ss_fra * 1.0) * (0.79 if yr >= 2035 else 1.0) if age >= 67 else 0 for age, yr in zip(age_arr, years_arr)]
+    fra_stream = [(ss_fra * 1.0) * (0.79 if yr >= 2035 else 1.0) if age >= fra_age else 0 for age, yr in zip(age_arr, years_arr)]
     delayed_stream = [(ss_fra * 1.24) * (0.79 if yr >= 2035 else 1.0) if age >= 70 else 0 for age, yr in zip(age_arr, years_arr)]
     
     cum_early = np.cumsum(early_stream)
@@ -222,7 +221,7 @@ def plot_ss_breakeven(ss_fra, age_arr, years_arr):
     
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=age_arr, y=cum_early, mode='lines', name='Claim at 62'))
-    fig.add_trace(go.Scatter(x=age_arr, y=cum_fra, mode='lines', name='Claim at FRA (67)'))
+    fig.add_trace(go.Scatter(x=age_arr, y=cum_fra, mode='lines', name=f'Claim at FRA ({fra_age})'))
     fig.add_trace(go.Scatter(x=age_arr, y=cum_delayed, mode='lines', name='Claim at 70'))
     
     fig.update_layout(
