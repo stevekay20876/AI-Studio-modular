@@ -135,7 +135,7 @@ class StochasticRetirementEngine:
         
         if p_mil_active:
             if self.inputs['mil_discharge'] not in["Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge"]:
-                if self.inputs['mil_component'] in["National Guard / Reserve", "Mixed (Active + Guard/Reserve)"]:
+                if self.inputs['mil_component'] in ["National Guard / Reserve", "Mixed (Active + Guard/Reserve)"]:
                     eq_years = self.inputs['mil_points'] / 360.0
                 else:
                     eq_years = self.inputs['mil_years'] + (self.inputs['mil_months'] / 12.0) + (self.inputs['mil_days'] / 360.0)
@@ -144,7 +144,7 @@ class StochasticRetirementEngine:
                 p_base_mil_gross = np.full(self.iterations, self.inputs['mil_pay_base'] * mult * 12)
                 p_mil_sbp = "Full SBP" in self.inputs['mil_sbp']
                 p_base_va = np.full(self.iterations, self.inputs['mil_va_pay'] * 12)
-                p_crdp = self.inputs['mil_disability_rating'] in["50% - 60%", "70% - 90%", "100%"] or self.inputs['mil_special_rating'] in ["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
+                p_crdp = self.inputs['mil_disability_rating'] in["50% - 60%", "70% - 90%", "100%"] or self.inputs['mil_special_rating'] in["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
 
         s_mil_active = self.inputs.get('s_mil_active', False)
         s_base_mil_gross = np.zeros(self.iterations)
@@ -164,7 +164,7 @@ class StochasticRetirementEngine:
                 s_base_mil_gross = np.full(self.iterations, self.inputs['s_mil_pay_base'] * s_mult * 12)
                 s_mil_sbp = "Full SBP" in self.inputs['s_mil_sbp']
                 s_base_va = np.full(self.iterations, self.inputs['s_mil_va_pay'] * 12)
-                s_crdp = self.inputs['s_mil_disability_rating'] in["50% - 60%", "70% - 90%", "100%"] or self.inputs['s_mil_special_rating'] in["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
+                s_crdp = self.inputs['s_mil_disability_rating'] in["50% - 60%", "70% - 90%", "100%"] or self.inputs['s_mil_special_rating'] in ["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
 
         p_ss_claim = self.inputs.get('ss_claim_age', 67)
         p_months_early, p_months_late = max(0, (67 - p_ss_claim) * 12), max(0, (p_ss_claim - 67) * 12)
@@ -209,10 +209,11 @@ class StochasticRetirementEngine:
         pay_taxes_from_cash = self.inputs.get('pay_taxes_from_cash', True)
         min_spending = float(self.inputs.get('min_spending', 0))
         max_spending = float(self.inputs.get('max_spending', 0))
-	base_add_exp = float(self.inputs.get('additional_expenses', 0))
+        base_add_exp = float(self.inputs.get('additional_expenses', 0))
         user_max_bracket = float(self.inputs.get('max_tax_bracket', '0.24'))
         base_oop_cost = float(self.inputs.get('oop_cost', 0))
-        health_plan = self.inputs.get('health_plan', "None/Self-Insure")        mortgage_pmt = float(self.inputs.get('mortgage_pmt', 0))
+        health_plan = self.inputs.get('health_plan', "None/Self-Insure")
+        mortgage_pmt = float(self.inputs.get('mortgage_pmt', 0))
         mortgage_yrs = int(self.inputs.get('mortgage_yrs', 0))
         
         has_40_quarters = self.inputs.get('has_40_quarters', True)
@@ -717,7 +718,7 @@ class StochasticRetirementEngine:
             history['roth_taxes_from_cash'][:, yr] = w_tax_cash_roth 
             
             # Healthcare Base Costs
-base_p_health = float(self.inputs.get('p_health_cost', 0))
+            base_p_health = float(self.inputs.get('p_health_cost', 0))
             base_s_health = float(self.inputs.get('s_health_cost', 0))
             MEDICARE_PART_A_BASE = 505.0
 
@@ -744,7 +745,7 @@ base_p_health = float(self.inputs.get('p_health_cost', 0))
             primary_medicare_age = 65 + intent_delay
 
             if age >= primary_medicare_age:
-                if health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
+                if health_plan in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
                     if has_40_quarters or intent_delay > 0:
                         # RULE 1: Transition to Medicare (Or finally hit 40 quarters via intent)
                         p_med_cost += MEDICARE_PART_B_BASE * cum_inf
@@ -788,7 +789,7 @@ base_p_health = float(self.inputs.get('p_health_cost', 0))
             # ==========================================
             s_health_plan = self.inputs.get('s_health_plan', "None/Self-Insure")
             if spouse_alive and spouse_age >= 65:
-                if s_health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
+                if s_health_plan in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
                     if has_40_quarters:
                         s_med_cost += MEDICARE_PART_B_BASE * cum_inf
                         for i in range(len(irmaa_brackets)):
