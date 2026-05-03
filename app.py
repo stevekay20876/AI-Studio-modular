@@ -22,12 +22,10 @@ components.html(
 ui_styling = """
     <style>
     #MainMenu {visibility: hidden;} footer {display: none !important;} [data-testid="stHeader"] {visibility: hidden;} .stAppBottom {display: none !important;}
-    .block-container { padding-top: 2rem; padding-bottom: 2rem; }[data-testid="stMetricValue"] { font-size: 2.0rem !important; font-weight: 700 !important; color: #00837B !important; }[data-testid="stDownloadButton"] button { background-color: #E6F7F6 !important; color: #00695C !important; border: 2px solid #80CBC4 !important; font-weight: 700 !important; border-radius: 8px !important; transition: all 0.2s ease; }
-    [data-testid="stDownloadButton"] button:hover { background-color: #B2DFDB !important; border-color: #00837B !important; }[data-testid="stTabs"] { background-color: #F8FAFC; border: 2px solid #E5E7EB; border-radius: 12px; padding: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+    .block-container { padding-top: 2rem; padding-bottom: 2rem; }[data-testid="stMetricValue"] { font-size: 2.0rem !important; font-weight: 700 !important; color: #00837B !important; }[data-testid="stDownloadButton"] button { background-color: #E6F7F6 !important; color: #00695C !important; border: 2px solid #80CBC4 !important; font-weight: 700 !important; border-radius: 8px !important; transition: all 0.2s ease; }[data-testid="stDownloadButton"] button:hover { background-color: #B2DFDB !important; border-color: #00837B !important; }[data-testid="stTabs"] { background-color: #F8FAFC; border: 2px solid #E5E7EB; border-radius: 12px; padding: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
     div[data-baseweb="tab-list"] { gap: 0px; border-bottom: 2px solid #E5E7EB; }
     button[data-baseweb="tab"] { font-size: 1.1rem !important; padding: 0.8rem 1.5rem !important; background-color: #E5E7EB !important; color: #475569 !important; border-radius: 8px 8px 0 0 !important; border: 1px solid transparent !important; margin-right: 4px !important; }
-    button[data-baseweb="tab"][aria-selected="true"] { background-color: #FFFFFF !important; color: #00837B !important; font-weight: 800 !important; border-top: 4px solid #00837B !important; border-left: 2px solid #E5E7EB !important; border-right: 2px solid #E5E7EB !important; border-bottom: 2px solid #FFFFFF !important; transform: translateY(2px); box-shadow: 0 -2px 4px rgba(0,0,0,0.02); }
-    [data-testid="stVerticalBlockBorderWrapper"] { border-radius: 12px !important; border: 1px solid #E5E7EB !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important; background-color: #FFFFFF !important; }
+    button[data-baseweb="tab"][aria-selected="true"] { background-color: #FFFFFF !important; color: #00837B !important; font-weight: 800 !important; border-top: 4px solid #00837B !important; border-left: 2px solid #E5E7EB !important; border-right: 2px solid #E5E7EB !important; border-bottom: 2px solid #FFFFFF !important; transform: translateY(2px); box-shadow: 0 -2px 4px rgba(0,0,0,0.02); }[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 12px !important; border: 1px solid #E5E7EB !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important; background-color: #FFFFFF !important; }
     </style>
 """
 st.markdown(ui_styling, unsafe_allow_html=True)
@@ -65,7 +63,7 @@ with nav1:
         'roth_b': 0, 'roth_strat': "Aggressive (100% Stock)",
         'tax_b': 0, 'tax_basis': None, 'tax_strat': "Moderate (60% Stock / 40% Bond)",
         'hsa_b': 0, 'hsa_strat': "Moderate (60% Stock / 40% Bond)",
-        'cash_b': 0, 'cash_r': 4.0, 'pay_taxes_from_cash': True,
+        'cash_b': 0, 'cash_r': 4.0, 'pay_taxes_from_cash': True, 'age_de_risking': False,
         
         's_tsp_b': 0, 's_tsp_roth_b': 0, 's_ira_b': 0, 's_roth_b': 0,
         'save_file_name': "client_profile"
@@ -114,7 +112,7 @@ with nav1:
     with st.expander("👤 Personal & Tax Details", expanded=not has_run):
         st.markdown("**Household & Tax Settings**")
         c4, c5, c6 = st.columns(3)
-        filing_status = c4.selectbox("Tax Filing Status", ["Single", "MFJ"], key="filing_status")
+        filing_status = c4.selectbox("Tax Filing Status",["Single", "MFJ"], key="filing_status")
         state_in = c5.text_input("State of Residence", key="state")
         county_in = c6.text_input("County of Residence", key="county")
         
@@ -326,7 +324,7 @@ with nav1:
             st.session_state.s_health_cost = 0
             st.session_state.s_oop_cost = 0
 
-        p_needs_aca = st.session_state.health_plan in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]
+        p_needs_aca = st.session_state.health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]
         s_needs_aca = (st.session_state.filing_status == 'MFJ') and (st.session_state.s_health_plan in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"])
 
         if p_needs_aca or s_needs_aca:
@@ -339,7 +337,7 @@ with nav1:
             st.session_state.has_40_quarters = (has_40_q == "Yes")
             
             if not st.session_state.has_40_quarters:
-                intent_to_work = c_aca2.radio("Do you intend to work and gain 40 quarters before age 65?", ["Yes", "No"], index=0 if st.session_state.intent_to_work_40_quarters else 1)
+                intent_to_work = c_aca2.radio("Do you intend to work and gain 40 quarters before age 65?",["Yes", "No"], index=0 if st.session_state.intent_to_work_40_quarters else 1)
                 st.session_state.intent_to_work_40_quarters = (intent_to_work == "Yes")
             else:
                 st.session_state.intent_to_work_40_quarters = False
@@ -388,7 +386,9 @@ with nav1:
             cash_r = c14.number_input("Money Market Yield %", min_value=0.0, step=0.1, key="cash_r")
             
             st.markdown("---")
-            pay_taxes_from_cash = st.checkbox("Pay Roth Conversion Taxes from Cash Buffer?", key="pay_taxes_from_cash")
+            c_bot1, c_bot2 = st.columns(2)
+            with c_bot1: pay_taxes_from_cash = st.checkbox("Pay Roth Conversion Taxes from Cash Buffer?", key="pay_taxes_from_cash")
+            with c_bot2: age_de_risking = st.checkbox("Enable Age-Based Equity De-risking (1%/yr post-65)", key="age_de_risking", help="Automatically reduces stock allocation by 1% per year after age 65 (down to a 20% floor). This mimics real-world risk reduction and lowers pessimistic tail risks caused by holding 100% stocks into your 90s.")
             
         with t_ast_s:
             s_label = "Spouse TSP Trad Bal. ($)" if st.session_state.s_pension_type == "FERS" else "Spouse 401(k) Trad Bal. ($)"
@@ -511,7 +511,8 @@ with nav1:
             'taxable_bal': safe_int(st.session_state.tax_b), 'taxable_basis': safe_int(final_tax_basis), 'taxable_strat': st.session_state.tax_strat,
             'hsa_bal': safe_int(st.session_state.hsa_b), 'hsa_strat': st.session_state.hsa_strat,
             'cash_bal': safe_int(st.session_state.cash_b), 'cash_ret': float(st.session_state.cash_r or 0)/100,
-            'pay_taxes_from_cash': st.session_state.pay_taxes_from_cash
+            'pay_taxes_from_cash': st.session_state.pay_taxes_from_cash,
+            'age_de_risking': st.session_state.age_de_risking
         }
 
         with st.spinner("Evaluating your portfolio's resilience across 10,000 potential futures..."):
@@ -618,7 +619,7 @@ with nav1:
             if "Dynamic Glidepath (Target Date)" not in port_analysis:
                 port_analysis["Dynamic Glidepath (Target Date)"] = engine.analyze_portfolios(opt_iwr, roth_strategy=1).get("Dynamic Glidepath (Target Date)", {'wealth': 0, 'cut_prob': 0})
             
-            port_names, port_wealths, port_cuts = list(port_analysis.keys()), [port_analysis[p]['wealth'] for p in port_analysis.keys()], [port_analysis[p]['cut_prob'] for p in port_analysis.keys()]
+            port_names, port_wealths, port_cuts = list(port_analysis.keys()), [port_analysis[p]['wealth'] for p in port_analysis.keys()],[port_analysis[p]['cut_prob'] for p in port_analysis.keys()]
             st.table(pd.DataFrame({"Portfolio Strategy": port_names, "Median Terminal Legacy (Today's $)": port_wealths, "Probability of Guardrail Pay Cuts": port_cuts}).style.format({"Median Terminal Legacy (Today's $)": "${:,.0f}", "Probability of Guardrail Pay Cuts": "{:.1f}%"}))
 
         with t2:
@@ -816,7 +817,8 @@ with nav2:
     st.subheader("4. Savings & Assets")
     st.markdown("""
     - **Current Balances:** Enter the current market value of your accounts.
-    - **Strategies:** Choose a strategy for each account. **New:** Select *Dynamic Glidepath (Target Date)* to automatically deploy a protective "Bond Tent" during your fragile transition decade.
+    - **Strategies:** Choose a strategy for each account. Select *Dynamic Glidepath (Target Date)* to automatically deploy a protective "Bond Tent" during your fragile transition decade.
+    - **Age-Based De-risking:** Highly recommended. If enabled, the engine will gently decay your stock market exposure by 1% every year after age 65 (down to a floor of 20% stocks). This physically models how real retirees reduce risk over their lifespan, stabilizing your long-term worst-case scenarios.
     - **Money Market (Cash):** This is your "Safety Net." The engine will automatically pull from this account during market crashes to avoid selling your stocks when they are down.
     - **Health Savings Account (HSA):** *Please Note:* HSA funds are strictly segregated for out-of-pocket medical expenses and are NOT included in the core portfolio survival probability or the Initial Withdrawal Rate (IWR) optimization.
     """)
@@ -848,13 +850,11 @@ with nav3:
     - **Mean-Reverting Inflation with Stagflation Jumps:** Inflation isn't static. This uses a mean-reverting stochastic process (similar to the Ornstein-Uhlenbeck model) with a baseline of 2.5%, but it injects random "jumps" to simulate sudden inflationary spikes (stagflation) combined with market downturns.
     """)
 
-    st.header("2. Time-Varying Covariance Tensors (The Bond Tent)")
-    st.write("**Pre-Retirement Sequence of Return Risk is real.**")
+    st.header("2. Time-Varying Covariance Tensors (Glidepaths & De-risking)")
+    st.write("**Sequence of Return Risk and old-age tail risks are actively managed.**")
     st.markdown("""
-    - If you select the `Dynamic Glidepath` strategy, the engine abandons static allocations. It utilizes a dynamic 3D covariance tensor to actively shift your risk profile year by year.
-    - **T-10 Years:** It drives growth at an aggressive 80/20 posture.
-    - **T-0 Years (Retirement):** It mathematically interpolates your risk smoothly downwards, putting you in a highly defensive low-volatility state the exact day you stop receiving paychecks to shield you from immediate Sequence of Return Risk.
-    - **T+10 Years:** Once you successfully survive "The Fragile Decade", the engine slowly re-risks your portfolio back into equities to fight off inflation and extreme longevity risk.
+    - **The Pre-Retirement Bond Tent:** If you select the `Dynamic Glidepath` strategy, the engine utilizes a dynamic 3D covariance tensor to actively shift your risk profile. It drives growth aggressively at T-10, smoothly interpolates down to a defensive low-volatility state at T-0 (Retirement), and slowly re-risks back into equities over the next 10 years to fight inflation.
+    - **Age-Based Equity De-risking:** Real retirees do not hold 100% stock allocations at age 95. If enabled, the tensor will automatically decouple from static allocations and gracefully decay your equity exposure by 1% per year after age 65. Because the covariance matrix is regenerated on the fly every single year of the simulation, the mathematical correlations between your distinct assets seamlessly evolve as you age.
     """)
 
     st.header("3. The Withdrawal Optimization Algorithm (Brent's Method)")

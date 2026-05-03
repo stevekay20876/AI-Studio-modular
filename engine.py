@@ -27,26 +27,49 @@ class StochasticRetirementEngine:
 
     def get_yr_port_params(self, asset_key, yr, override_port=None):
         strat = override_port if override_port else self.inputs[asset_key]
+        
+        # 1. Determine Base Equity Fraction (E)
         if strat == "Dynamic Glidepath (Target Date)":
             current_sim_year = datetime.datetime.now().year + yr
             yrs_to_ret = self.ret_year - current_sim_year
             
-            agg_r, agg_v = 0.080, 0.150
-            cons_r, cons_v = 0.045, 0.060
-            mod_r, mod_v = 0.065, 0.100
-            
             if yrs_to_ret >= 10:
-                return agg_r, agg_v
+                base_E = 1.0
             elif yrs_to_ret > 0:
-                weight = yrs_to_ret / 10.0
-                return (cons_r + weight*(agg_r - cons_r)), (cons_v + weight*(agg_v - cons_v))
+                base_E = 0.20 + (yrs_to_ret / 10.0) * 0.80
             elif yrs_to_ret > -10:
-                weight = abs(yrs_to_ret) / 10.0
-                return (cons_r + weight*(mod_r - cons_r)), (cons_v + weight*(mod_v - cons_v))
+                base_E = 0.20 + (abs(yrs_to_ret) / 10.0) * 0.40
             else:
-                return mod_r, mod_v
+                base_E = 0.60
         else:
-            return PORTFOLIOS[strat]['ret'], PORTFOLIOS[strat]['vol']
+            if "Aggressive" in strat:
+                base_E = 1.0
+            elif "Moderate" in strat:
+                base_E = 0.60
+            elif "Conservative" in strat:
+                base_E = 0.20
+            else:
+                base_E = 0.60
+                
+        # 2. Apply Age-Based Glidepath (1% drop per year post-65)
+        if self.inputs.get('age_de_risking', False):
+            current_age = self.inputs['current_age'] + yr
+            if current_age > 65:
+                years_past_65 = current_age - 65
+                drop = years_past_65 * 0.01
+                base_E = max(0.20, base_E - drop)
+                
+        # 3. Piecewise Interpolation for Return & Volatility
+        if base_E <= 0.60:
+            pct = (base_E - 0.20) / 0.40
+            ret = 0.045 + pct * (0.070 - 0.045)
+            vol = 0.060 + pct * (0.100 - 0.060)
+        else:
+            pct = (base_E - 0.60) / 0.40
+            ret = 0.070 + pct * (0.095 - 0.070)
+            vol = 0.100 + pct * (0.150 - 0.100)
+            
+        return ret, vol
 
     def get_covariance_and_drifts(self, yr, override_port=None):
         params =[
@@ -778,14 +801,14 @@ class StochasticRetirementEngine:
                 state_excl_val = np.where(is_mfj, STATE_EXCLUSIONS_65_MFJ.get(state_str, 0.0), STATE_EXCLUSIONS_65_SINGLE.get(state_str, 0.0)) * cum_inf
                 state_exclusion = np.where((age >= 65) | (spouse_age >= 65), state_excl_val, 0.0)
                 if state_str == "NJ":
-                    state_exclusion = np.where(gross_income > (150000 * cum_inf), 0.0, state_exclusion)
+                    state_exclusion = np.where(magi > (150000 * cum_inf), 0.0, state_exclusion)
                 allowed_exclusion = np.minimum(state_exclusion, ret_income)
                 state_taxable_base = np.maximum(0, state_taxable_base - allowed_exclusion)
             else:
                 state_excl_val = np.where(is_mfj, STATE_EXCLUSIONS_65_MFJ.get(state_str, 0.0), STATE_EXCLUSIONS_65_SINGLE.get(state_str, 0.0)) * cum_inf
                 state_exclusion = np.where((age >= 65) | (spouse_age >= 65), state_excl_val, 0.0)
                 if state_str == "NJ":
-                    state_exclusion = np.where(gross_income > (150000 * cum_inf), 0.0, state_exclusion)
+                    state_exclusion = np.where(magi > (150000 * cum_inf), 0.0, state_exclusion)
                 allowed_exclusion = np.minimum(state_exclusion, total_ret_income)
                 state_taxable_base = np.maximum(0, state_taxable_base - allowed_exclusion)
                         
