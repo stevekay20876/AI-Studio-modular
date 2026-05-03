@@ -530,11 +530,6 @@ with nav1:
     if 'sim_data' in st.session_state:
         data = st.session_state['sim_data']
         
-        if 'terminal_year' not in data.get('history', {}):
-            del st.session_state['sim_data']
-            st.warning("⚠️ The underlying engine has been updated to include Stochastic Mortality. Please click 'Run Projection Engine' below to generate a new dashboard.")
-            st.stop()
-            
         if st.session_state.get('optimization_warning'):
             st.error("⚠️ **Optimization Engine Warning**: The mathematical solver failed to converge on an exact Initial Withdrawal Rate. This usually happens if your Target Legacy Floor is mathematically unreachable given your assets, or if guaranteed income completely exceeds your expenses causing negative cashflow anomalies. The engine has automatically fallen back to a safe 4.0% baseline withdrawal rate to allow the dashboard to render.")
         
