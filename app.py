@@ -112,7 +112,7 @@ with nav1:
     with st.expander("👤 Personal & Tax Details", expanded=not has_run):
         st.markdown("**Household & Tax Settings**")
         c4, c5, c6 = st.columns(3)
-        filing_status = c4.selectbox("Tax Filing Status",["Single", "MFJ"], key="filing_status")
+        filing_status = c4.selectbox("Tax Filing Status", ["Single", "MFJ"], key="filing_status")
         state_in = c5.text_input("State of Residence", key="state")
         county_in = c6.text_input("County of Residence", key="county")
         
@@ -200,7 +200,7 @@ with nav1:
             
             st.markdown("**Spouse Civilian Pension**")
             csp1, csp2, csp3 = st.columns(3)
-            s_pension_type = csp1.selectbox("Spouse Pension Type", ["FERS", "Other"], key="s_pension_type")
+            s_pension_type = csp1.selectbox("Spouse Pension Type",["FERS", "Other"], key="s_pension_type")
             s_pension_est = csp2.number_input("Spouse Full Pension Est. ($)", min_value=0, step=1000, key="s_pension_est")
             
             if st.session_state.s_pension_type == "FERS":
@@ -324,7 +324,7 @@ with nav1:
             st.session_state.s_health_cost = 0
             st.session_state.s_oop_cost = 0
 
-        p_needs_aca = st.session_state.health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]
+        p_needs_aca = st.session_state.health_plan in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]
         s_needs_aca = (st.session_state.filing_status == 'MFJ') and (st.session_state.s_health_plan in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"])
 
         if p_needs_aca or s_needs_aca:
@@ -670,7 +670,7 @@ with nav1:
             with col2: st.plotly_chart(plot_taxes_and_rmds(history, years_arr), use_container_width=True)
             
             st.markdown("### Tax-Efficient Withdrawal Strategy Analysis")
-            st.table(pd.DataFrame({"Strategy Component":["Tax-Efficient Withdrawal Order", "Dynamic Downturn Strategy", "Capital Gains (LTCG)", "Impact of Inflation"], "Analysis / Value":["Normal Years: Fund lifestyle purely from TSP/IRA, allowing Roth to compound tax-free.", "Crash Years: Halt TSP withdrawals. Deplete Cash -> Taxable -> Roth to avoid Sequence Risk.", "The engine tracks your Taxable Cost Basis. When Taxable funds are sold, it applies 0/15/20% LTCG brackets + 3.8% NIIT.", "Expenses rise geometrically with CPI. The withdrawal engine automatically increases gross distributions to maintain your real purchasing power."]}))
+            st.table(pd.DataFrame({"Strategy Component":["Tax-Efficient Withdrawal Order", "Dynamic Downturn Strategy", "Capital Gains (LTCG)", "Impact of Inflation"], "Analysis / Value":["Normal Years: Fund lifestyle purely from TSP/IRA, allowing Roth & HSA to compound tax-free.", "Crash Years: Halt TSP withdrawals. Deplete Cash -> Taxable -> HSA -> Roth to avoid Sequence Risk.", "The engine tracks your Taxable Cost Basis. When Taxable funds are sold, it applies 0/15/20% LTCG brackets + 3.8% NIIT.", "Expenses rise geometrically with CPI. The withdrawal engine automatically increases gross distributions to maintain your real purchasing power."]}))
 
         with t6:
             st.subheader("After-Tax Legacy & Estate Breakdown")
@@ -820,7 +820,7 @@ with nav2:
     - **Strategies:** Choose a strategy for each account. Select *Dynamic Glidepath (Target Date)* to automatically deploy a protective "Bond Tent" during your fragile transition decade.
     - **Age-Based De-risking:** Highly recommended. If enabled, the engine will gently decay your stock market exposure by 1% every year after age 65 (down to a floor of 20% stocks). This physically models how real retirees reduce risk over their lifespan, stabilizing your long-term worst-case scenarios.
     - **Money Market (Cash):** This is your "Safety Net." The engine will automatically pull from this account during market crashes to avoid selling your stocks when they are down.
-    - **Health Savings Account (HSA):** *Please Note:* HSA funds are strictly segregated for out-of-pocket medical expenses and are NOT included in the core portfolio survival probability or the Initial Withdrawal Rate (IWR) optimization.
+    - **Health Savings Account (HSA):** HSA balances are fully integrated into your core portfolio. The engine leverages the 'reimbursed receipt' strategy, allowing it to draw down your HSA completely tax-free to bridge generic income gaps alongside your Roth accounts.
     """)
 
     st.header("Run the Engine")
@@ -876,7 +876,7 @@ with nav3:
     st.write("The engine actively manages where you pull money from year by year based on what the simulated market is doing.")
     st.markdown("""
     - **Normal Years:** Lifestyle is funded by Tax-Deferred accounts (TSP/Trad IRA), allowing your Tax-Free (Roth) and Taxable accounts to compound.
-    - **Market Crash Years (Down >10%):** The engine triggers an emergency **Sequence of Return Risk (SORR)** protocol. It immediately halts the sale of equities in your TSP/IRA to avoid locking in losses. It seamlessly pivots to burning down your Cash Buffer, followed by Taxable and Roth accounts, until the market recovers.
+    - **Market Crash Years (Down >10%):** The engine triggers an emergency **Sequence of Return Risk (SORR)** protocol. It immediately halts the sale of equities in your TSP/IRA to avoid locking in losses. It seamlessly pivots to burning down your Cash Buffer, followed by Taxable, HSA, and Roth accounts, until the market recovers.
     """)
 
     st.header("6. Federal Tax Code & Roth Optimization Engine")

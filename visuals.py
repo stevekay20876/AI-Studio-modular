@@ -46,6 +46,7 @@ def plot_liquidity_timeline(history, years_arr):
     fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['tsp_bal'], axis=0), mode='lines', stackgroup='one', name='TSP'))
     fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['ira_bal'], axis=0), mode='lines', stackgroup='one', name='Trad IRA'))
     fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['taxable_bal'], axis=0), mode='lines', stackgroup='one', name='Taxable'))
+    fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['hsa_bal'], axis=0), mode='lines', stackgroup='one', name='HSA'))
     fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['roth_bal'], axis=0), mode='lines', stackgroup='one', name='Roth IRA'))
     fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['cash_bal'], axis=0), mode='lines', stackgroup='one', name='Cash Buffer'))
     
@@ -68,6 +69,7 @@ def plot_cash_flow_sources(history, years_arr):
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['tsp_withdrawal'], axis=0), name="TSP Withdrawal", marker_color='#2ca02c'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['ira_withdrawal'], axis=0), name="IRA Withdrawal", marker_color='#98df8a'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['roth_withdrawal'], axis=0), name="Roth Withdrawal", marker_color='green'))
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['hsa_withdrawal'], axis=0), name="HSA Withdrawal", marker_color='#17becf'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['taxable_withdrawal'], axis=0), name="Taxable Withdrawal", marker_color='orange'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['cash_withdrawal'], axis=0), name="Cash Withdrawal", marker_color='gray'))
     
@@ -136,6 +138,7 @@ def plot_withdrawal_hierarchy(history, years_arr):
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['tsp_withdrawal'], axis=0), name="TSP Withdrawal", marker_color='#2ca02c'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['ira_withdrawal'], axis=0), name="Trad IRA Withdrawal", marker_color='#98df8a'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['roth_withdrawal'], axis=0), name="Roth Withdrawal", marker_color='green'))
+    fig.add_trace(go.Bar(x=years_arr, y=np.median(history['hsa_withdrawal'], axis=0), name="HSA Withdrawal", marker_color='#17becf'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['taxable_withdrawal'], axis=0), name="Taxable Withdrawal", marker_color='orange'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['cash_withdrawal'], axis=0), name="Cash Withdrawal", marker_color='gray'))
     fig.add_trace(go.Bar(x=years_arr, y=np.median(history['extra_rmd'], axis=0), name="Reinvested RMD", marker_color='darkgray'))
@@ -164,13 +167,14 @@ def plot_legacy_breakdown(history):
     tsp_term = np.median(history['tsp_bal'][:, -1])
     ira_term = np.median(history['ira_bal'][:, -1])
     roth_term = np.median(history['roth_bal'][:, -1])
+    hsa_term = np.median(history['hsa_bal'][:, -1])
     taxable_term = np.median(history['taxable_bal'][:, -1])
     cash_term = np.median(history['cash_bal'][:, -1])
     home_term = np.median(history['home_value'][:, -1])
     
-    labels = ['TSP (Tax-Deferred)', 'Trad IRA (Tax-Deferred)', 'Roth IRA (Tax-Free)', 'Taxable Investments', 'Cash/MM', 'Real Estate']
-    values = [max(0, tsp_term), max(0, ira_term), max(0, roth_term), max(0, taxable_term), max(0, cash_term), max(0, home_term)]
-    colors = ['#1f77b4', '#aec7e8', '#2ca02c', '#ff7f0e', '#d62728', 'gray']
+    labels =['TSP (Tax-Deferred)', 'Trad IRA (Tax-Deferred)', 'Roth IRA (Tax-Free)', 'Taxable Investments', 'Cash/MM', 'Real Estate', 'HSA']
+    values =[max(0, tsp_term), max(0, ira_term), max(0, roth_term), max(0, taxable_term), max(0, cash_term), max(0, home_term), max(0, hsa_term)]
+    colors =['#1f77b4', '#aec7e8', '#2ca02c', '#ff7f0e', '#d62728', 'gray', '#17becf']
 
     fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=.4, marker=dict(colors=colors))])
     fig.update_layout(
@@ -183,7 +187,7 @@ def plot_roth_strategy_comparison(roth_results):
     strategies = list(roth_results.keys())
     wealths = [roth_results[s]['wealth'] for s in strategies]
     winner_idx = np.argmax(wealths)
-    colors = ['gray'] * len(strategies)
+    colors =['gray'] * len(strategies)
     colors[winner_idx] = '#00837B'
     
     fig = px.bar(x=wealths, y=strategies, orientation='h', title="Strategic Scenario Comparison (Terminal Legacy in Today's $)")
@@ -211,9 +215,9 @@ def plot_roth_tax_impact(roth_results, winner, years_arr):
     return fig
 
 def plot_ss_breakeven(ss_fra, age_arr, years_arr, fra_age=67):
-    early_stream = [(ss_fra * 0.7) * (0.79 if yr >= 2035 else 1.0) if age >= 62 else 0 for age, yr in zip(age_arr, years_arr)]
-    fra_stream = [(ss_fra * 1.0) * (0.79 if yr >= 2035 else 1.0) if age >= fra_age else 0 for age, yr in zip(age_arr, years_arr)]
-    delayed_stream = [(ss_fra * 1.24) * (0.79 if yr >= 2035 else 1.0) if age >= 70 else 0 for age, yr in zip(age_arr, years_arr)]
+    early_stream =[(ss_fra * 0.7) * (0.79 if yr >= 2035 else 1.0) if age >= 62 else 0 for age, yr in zip(age_arr, years_arr)]
+    fra_stream =[(ss_fra * 1.0) * (0.79 if yr >= 2035 else 1.0) if age >= fra_age else 0 for age, yr in zip(age_arr, years_arr)]
+    delayed_stream =[(ss_fra * 1.24) * (0.79 if yr >= 2035 else 1.0) if age >= 70 else 0 for age, yr in zip(age_arr, years_arr)]
     
     cum_early = np.cumsum(early_stream)
     cum_fra = np.cumsum(fra_stream)
@@ -247,3 +251,70 @@ def plot_medicare_comparison(history, years_arr, inputs):
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     return fig
+
+--- END OF FILE visuals.py ---
+```
+
+### 4. `exports.py`
+*(Added the HSA column directly into the CSV exports logic)*
+```python
+--- START OF FILE exports.py ---
+
+import numpy as np
+import pandas as pd
+
+def build_csv_dataframe(history, years_arr, age_arr, percentile=50):
+    data = {
+        "Calendar Year": years_arr,
+        "Age": age_arr,
+        "Rate of Return": np.percentile(history['port_return'], percentile, axis=0),
+        "Inflation Rate": np.percentile(history['inflation'], percentile, axis=0),
+        "Real Rate of Return": np.percentile(history['real_return'], percentile, axis=0),
+        "Cumulative Inflation Multiplier": np.percentile(history['cum_inf'], percentile, axis=0), 
+        "Home Value": np.percentile(history['home_value'], percentile, axis=0),
+        "Taxable ETF Balance": np.percentile(history['taxable_bal'], percentile, axis=0),
+        "Roth IRA Balance": np.percentile(history['roth_bal'], percentile, axis=0),
+        "Trad IRA Balance": np.percentile(history['ira_bal'], percentile, axis=0),
+        "HSA Balance": np.percentile(history['hsa_bal'], percentile, axis=0),
+        "Money Market Balance": np.percentile(history['cash_bal'], percentile, axis=0),
+        "Remaining TSP Account": np.percentile(history['tsp_bal'], percentile, axis=0), 
+        "TSP Withdrawal": np.percentile(history['tsp_withdrawal'], percentile, axis=0), 
+        "Trad IRA Withdrawal": np.percentile(history['ira_withdrawal'], percentile, axis=0), 
+        "Annual Roth IRA Withdrawal": np.percentile(history['roth_withdrawal'], percentile, axis=0),    
+        "Annual HSA Withdrawal": np.percentile(history['hsa_withdrawal'], percentile, axis=0),    
+        "Annual Taxable Withdrawal": np.percentile(history['taxable_withdrawal'], percentile, axis=0),  
+        "Annual Cash/MM Withdrawal": np.percentile(history['cash_withdrawal'], percentile, axis=0),      
+        "Salary Income": np.percentile(history['salary_income'], percentile, axis=0),
+        "Total Pension (FERS + Mil)": np.percentile(history['pension_income'], percentile, axis=0),
+        "VA Disability Pay": np.percentile(history['va_income'], percentile, axis=0) if 'va_income' in history else np.zeros(len(years_arr)),
+        "Social Security": np.percentile(history['ss_income'], percentile, axis=0),
+        "RMD Amount": np.percentile(history['rmds'], percentile, axis=0),
+        "Extra RMD Amount": np.percentile(history['extra_rmd'], percentile, axis=0),
+        "Roth Conversion Amount": np.percentile(history['roth_conversion'], percentile, axis=0),
+        "Roth Taxes Paid from Cash": np.percentile(history['roth_taxes_from_cash'], percentile, axis=0), 
+        "IRS Taxable Income": np.percentile(history['taxable_income'], percentile, axis=0), 
+        "MAGI (IRMAA Base)": np.percentile(history['magi'], percentile, axis=0), 
+        "Federal Taxes": np.percentile(history['taxes_fed'], percentile, axis=0),
+        "State Taxes": np.percentile(history['taxes_state'], percentile, axis=0),
+        "Medicare Cost": np.percentile(history['medicare_cost'], percentile, axis=0),
+        "Health Insurance Cost": np.percentile(history['health_cost'], percentile, axis=0),
+        "Additional Expenses (Smile Curve)": np.percentile(history['additional_expenses'], percentile, axis=0),
+        "Total Expenses": np.percentile(history['taxes_fed'] + history['taxes_state'] + history['medicare_cost'] + history['health_cost'] + history['mortgage_cost'] + history['additional_expenses'], percentile, axis=0),
+        "Net Spendable Annual": np.percentile(history['net_spendable'], percentile, axis=0),
+        "Total Income": np.percentile(history['net_spendable'] + history['taxes_fed'] + history['taxes_state'] + history['medicare_cost'] + history['health_cost'] + history['mortgage_cost'] + history['additional_expenses'], percentile, axis=0),
+        "Ending Total Balance (Nominal $)": np.percentile(history['total_bal'], percentile, axis=0),
+        "Ending Total Balance (Today's $)": np.percentile(history['total_bal_real'], percentile, axis=0), 
+        "Withdrawal Constraint Active":["Yes" if flag > 0 else "No" for flag in np.percentile(history['constraint_active'], percentile, axis=0)]
+    }
+    
+    df = pd.DataFrame(data)
+    
+    # By checking if the maximum absolute value is less than 0.0001, we mathematically bypass floating point inaccuracy bugs.
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    cols_to_drop = [col for col in numeric_cols if df[col].abs().max() < 1e-4]
+    
+    # Ensure we never accidentally drop the Calendar Year or Age columns
+    cols_to_drop =[c for c in cols_to_drop if c not in ["Calendar Year", "Age"]]
+    df = df.drop(columns=cols_to_drop)
+    
+    return df
