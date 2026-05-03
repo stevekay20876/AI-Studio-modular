@@ -133,17 +133,35 @@ class StochasticRetirementEngine:
             tax += np.maximum(0, in_bracket) * brackets[i][1]
         return tax
 
-    def run_mc(self, iwr, seed=None, roth_strategy=0, override_port=None):
+ def run_mc(self, iwr, seed=None, roth_strategy=0, override_port=None):
         returns, inf_paths = self.generate_stochastic_paths(seed=seed, override_port=override_port)
         cash_ret = float(self.inputs.get('cash_ret', 0.04))
         
         if seed is not None: np.random.seed(seed + 1)
         p_death_ages = self.generate_stochastic_deaths(self.inputs['current_age'])
+        
         if self.inputs['filing_status'] == 'MFJ':
             if seed is not None: np.random.seed(seed + 2)
             s_death_ages = self.generate_stochastic_deaths(self.inputs.get('spouse_age', self.inputs['current_age']))
+            
+            # Calculate true terminal year for accurate actuarial scoring
+            p_death_yr = np.clip(p_death_ages - self.inputs['current_age'] - 1, 0, self.years - 1)
+            s_death_yr = np.clip(s_death_ages - self.inputs.get('spouse_age', self.inputs['current_age']) - 1, 0, self.years - 1)
+            terminal_year_arr = np.maximum(p_death_yr, s_death_yr)
+            
+            # Prevent CSV/Charts from zeroing out: Force last survivor to live to 120
+            p_survives_s = p_death_yr >= s_death_yr
+            p_death_ages = np.where(p_survives_s, 120, p_death_ages)
+            s_death_ages = np.where(~p_survives_s, 120, s_death_ages)
         else:
             s_death_ages = np.zeros(self.iterations, dtype=int)
+            
+            # Calculate true terminal year for accurate actuarial scoring
+            p_death_yr = np.clip(p_death_ages - self.inputs['current_age'] - 1, 0, self.years - 1)
+            terminal_year_arr = p_death_yr
+            
+            # Prevent CSV/Charts from zeroing out: Force single filer to live to 120
+            p_death_ages = np.full(self.iterations, 120)
             
         # Vertically expanded dictionary to ensure no keys are truncated
         history = {
@@ -186,7 +204,7 @@ class StochasticRetirementEngine:
             'income_gap': np.zeros((self.iterations, self.years)),
             'guaranteed_income': np.zeros((self.iterations, self.years)),
             'tax_paid': np.zeros((self.iterations, self.years)),
-            'terminal_year': np.zeros(self.iterations, dtype=int)
+            'terminal_year': terminal_year_arr
         }
 
         tsp = np.full(self.iterations, float(self.inputs['tsp_bal']))
@@ -776,11 +794,6 @@ class StochasticRetirementEngine:
                 history['net_spendable'][:, yr] = np.where(household_alive, actual_portfolio_withdrawal + yr_pension + yr_va + yr_ss + yr_salary - total_deductions, 0)
             else:
                 history['net_spendable'][:, yr] = 0.0
-                
-            just_died_mask = (~household_alive) & (history['terminal_year'] == 0)
-            history['terminal_year'][just_died_mask] = yr
-
-        history['terminal_year'][history['terminal_year'] == 0] = self.years - 1
             
         return history
 
