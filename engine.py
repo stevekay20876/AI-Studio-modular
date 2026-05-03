@@ -5,6 +5,27 @@ import datetime
 from config import *
 import gc
 
+# Simplified SSA Period Life Table (Unisex Actuarial Probabilities of Death: q_x)
+SSA_MORTALITY = {
+    **{a: 0.001 for a in range(0, 30)},
+    **{a: 0.0015 for a in range(30, 40)},
+    **{a: 0.0025 for a in range(40, 50)},
+    **{a: 0.005 for a in range(50, 60)},
+    60: 0.007, 61: 0.008, 62: 0.009, 63: 0.010, 64: 0.011,
+    65: 0.013, 66: 0.014, 67: 0.016, 68: 0.017, 69: 0.019,
+    70: 0.021, 71: 0.024, 72: 0.027, 73: 0.030, 74: 0.034,
+    75: 0.038, 76: 0.043, 77: 0.048, 78: 0.054, 79: 0.061,
+    80: 0.069, 81: 0.077, 82: 0.087, 83: 0.098, 84: 0.111,
+    85: 0.125, 86: 0.141, 87: 0.158, 88: 0.177, 89: 0.198,
+    90: 0.222, 91: 0.247, 92: 0.274, 93: 0.303, 94: 0.334,
+    95: 0.365, 96: 0.398, 97: 0.431, 98: 0.466, 99: 0.500,
+    100: 0.535, 101: 0.570, 102: 0.605, 103: 0.640, 104: 0.675,
+    105: 0.710, 106: 0.745, 107: 0.780, 108: 0.815, 109: 0.850,
+    110: 0.885, 111: 0.920, 112: 0.955, 113: 0.990
+}
+for a in range(114, 121):
+    SSA_MORTALITY[a] = 1.0
+
 class StochasticRetirementEngine:
     def __init__(self, inputs):
         self.inputs = inputs
@@ -1194,8 +1215,11 @@ class StochasticRetirementEngine:
 
     def objective_function(self, iwr_test):
         history = self.run_mc(iwr_test, seed=42, roth_strategy=0)
+        
+        # Isolate liquid portfolio for optimization
         liquid_real_path = history['total_bal_real'][:, -1] - (history['home_value'][:, -1] / history['cum_inf'][:, -1])
         median_real_path = np.median(liquid_real_path)
+        
         target_floor = self.inputs.get('target_floor', 0.0)
         return median_real_path - target_floor
 
@@ -1211,7 +1235,10 @@ class StochasticRetirementEngine:
     def analyze_portfolios(self, opt_iwr, roth_strategy=0):
         results = {}
         hist_custom = self.run_mc(opt_iwr, seed=42, roth_strategy=roth_strategy, override_port=None)
+        
+        # Isolate liquid portfolio for grading success
         liquid_custom = hist_custom['total_bal_real'][:, -1] - (hist_custom['home_value'][:, -1] / hist_custom['cum_inf'][:, -1])
+        
         results["Your Custom Mix"] = {'wealth': np.median(liquid_custom), 'cut_prob': np.mean(np.any(hist_custom['constraint_active'] == 1, axis=1)) * 100}
         del hist_custom
         gc.collect()
@@ -1233,8 +1260,11 @@ class StochasticRetirementEngine:
         
         for s_idx, s_name in strats:
             hist = self.run_mc(opt_iwr, seed=42, roth_strategy=s_idx)
+            
+            # Grade Roth strategies solely on liquid legacy improvement
             liquid_wealth = hist['total_bal_real'][:, -1] - (hist['home_value'][:, -1] / hist['cum_inf'][:, -1])
             wealth = np.median(liquid_wealth)
+            
             results[s_name] = {'wealth': wealth, 'taxes': np.sum(np.median(hist['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist['rmds'], axis=0)), 'tax_path': np.median(hist['taxes_fed'], axis=0), 'conv_path': np.median(hist['roth_conversion'], axis=0), 'taxable_inc_path': np.median(hist['taxable_income'], axis=0)}
             
             if wealth > best_wealth:
