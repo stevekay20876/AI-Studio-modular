@@ -169,7 +169,6 @@ class StochasticRetirementEngine:
             'tax_paid': np.zeros((self.iterations, self.years))
         }
 
-        # Track discrete segregated accounts internally for targeted RMD scaling
         p_tsp = np.full(self.iterations, float(self.inputs.get('p_tsp_bal', 0.0)))
         s_tsp = np.full(self.iterations, float(self.inputs.get('s_tsp_bal', 0.0)))
         p_ira = np.full(self.iterations, float(self.inputs.get('p_ira_bal', 0.0)))
@@ -343,10 +342,10 @@ class StochasticRetirementEngine:
         state_str = self.inputs.get('state', '').strip().upper()
         county_str = self.inputs.get('county', '').strip().upper()
         
-        if state_str not in RETIREMENT_TAX_FREE_STATES:
-            state_tax_rate = STATE_TAX_RATES.get(state_str, 0.045)
-        else:
+        if state_str in NO_INCOME_TAX_STATES:
             state_tax_rate = 0.0
+        else:
+            state_tax_rate = STATE_TAX_RATES.get(state_str, 0.045)
             
         if county_str != "" and state_str in["MD", "IN", "PA", "OH", "NY"]:
             local_tax_rate = 0.025
@@ -463,16 +462,22 @@ class StochasticRetirementEngine:
             hsa += np.where(p_alive, p_hsa_c * cum_inf * p_work_frac, 0) + np.where(s_alive, s_hsa_c * cum_inf * s_work_frac, 0)
 
             p_civ_pen = np.where(p_alive, p_base_pension * p_pension_mult * p_ret_frac, np.where(s_alive, p_base_pension * p_fers_survivor_mult, 0))
+            
             p_mil_pen_active = np.maximum(0, p_base_mil_gross - (p_base_va if not p_crdp else 0) - (p_base_mil_gross * 0.065 if p_mil_sbp and s_alive.any() else 0))
             p_mil_pen = np.where(p_alive & (age >= p_mil_start_age), p_mil_pen_active, np.where(~p_alive & s_alive & p_mil_sbp, p_base_mil_gross * 0.55, 0))
+            
             yr_va_p = np.where(p_alive & (age >= p_mil_start_age), p_base_va, 0)
             
             s_civ_pen = np.where(s_alive, s_base_pension * s_pension_mult * s_ret_frac, np.where(p_alive, s_base_pension * s_fers_survivor_mult, 0))
+            
             s_mil_pen_active = np.maximum(0, s_base_mil_gross - (s_base_va if not s_crdp else 0) - (s_base_mil_gross * 0.065 if s_mil_sbp and p_alive.any() else 0))
             s_mil_pen = np.where(s_alive & (spouse_age >= s_mil_start_age), s_mil_pen_active, np.where(~s_alive & p_alive & s_mil_sbp, s_base_mil_gross * 0.55, 0))
+            
             yr_va_s = np.where(s_alive & (spouse_age >= s_mil_start_age), s_base_va, 0)
             
-            yr_pension = p_civ_pen + p_mil_pen + s_civ_pen + s_mil_pen
+            yr_civ_pension = p_civ_pen + s_civ_pen
+            yr_mil_pension = p_mil_pen + s_mil_pen
+            yr_pension = yr_civ_pension + yr_mil_pension
             yr_va = yr_va_p + yr_va_s
 
             p_active_ss = p_base_ss * p_ss_modifier * ss_haircut
@@ -748,22 +753,42 @@ class StochasticRetirementEngine:
             niit_tax = np.where(magi > (niit_threshold_val * cum_inf), realized_gains * 0.038, 0.0)
             base_tax_fed += (ltcg_tax + niit_tax)
             
+            # --- START COMPLEX STATE TAX MATRIX (PRE-CONVERSION) ---
             state_taxable_base = np.where(
-                np.isin(state_str, RETIREMENT_TAX_FREE_STATES), 
-                np.maximum(0, taxable_income - rmds - w_tsp - w_ira - yr_pension - taxable_ss_base), 
+                np.isin(state_str, NO_INCOME_TAX_STATES), 
+                0.0, 
                 np.where(
                     np.isin(state_str, STATES_TAXING_SS), 
                     taxable_income, 
                     np.maximum(0, taxable_income - taxable_ss_base)
                 )
             )
+            
+            if state_str in MILITARY_PENSION_EXEMPT_STATES:
+                state_taxable_base = np.maximum(0, state_taxable_base - yr_mil_pension)
                     
-            state_excl_val = np.where(is_mfj, STATE_EXCLUSIONS_65_MFJ.get(state_str, 0.0), STATE_EXCLUSIONS_65_SINGLE.get(state_str, 0.0)) * cum_inf
-            state_exclusion = np.where((age >= 65) | (spouse_age >= 65), state_excl_val, 0)
-            ret_income = yr_pension + w_tsp + w_ira
-            allowed_exclusion = np.minimum(state_exclusion, ret_income)
-            state_taxable_base = np.maximum(0, state_taxable_base - allowed_exclusion)
-                    
+            is_fed_pension = self.inputs.get('pension_type', 'FERS') == 'FERS'
+            ret_income = rmds + w_tsp + w_ira
+            total_ret_income = ret_income + yr_civ_pension
+            
+            if state_str in FULL_RETIREMENT_EXEMPT_STATES:
+                state_taxable_base = np.maximum(0, state_taxable_base - total_ret_income)
+            elif state_str in FEDERAL_PENSION_EXEMPT_STATES and is_fed_pension:
+                state_taxable_base = np.maximum(0, state_taxable_base - yr_civ_pension)
+                state_excl_val = np.where(is_mfj, STATE_EXCLUSIONS_65_MFJ.get(state_str, 0.0), STATE_EXCLUSIONS_65_SINGLE.get(state_str, 0.0)) * cum_inf
+                state_exclusion = np.where((age >= 65) | (spouse_age >= 65), state_excl_val, 0.0)
+                if state_str == "NJ":
+                    state_exclusion = np.where(gross_income > (150000 * cum_inf), 0.0, state_exclusion)
+                allowed_exclusion = np.minimum(state_exclusion, ret_income)
+                state_taxable_base = np.maximum(0, state_taxable_base - allowed_exclusion)
+            else:
+                state_excl_val = np.where(is_mfj, STATE_EXCLUSIONS_65_MFJ.get(state_str, 0.0), STATE_EXCLUSIONS_65_SINGLE.get(state_str, 0.0)) * cum_inf
+                state_exclusion = np.where((age >= 65) | (spouse_age >= 65), state_excl_val, 0.0)
+                if state_str == "NJ":
+                    state_exclusion = np.where(gross_income > (150000 * cum_inf), 0.0, state_exclusion)
+                allowed_exclusion = np.minimum(state_exclusion, total_ret_income)
+                state_taxable_base = np.maximum(0, state_taxable_base - allowed_exclusion)
+                        
             base_tax_state_local = state_taxable_base * combined_state_local_rate
             
             total_tax_fed = np.where(household_alive, base_tax_fed, 0)
@@ -775,7 +800,7 @@ class StochasticRetirementEngine:
             
             if roth_strategy > 0 and current_year >= self.ret_year and age < 75:
                 space = np.zeros(self.iterations)
-                if roth_strategy in [1, 4]: 
+                if roth_strategy in[1, 4]: 
                     mfj_space = np.zeros(self.iterations)
                     single_space = np.zeros(self.iterations)
                     
@@ -848,20 +873,42 @@ class StochasticRetirementEngine:
                 new_niit_tax = np.where(final_magi > (np.where(is_mfj, NIIT_THRESHOLD_MFJ, NIIT_THRESHOLD_SINGLE) * cum_inf), realized_gains * 0.038, 0.0)
                 extra_tax_fed = (new_tax_fed + new_ltcg_tax + new_niit_tax) - base_tax_fed
                 
-                extra_state_taxable = np.where(
-                    np.isin(state_str, RETIREMENT_TAX_FREE_STATES), 
-                    0, 
+                # --- START COMPLEX STATE TAX MATRIX (POST-CONVERSION) ---
+                new_state_taxable_base = np.where(
+                    np.isin(state_str, NO_INCOME_TAX_STATES), 
+                    0.0, 
                     np.where(
                         np.isin(state_str, STATES_TAXING_SS), 
-                        final_taxable_income - taxable_income, 
-                        final_taxable_income - taxable_ss_conv - (taxable_income - taxable_ss_base)
+                        final_taxable_income, 
+                        np.maximum(0, final_taxable_income - taxable_ss_conv)
                     )
                 )
+
+                if state_str in MILITARY_PENSION_EXEMPT_STATES:
+                    new_state_taxable_base = np.maximum(0, new_state_taxable_base - yr_mil_pension)
                 
-                ret_income_conv = yr_pension + w_tsp + w_ira + conv_amt
-                allowed_exclusion_conv = np.minimum(state_exclusion, ret_income_conv)
-                extra_exclusion_benefit = allowed_exclusion_conv - allowed_exclusion
-                extra_state_taxable = np.maximum(0, extra_state_taxable - extra_exclusion_benefit)
+                ret_income_conv = rmds + w_tsp + w_ira + conv_amt
+                total_ret_income_conv = ret_income_conv + yr_civ_pension
+                
+                if state_str in FULL_RETIREMENT_EXEMPT_STATES:
+                    new_state_taxable_base = np.maximum(0, new_state_taxable_base - total_ret_income_conv)
+                elif state_str in FEDERAL_PENSION_EXEMPT_STATES and is_fed_pension:
+                    new_state_taxable_base = np.maximum(0, new_state_taxable_base - yr_civ_pension)
+                    state_excl_val = np.where(is_mfj, STATE_EXCLUSIONS_65_MFJ.get(state_str, 0.0), STATE_EXCLUSIONS_65_SINGLE.get(state_str, 0.0)) * cum_inf
+                    state_exclusion = np.where((age >= 65) | (spouse_age >= 65), state_excl_val, 0.0)
+                    if state_str == "NJ":
+                        state_exclusion = np.where(final_magi > (150000 * cum_inf), 0.0, state_exclusion)
+                    allowed_exclusion_conv = np.minimum(state_exclusion, ret_income_conv)
+                    new_state_taxable_base = np.maximum(0, new_state_taxable_base - allowed_exclusion_conv)
+                else:
+                    state_excl_val = np.where(is_mfj, STATE_EXCLUSIONS_65_MFJ.get(state_str, 0.0), STATE_EXCLUSIONS_65_SINGLE.get(state_str, 0.0)) * cum_inf
+                    state_exclusion = np.where((age >= 65) | (spouse_age >= 65), state_excl_val, 0.0)
+                    if state_str == "NJ":
+                        state_exclusion = np.where(final_magi > (150000 * cum_inf), 0.0, state_exclusion)
+                    allowed_exclusion_conv = np.minimum(state_exclusion, total_ret_income_conv)
+                    new_state_taxable_base = np.maximum(0, new_state_taxable_base - allowed_exclusion_conv)
+
+                extra_state_taxable = np.maximum(0, new_state_taxable_base - state_taxable_base)
 
                 extra_tax_state = extra_state_taxable * combined_state_local_rate
                 extra_tax_total = extra_tax_fed + extra_tax_state
