@@ -74,8 +74,20 @@ with nav1:
         'save_file_name': "client_profile"
     }
 
-    for k, v in DEFAULT_STATE.items():
-        if k not in st.session_state: st.session_state[k] = v
+    # --- WIZARD STATE PERSISTENCE LOGIC ---
+    # 1. Create a permanent shadow copy of the state
+    if 'master_state' not in st.session_state:
+        st.session_state.master_state = DEFAULT_STATE.copy()
+
+    # 2. Capture any existing widget values BEFORE Streamlit deletes them
+    for k in DEFAULT_STATE.keys():
+        if k in st.session_state:
+            st.session_state.master_state[k] = st.session_state[k]
+
+    # 3. Re-inject the saved values back into session_state so widgets populate correctly
+    for k, v in st.session_state.master_state.items():
+        st.session_state[k] = v
+    # --------------------------------------
 
     if 'ui_mode' not in st.session_state: st.session_state.ui_mode = "Guided Wizard"
     if 'wizard_step' not in st.session_state: st.session_state.wizard_step = 1
@@ -99,9 +111,12 @@ with nav1:
                         loaded_data = json.load(uploaded_profile)
                         for key, value in loaded_data.items(): 
                             if key in ['ret_date', 's_ret_date', 'mil_diems', 's_mil_diems'] and isinstance(value, str):
-                                st.session_state[key] = datetime.date.fromisoformat(value)
+                                parsed_date = datetime.date.fromisoformat(value)
+                                st.session_state[key] = parsed_date
+                                st.session_state.master_state[key] = parsed_date
                             else:
                                 st.session_state[key] = value
+                                st.session_state.master_state[key] = value
                         st.session_state.loaded_file = uploaded_profile.name
                         # Automatically switch to Expert Mode so returning users see all their data
                         st.session_state.ui_mode = "Expert Form (All Fields)"
@@ -759,7 +774,7 @@ with nav1:
             if "Dynamic Glidepath (Target Date)" not in port_analysis:
                 port_analysis["Dynamic Glidepath (Target Date)"] = engine.analyze_portfolios(opt_iwr, roth_strategy=1).get("Dynamic Glidepath (Target Date)", {'wealth': 0, 'cut_prob': 0})
             
-            port_names, port_wealths, port_cuts = list(port_analysis.keys()), [port_analysis[p]['wealth'] for p in port_analysis.keys()], [port_analysis[p]['cut_prob'] for p in port_analysis.keys()]
+            port_names, port_wealths, port_cuts = list(port_analysis.keys()), [port_analysis[p]['wealth'] for p in port_analysis.keys()],[port_analysis[p]['cut_prob'] for p in port_analysis.keys()]
             st.table(pd.DataFrame({"Portfolio Strategy": port_names, "Median Liquid Legacy (Today's $)": port_wealths, "Probability of Guardrail Pay Cuts": port_cuts}).style.format({"Median Liquid Legacy (Today's $)": "${:,.0f}", "Probability of Guardrail Pay Cuts": "{:.1f}%"}))
 
         with t2:
@@ -774,9 +789,9 @@ with nav1:
                 
             st.markdown("### Integrated Year-by-Year Cash Flow Projections")
             df_ui = build_csv_dataframe(history_ui, years_arr, age_arr, percentile=50)
-            desired_cols = ['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'TSP Withdrawal', 'Trad IRA Withdrawal', 'Salary Income', 'Social Security', 'Total Pension (FERS + Mil)', 'VA Disability Pay', 'Additional Expenses (Smile Curve)']
-            display_cols = [c for c in desired_cols if c in df_ui.columns]
-            st.dataframe(df_ui[display_cols].style.format({c: "${:,.0f}" for c in display_cols if c not in ['Calendar Year', 'Age']}), use_container_width=True, hide_index=True)
+            desired_cols =['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'TSP Withdrawal', 'Trad IRA Withdrawal', 'Salary Income', 'Social Security', 'Total Pension (FERS + Mil)', 'VA Disability Pay', 'Additional Expenses (Smile Curve)']
+            display_cols =[c for c in desired_cols if c in df_ui.columns]
+            st.dataframe(df_ui[display_cols].style.format({c: "${:,.0f}" for c in display_cols if c not in['Calendar Year', 'Age']}), use_container_width=True, hide_index=True)
 
         with t3:
             st.subheader("Variable Spending Rules & Adaptive Guardrails")
