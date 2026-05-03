@@ -83,15 +83,9 @@ class StochasticRetirementEngine:
             return PORTFOLIOS[strat]['ret'], PORTFOLIOS[strat]['vol']
 
     def get_covariance_and_drifts(self, yr, override_port=None):
-        params = [self.get_yr_port_params(k, yr, override_port) for k in ['tsp_strat', 'ira_strat', 'roth_strat', 'taxable_strat', 'hsa_strat']]
+        params =[self.get_yr_port_params(k, yr, override_port) for k in['tsp_strat', 'ira_strat', 'roth_strat', 'taxable_strat', 'hsa_strat']]
         
-        corr = np.array([
-            [1.00, -0.15, -0.15, -0.15, -0.15, -0.15],
-            [-0.15, 1.00,  0.85,  0.85,  0.85,  0.85],
-            [-0.15, 0.85,  1.00,  0.85,  0.85,  0.85],
-            [-0.15, 0.85,  0.85,  1.00,  0.85,  0.85],
-            [-0.15, 0.85,  0.85,  0.85,  1.00,  0.85],
-            [-0.15, 0.85,  0.85,  0.85,  0.85,  1.00]
+        corr = np.array([[1.00, -0.15, -0.15, -0.15, -0.15, -0.15],[-0.15, 1.00,  0.85,  0.85,  0.85,  0.85],[-0.15, 0.85,  1.00,  0.85,  0.85,  0.85],[-0.15, 0.85,  0.85,  1.00,  0.85,  0.85],[-0.15, 0.85,  0.85,  0.85,  1.00,  0.85],[-0.15, 0.85,  0.85,  0.85,  0.85,  1.00]
         ])
         vols = np.array([0.020, params[0][1], params[1][1], params[2][1], params[3][1], params[4][1]])
         cov = np.outer(vols, vols) * corr
@@ -151,25 +145,47 @@ class StochasticRetirementEngine:
         else:
             s_death_ages = np.zeros(self.iterations, dtype=int)
             
+        # Vertically expanded dictionary to ensure no keys are truncated
         history = {
-            'total_bal_real': np.zeros((self.iterations, self.years)), 'cum_inf': np.zeros((self.iterations, self.years)), 
-            'tsp_bal': np.zeros((self.iterations, self.years)), 'ira_bal': np.zeros((self.iterations, self.years)), 
-            'roth_bal': np.zeros((self.iterations, self.years)), 'taxable_bal': np.zeros((self.iterations, self.years)), 
-            'cash_bal': np.zeros((self.iterations, self.years)), 'hsa_bal': np.zeros((self.iterations, self.years)), 
-            'home_value': np.zeros((self.iterations, self.years)), 'tsp_withdrawal': np.zeros((self.iterations, self.years)), 
-            'ira_withdrawal': np.zeros((self.iterations, self.years)), 'roth_withdrawal': np.zeros((self.iterations, self.years)), 
-            'taxable_withdrawal': np.zeros((self.iterations, self.years)), 'cash_withdrawal': np.zeros((self.iterations, self.years)), 
-            'rmds': np.zeros((self.iterations, self.years)), 'extra_rmd': np.zeros((self.iterations, self.years)), 
-            'taxes_fed': np.zeros((self.iterations, self.years)), 'taxes_state': np.zeros((self.iterations, self.years)), 
-            'taxable_income': np.zeros((self.iterations, self.years)), 'magi': np.zeros((self.iterations, self.years)), 
-            'medicare_cost': np.zeros((self.iterations, self.years)), 'health_cost': np.zeros((self.iterations, self.years)), 
-            'mortgage_cost': np.zeros((self.iterations, self.years)), 'additional_expenses': np.zeros((self.iterations, self.years)), 
-            'net_spendable': np.zeros((self.iterations, self.years)), 'salary_income': np.zeros((self.iterations, self.years)), 
-            'port_return': np.zeros((self.iterations, self.years)), 'real_return': np.zeros((self.iterations, self.years)), 
-            'constraint_active': np.zeros((self.iterations, self.years)), 'ss_income': np.zeros((self.iterations, self.years)),
-            'pension_income': np.zeros((self.iterations, self.years)), 'va_income': np.zeros((self.iterations, self.years)),
-            'roth_conversion': np.zeros((self.iterations, self.years)), 'roth_taxes_from_cash': np.zeros((self.iterations, self.years)), 
-            'income_gap': np.zeros((self.iterations, self.years)), 'guaranteed_income': np.zeros((self.iterations, self.years)),
+            'total_bal': np.zeros((self.iterations, self.years)),
+            'total_bal_real': np.zeros((self.iterations, self.years)),
+            'cum_inf': np.zeros((self.iterations, self.years)),
+            'tsp_bal': np.zeros((self.iterations, self.years)),
+            'ira_bal': np.zeros((self.iterations, self.years)),
+            'roth_bal': np.zeros((self.iterations, self.years)),
+            'taxable_bal': np.zeros((self.iterations, self.years)),
+            'cash_bal': np.zeros((self.iterations, self.years)),
+            'hsa_bal': np.zeros((self.iterations, self.years)),
+            'home_value': np.zeros((self.iterations, self.years)),
+            'tsp_withdrawal': np.zeros((self.iterations, self.years)),
+            'ira_withdrawal': np.zeros((self.iterations, self.years)),
+            'roth_withdrawal': np.zeros((self.iterations, self.years)),
+            'taxable_withdrawal': np.zeros((self.iterations, self.years)),
+            'cash_withdrawal': np.zeros((self.iterations, self.years)),
+            'rmds': np.zeros((self.iterations, self.years)),
+            'extra_rmd': np.zeros((self.iterations, self.years)),
+            'taxes_fed': np.zeros((self.iterations, self.years)),
+            'taxes_state': np.zeros((self.iterations, self.years)),
+            'taxable_income': np.zeros((self.iterations, self.years)),
+            'magi': np.zeros((self.iterations, self.years)),
+            'medicare_cost': np.zeros((self.iterations, self.years)),
+            'health_cost': np.zeros((self.iterations, self.years)),
+            'mortgage_cost': np.zeros((self.iterations, self.years)),
+            'additional_expenses': np.zeros((self.iterations, self.years)),
+            'net_spendable': np.zeros((self.iterations, self.years)),
+            'salary_income': np.zeros((self.iterations, self.years)),
+            'port_return': np.zeros((self.iterations, self.years)),
+            'real_return': np.zeros((self.iterations, self.years)),
+            'inflation': inf_paths,
+            'constraint_active': np.zeros((self.iterations, self.years)),
+            'ss_income': np.zeros((self.iterations, self.years)),
+            'pension_income': np.zeros((self.iterations, self.years)),
+            'va_income': np.zeros((self.iterations, self.years)),
+            'roth_conversion': np.zeros((self.iterations, self.years)),
+            'roth_taxes_from_cash': np.zeros((self.iterations, self.years)),
+            'income_gap': np.zeros((self.iterations, self.years)),
+            'guaranteed_income': np.zeros((self.iterations, self.years)),
+            'tax_paid': np.zeros((self.iterations, self.years)),
             'terminal_year': np.zeros(self.iterations, dtype=int)
         }
 
@@ -223,7 +239,7 @@ class StochasticRetirementEngine:
         p_mil_start_age = self.inputs.get('mil_start_age', 60)
         
         if p_mil_active:
-            if self.inputs['mil_discharge'] not in ["Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge"]:
+            if self.inputs['mil_discharge'] not in["Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge"]:
                 if self.inputs['mil_component'] in ["National Guard / Reserve", "Mixed (Active + Guard/Reserve)"]: eq_years = self.inputs['mil_points'] / 360.0
                 else: eq_years = self.inputs['mil_years'] + (self.inputs['mil_months'] / 12.0) + (self.inputs['mil_days'] / 360.0)
                 sys = self.inputs['mil_system']
@@ -231,7 +247,7 @@ class StochasticRetirementEngine:
                 p_base_mil_gross = self.inputs['mil_pay_base'] * mult * 12
                 p_mil_sbp = "Full SBP" in self.inputs['mil_sbp']
                 p_base_va = self.inputs['mil_va_pay'] * 12
-                p_crdp = self.inputs['mil_disability_rating'] in ["50% - 60%", "70% - 90%", "100%"] or self.inputs['mil_special_rating'] in ["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
+                p_crdp = self.inputs['mil_disability_rating'] in["50% - 60%", "70% - 90%", "100%"] or self.inputs['mil_special_rating'] in["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
 
         s_mil_active = self.inputs.get('s_mil_active', False)
         s_base_mil_gross = 0
@@ -241,15 +257,15 @@ class StochasticRetirementEngine:
         s_mil_start_age = self.inputs.get('s_mil_start_age', 60)
         
         if s_mil_active:
-            if self.inputs['s_mil_discharge'] not in ["Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge"]:
-                if self.inputs['s_mil_component'] in ["National Guard / Reserve", "Mixed (Active + Guard/Reserve)"]: s_eq_years = self.inputs['s_mil_points'] / 360.0
+            if self.inputs['s_mil_discharge'] not in["Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge"]:
+                if self.inputs['s_mil_component'] in["National Guard / Reserve", "Mixed (Active + Guard/Reserve)"]: s_eq_years = self.inputs['s_mil_points'] / 360.0
                 else: s_eq_years = self.inputs['s_mil_years'] + (self.inputs['s_mil_months'] / 12.0) + (self.inputs['s_mil_days'] / 360.0)
                 s_sys = self.inputs['s_mil_system']
                 s_mult = s_eq_years * 0.02 if "BRS" in s_sys else ((s_eq_years * 0.025) - max(0, 30 - s_eq_years) * 0.01 if "REDUX" in s_sys else s_eq_years * 0.025)
                 s_base_mil_gross = self.inputs['s_mil_pay_base'] * s_mult * 12
                 s_mil_sbp = "Full SBP" in self.inputs['s_mil_sbp']
                 s_base_va = self.inputs['s_mil_va_pay'] * 12
-                s_crdp = self.inputs['s_mil_disability_rating'] in ["50% - 60%", "70% - 90%", "100%"] or self.inputs['s_mil_special_rating'] in ["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
+                s_crdp = self.inputs['s_mil_disability_rating'] in["50% - 60%", "70% - 90%", "100%"] or self.inputs['s_mil_special_rating'] in["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
 
         p_ss_claim = self.inputs.get('ss_claim_age', 67)
         p_months_early, p_months_late = max(0, (67 - p_ss_claim) * 12), max(0, (p_ss_claim - 67) * 12)
@@ -671,7 +687,7 @@ class StochasticRetirementEngine:
             primary_medicare_age = 65 + intent_delay
 
             if age >= primary_medicare_age:
-                if health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
+                if health_plan in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
                     if has_40_quarters or intent_delay > 0:
                         p_med_cost += MEDICARE_PART_B_BASE * cum_inf
                         if intent_delay > 0: p_med_cost *= (1.0 + (0.10 * intent_delay))
@@ -711,7 +727,7 @@ class StochasticRetirementEngine:
 
             s_health_plan = self.inputs.get('s_health_plan', "None/Self-Insure")
             if spouse_age >= 65:
-                if s_health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
+                if s_health_plan in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
                     if has_40_quarters:
                         s_med_cost += MEDICARE_PART_B_BASE * cum_inf
                         mfj_irmaa_add = np.zeros(self.iterations)
@@ -791,7 +807,7 @@ class StochasticRetirementEngine:
         del hist_custom
         gc.collect()
         
-        for port in ["Conservative (20% Stock / 80% Bond)", "Moderate (60% Stock / 40% Bond)", "Aggressive (100% Stock)", "Dynamic Glidepath (Target Date)"]:
+        for port in["Conservative (20% Stock / 80% Bond)", "Moderate (60% Stock / 40% Bond)", "Aggressive (100% Stock)", "Dynamic Glidepath (Target Date)"]:
             hist = self.run_mc(opt_iwr, seed=42, roth_strategy=roth_strategy, override_port=port)
             results[port] = {'wealth': np.median(hist['total_bal_real'][np.arange(self.iterations), hist['terminal_year']]), 'cut_prob': np.mean(np.any(hist['constraint_active'] == 1, axis=1)) * 100}
             del hist
@@ -801,7 +817,7 @@ class StochasticRetirementEngine:
 
     def analyze_roth_strategies(self, opt_iwr):
         user_max = float(self.inputs.get("max_tax_bracket", 0.24)) * 100
-        strats = [(0, 'Baseline (None)'), (1, 'Fill Current Bracket (IRMAA Protected)'), (2, 'Target IRMAA Tier 1'), (3, 'Target IRMAA Tier 2'), (4, f'Max User Bracket Fill ({user_max:.0f}%)')]
+        strats =[(0, 'Baseline (None)'), (1, 'Fill Current Bracket (IRMAA Protected)'), (2, 'Target IRMAA Tier 1'), (3, 'Target IRMAA Tier 2'), (4, f'Max User Bracket Fill ({user_max:.0f}%)')]
         
         results, best_wealth, winner_name, winner_hist = {}, -np.inf, 'Baseline (None)', None
         
