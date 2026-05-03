@@ -21,8 +21,10 @@ components.html(
 
 ui_styling = """
     <style>
-    #MainMenu {visibility: hidden;} footer {display: none !important;}[data-testid="stHeader"] {visibility: hidden;} .stAppBottom {display: none !important;}
-    .block-container { padding-top: 2rem; padding-bottom: 2rem; }[data-testid="stMetricValue"] { font-size: 2.0rem !important; font-weight: 700 !important; color: #00837B !important; }[data-testid="stDownloadButton"] button { background-color: #E6F7F6 !important; color: #00695C !important; border: 2px solid #80CBC4 !important; font-weight: 700 !important; border-radius: 8px !important; transition: all 0.2s ease; }
+    #MainMenu {visibility: hidden;} footer {display: none !important;} [data-testid="stHeader"] {visibility: hidden;} .stAppBottom {display: none !important;}
+    .block-container { padding-top: 2rem; padding-bottom: 2rem; }
+    [data-testid="stMetricValue"] { font-size: 2.0rem !important; font-weight: 700 !important; color: #00837B !important; }
+    [data-testid="stDownloadButton"] button { background-color: #E6F7F6 !important; color: #00695C !important; border: 2px solid #80CBC4 !important; font-weight: 700 !important; border-radius: 8px !important; transition: all 0.2s ease; }
     [data-testid="stDownloadButton"] button:hover { background-color: #B2DFDB !important; border-color: #00837B !important; }
     [data-testid="stTabs"] { background-color: #F8FAFC; border: 2px solid #E5E7EB; border-radius: 12px; padding: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
     div[data-baseweb="tab-list"] { gap: 0px; border-bottom: 2px solid #E5E7EB; }
@@ -40,6 +42,7 @@ with nav1:
     st.markdown("Institution-Grade Monte Carlo Simulator | Constant Amortization Spending Model (CASAM)")
 
     curr_year = datetime.datetime.now().year
+    strat_options = list(PORTFOLIOS.keys()) + ["Dynamic Glidepath (Target Date)"]
 
     DEFAULT_STATE = {
         'cur_age': None, 'ret_date': datetime.date(curr_year + 5, 1, 1), 'life_exp': None, 'filing_status': "Single",
@@ -76,7 +79,9 @@ with nav1:
 
     def get_current_state():
         state_dict = {k: st.session_state[k] for k in DEFAULT_STATE.keys() if k in st.session_state}
-        for date_field in['ret_date', 's_ret_date', 'mil_diems', 's_mil_diems']:
+        if state_dict.get('p_max_tsp'): state_dict['p_tsp_contrib'] = 0
+        if state_dict.get('s_max_tsp'): state_dict['s_tsp_contrib'] = 0
+        for date_field in ['ret_date', 's_ret_date', 'mil_diems', 's_mil_diems']:
             if isinstance(state_dict.get(date_field), datetime.date):
                 state_dict[date_field] = state_dict[date_field].isoformat()
         return state_dict
@@ -90,7 +95,7 @@ with nav1:
                     try:
                         loaded_data = json.load(uploaded_profile)
                         for key, value in loaded_data.items(): 
-                            if key in['ret_date', 's_ret_date', 'mil_diems', 's_mil_diems'] and isinstance(value, str):
+                            if key in ['ret_date', 's_ret_date', 'mil_diems', 's_mil_diems'] and isinstance(value, str):
                                 st.session_state[key] = datetime.date.fromisoformat(value)
                             else:
                                 st.session_state[key] = value
@@ -117,6 +122,8 @@ with nav1:
         county_in = c6.text_input("County of Residence", key="county")
         
         st.markdown("<hr style='margin-top:0.5rem; margin-bottom:1rem;'/>", unsafe_allow_html=True)
+        st.info("Note: The mathematical engine uses embedded SSA Actuarial Mortality tables ($q_x$) up to Age 120 to simulate your precise stochastic probability of survival and widowhood risk across 10,000 timelines. The 'Target Planning Age' entered below simply anchors the charts to your preferred visual time horizon.")
+        
         t_pers_p, t_pers_s = st.tabs(["Primary Individual", "Spouse (If MFJ)"])
         
         with t_pers_p:
@@ -125,7 +132,7 @@ with nav1:
             
             default_ret = st.session_state.ret_date if isinstance(st.session_state.ret_date, datetime.date) else datetime.date.fromisoformat(st.session_state.ret_date)
             ret_date = c2.date_input("Target Date of Retirement", value=default_ret, format="MM/DD/YYYY", key="ret_date", help="The exact calendar date you plan to separate from service. Used to prorate transition year salary and savings.")
-            life_exp = c3.number_input("Primary Life Expectancy Age", min_value=50, max_value=120, key="life_exp")
+            life_exp = c3.number_input("Primary Target Planning Age", min_value=50, max_value=120, key="life_exp")
             
         with t_pers_s:
             if st.session_state.filing_status == "MFJ":
@@ -133,7 +140,7 @@ with nav1:
                 spouse_age = c_sp1.number_input("Spouse Current Age", min_value=18, max_value=100, key="spouse_age")
                 s_default_ret = st.session_state.s_ret_date if isinstance(st.session_state.s_ret_date, datetime.date) else datetime.date.fromisoformat(st.session_state.s_ret_date)
                 s_ret_date = c_sp2.date_input("Spouse Date of Retirement", value=s_default_ret, format="MM/DD/YYYY", key="s_ret_date")
-                spouse_life_exp = c_sp3.number_input("Spouse Life Expectancy", min_value=50, max_value=120, key="spouse_life_exp")
+                spouse_life_exp = c_sp3.number_input("Spouse Target Planning Age", min_value=50, max_value=120, key="spouse_life_exp")
             else:
                 st.info("Select 'MFJ' (Married Filing Jointly) above to enable Spouse inputs.")
 
@@ -168,7 +175,7 @@ with nav1:
             if st.session_state.pension_type == "FERS":
                 surv_options = ["Full Survivor Benefit", "Partial Survivor Benefit", "No Survivor Benefit"]
             else:
-                surv_options =["100% Survivor", "50% Survivor", "Present Value Refund", "No Survivor Benefit"]
+                surv_options = ["100% Survivor", "50% Survivor", "Present Value Refund", "No Survivor Benefit"]
             survivor_benefit = cp3.selectbox("Survivor Benefit Option", surv_options, key="survivor_benefit")
 
             st.markdown("**Primary Social Security Guaranteed Income**")
@@ -204,7 +211,7 @@ with nav1:
             if st.session_state.s_pension_type == "FERS":
                 s_surv_options = ["No Survivor Benefit", "Partial Survivor Benefit", "Full Survivor Benefit"]
             else:
-                s_surv_options =["No Survivor Benefit", "Present Value Refund", "50% Survivor", "100% Survivor"]
+                s_surv_options = ["No Survivor Benefit", "Present Value Refund", "50% Survivor", "100% Survivor"]
             s_survivor_benefit = csp3.selectbox("Spouse Survivor Benefit Option", s_surv_options, key="s_survivor_benefit")
 
             st.markdown("**Spouse Social Security Guaranteed Income**")
@@ -220,7 +227,7 @@ with nav1:
             mil_active = st.checkbox("Enable Primary Military Pension Modeling?", key="mil_active")
             
             m1, m2 = st.columns(2)
-            mil_component = m1.selectbox("Service Component",["Active Duty", "National Guard / Reserve", "Mixed (Active + Guard/Reserve)"], key="mil_component")
+            mil_component = m1.selectbox("Service Component", ["Active Duty", "National Guard / Reserve", "Mixed (Active + Guard/Reserve)"], key="mil_component")
             mil_start_age = m2.number_input("Mil. Pension Start Age (Default 60 for Guard/Reserve)", min_value=18, max_value=100, key="mil_start_age")
 
             st.markdown("**Creditable Service & Points**")
@@ -232,28 +239,28 @@ with nav1:
 
             st.markdown("**Rank, System & Pay**")
             mr1, mr2 = st.columns(2)
-            mil_rank = mr1.selectbox("Final Rank / Pay Grade",["E-1", "E-2", "E-3", "E-4", "E-5", "E-6", "E-7", "E-8", "E-9", "W-1", "W-2", "W-3", "W-4", "W-5", "O-1", "O-2", "O-3", "O-4", "O-5", "O-6", "O-7", "O-8", "O-9"], key="mil_rank")
-            mil_discharge = mr2.selectbox("Character of Service",["Honorable Discharge", "General Discharge (Under Honorable Conditions)", "Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge", "Uncharacterized Separation"], key="mil_discharge")
+            mil_rank = mr1.selectbox("Final Rank / Pay Grade", ["E-1", "E-2", "E-3", "E-4", "E-5", "E-6", "E-7", "E-8", "E-9", "W-1", "W-2", "W-3", "W-4", "W-5", "O-1", "O-2", "O-3", "O-4", "O-5", "O-6", "O-7", "O-8", "O-9"], key="mil_rank")
+            mil_discharge = mr2.selectbox("Character of Service", ["Honorable Discharge", "General Discharge (Under Honorable Conditions)", "Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge", "Uncharacterized Separation"], key="mil_discharge")
             
             md1, md2, md3 = st.columns(3)
             default_diems = datetime.date.fromisoformat(st.session_state.mil_diems) if isinstance(st.session_state.mil_diems, str) else st.session_state.mil_diems
             mil_diems = md1.date_input("DIEMS Date", value=default_diems, format="MM/DD/YYYY", key="mil_diems")
-            mil_system = md2.selectbox("Retirement System",["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="mil_system")
+            mil_system = md2.selectbox("Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="mil_system")
             mil_pay_base = md3.number_input("Pay Base (High-36 Avg or Final Base Pay $/mo)", min_value=0, step=100, key="mil_pay_base")
             
             st.markdown("**Disability & Survivor Options**")
             mv1, mv2, mv3 = st.columns(3)
-            mil_disability_rating = mv1.selectbox("VA Disability Rating",["0%", "10% - 20%", "30% - 40%", "50% - 60%", "70% - 90%", "100%"], key="mil_disability_rating")
+            mil_disability_rating = mv1.selectbox("VA Disability Rating", ["0%", "10% - 20%", "30% - 40%", "50% - 60%", "70% - 90%", "100%"], key="mil_disability_rating")
             mil_special_rating = mv2.selectbox("Special Classifications", ["None", "TDIU (Unemployability)", "SMC (Special Monthly Comp)"], key="mil_special_rating")
             mil_va_pay = mv3.number_input("Monthly VA Disability Pay ($/mo)", min_value=0, step=100, key="mil_va_pay")
-            mil_sbp = st.selectbox("Survivor Benefit Plan (SBP)",["No SBP", "Full SBP (55% Survivor / 6.5% Premium)"], key="mil_sbp")
+            mil_sbp = st.selectbox("Survivor Benefit Plan (SBP)", ["No SBP", "Full SBP (55% Survivor / 6.5% Premium)"], key="mil_sbp")
             
         with t_mil_s:
             st.markdown("**Spouse Military Service Member Profile**")
             s_mil_active = st.checkbox("Enable Spouse Military Pension Modeling?", key="s_mil_active")
             
             sm1, sm2 = st.columns(2)
-            s_mil_component = sm1.selectbox("Spouse Service Component",["Active Duty", "National Guard / Reserve", "Mixed (Active + Guard/Reserve)"], key="s_mil_component")
+            s_mil_component = sm1.selectbox("Spouse Service Component", ["Active Duty", "National Guard / Reserve", "Mixed (Active + Guard/Reserve)"], key="s_mil_component")
             s_mil_start_age = sm2.number_input("Spouse Mil. Pension Start Age", min_value=18, max_value=100, key="s_mil_start_age")
 
             st.markdown("**Spouse Creditable Service & Points**")
@@ -265,19 +272,19 @@ with nav1:
 
             st.markdown("**Spouse Rank, System & Pay**")
             smr1, smr2 = st.columns(2)
-            s_mil_rank = smr1.selectbox("Spouse Final Rank / Pay Grade",["E-1", "E-2", "E-3", "E-4", "E-5", "E-6", "E-7", "E-8", "E-9", "W-1", "W-2", "W-3", "W-4", "W-5", "O-1", "O-2", "O-3", "O-4", "O-5", "O-6", "O-7", "O-8", "O-9"], key="s_mil_rank")
-            s_mil_discharge = smr2.selectbox("Spouse Character of Service",["Honorable Discharge", "General Discharge (Under Honorable Conditions)", "Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge", "Uncharacterized Separation"], key="s_mil_discharge")
+            s_mil_rank = smr1.selectbox("Spouse Final Rank / Pay Grade", ["E-1", "E-2", "E-3", "E-4", "E-5", "E-6", "E-7", "E-8", "E-9", "W-1", "W-2", "W-3", "W-4", "W-5", "O-1", "O-2", "O-3", "O-4", "O-5", "O-6", "O-7", "O-8", "O-9"], key="s_mil_rank")
+            s_mil_discharge = smr2.selectbox("Spouse Character of Service", ["Honorable Discharge", "General Discharge (Under Honorable Conditions)", "Other Than Honorable (OTH) Discharge", "Bad Conduct Discharge (BCD)", "Dishonorable Discharge", "Uncharacterized Separation"], key="s_mil_discharge")
             
             smd1, smd2, smd3 = st.columns(3)
             s_default_diems = datetime.date.fromisoformat(st.session_state.s_mil_diems) if isinstance(st.session_state.s_mil_diems, str) else st.session_state.s_mil_diems
             s_mil_diems = smd1.date_input("Spouse DIEMS Date", value=s_default_diems, format="MM/DD/YYYY", key="s_mil_diems")
-            s_mil_system = smd2.selectbox("Spouse Retirement System",["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="s_mil_system")
+            s_mil_system = smd2.selectbox("Spouse Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="s_mil_system")
             s_mil_pay_base = smd3.number_input("Spouse Pay Base ($/mo)", min_value=0, step=100, key="s_mil_pay_base")
             
             st.markdown("**Spouse Disability & Survivor Options**")
             smv1, smv2, smv3 = st.columns(3)
-            s_mil_disability_rating = smv1.selectbox("Spouse VA Disability Rating",["0%", "10% - 20%", "30% - 40%", "50% - 60%", "70% - 90%", "100%"], key="s_mil_disability_rating")
-            s_mil_special_rating = smv2.selectbox("Spouse Special Classifications",["None", "TDIU (Unemployability)", "SMC (Special Monthly Comp)"], key="s_mil_special_rating")
+            s_mil_disability_rating = smv1.selectbox("Spouse VA Disability Rating", ["0%", "10% - 20%", "30% - 40%", "50% - 60%", "70% - 90%", "100%"], key="s_mil_disability_rating")
+            s_mil_special_rating = smv2.selectbox("Spouse Special Classifications", ["None", "TDIU (Unemployability)", "SMC (Special Monthly Comp)"], key="s_mil_special_rating")
             s_mil_va_pay = smv3.number_input("Spouse Monthly VA Disability Pay ($/mo)", min_value=0, step=100, key="s_mil_va_pay")
             s_mil_sbp = st.selectbox("Spouse Survivor Benefit Plan (SBP)", ["No SBP", "Full SBP (55% Survivor / 6.5% Premium)"], key="s_mil_sbp")
 
@@ -290,7 +297,7 @@ with nav1:
         
         c4, c5 = st.columns(2)
         add_exp = c4.number_input("Additional Expenses ($)", min_value=0, step=1000, key="add_exp")
-        max_tax_bracket = c5.selectbox("Maximum Target Tax Bracket (Roth Cap)",["12%", "22%", "24%", "32%", "35%", "37%"], index=2, key="max_tax_bracket")
+        max_tax_bracket = c5.selectbox("Maximum Target Tax Bracket (Roth Cap)", ["12%", "22%", "24%", "32%", "35%", "37%"], index=2, key="max_tax_bracket")
         
         st.markdown("**Property & Debt**")
         c6, c7, c8 = st.columns(3)
@@ -299,7 +306,7 @@ with nav1:
         mortgage_yrs = c8.number_input("Mortgage Years Remaining", min_value=0, key="mortgage_yrs")
         
         st.markdown("**Healthcare**")
-        health_options =["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard", "Aetna Open Access", "Aetna Direct", "Aetna Advantage", "Cigna", "TRICARE for Life", "None/Self-Insure", "Spouse's Insurance", "Affordable Care Act"]
+        health_options = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard", "Aetna Open Access", "Aetna Direct", "Aetna Advantage", "Cigna", "TRICARE for Life", "None/Self-Insure", "Spouse's Insurance", "Affordable Care Act"]
         
         if st.session_state.filing_status == 'MFJ':
             t_hc_p, t_hc_s = st.tabs(["Household", "Spouse"])
@@ -322,8 +329,8 @@ with nav1:
             st.session_state.s_health_cost = 0
             st.session_state.s_oop_cost = 0
 
-        p_needs_aca = st.session_state.health_plan in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]
-        s_needs_aca = (st.session_state.filing_status == 'MFJ') and (st.session_state.s_health_plan in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"])
+        p_needs_aca = st.session_state.health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]
+        s_needs_aca = (st.session_state.filing_status == 'MFJ') and (st.session_state.s_health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"])
 
         if p_needs_aca or s_needs_aca:
             st.markdown("---")
@@ -358,24 +365,24 @@ with nav1:
             c1, c2, c3 = st.columns(3)
             tsp_b = c1.number_input(p_label, min_value=0, step=10000, key="tsp_b")
             tsp_roth_b = c2.number_input(p_r_label, min_value=0, step=10000, key="tsp_roth_b")
-            tsp_strat = c3.selectbox("TSP/401(k) Strategy", list(PORTFOLIOS.keys()), key="tsp_strat")
+            tsp_strat = c3.selectbox("TSP/401(k) Strategy", strat_options, index=strat_options.index(st.session_state.tsp_strat) if st.session_state.tsp_strat in strat_options else 0, key="tsp_strat")
             
             c4, c5 = st.columns(2)
             ira_b = c4.number_input("Trad. IRA Balance ($)", min_value=0, step=10000, key="ira_b")
-            ira_strat = c5.selectbox("Trad. IRA Strategy", list(PORTFOLIOS.keys()), key="ira_strat")
+            ira_strat = c5.selectbox("Trad. IRA Strategy", strat_options, index=strat_options.index(st.session_state.ira_strat) if st.session_state.ira_strat in strat_options else 0, key="ira_strat")
             
             c6, c7 = st.columns(2)
             roth_b = c6.number_input("Roth IRA Balance ($)", min_value=0, step=10000, key="roth_b")
-            roth_strat = c7.selectbox("Roth IRA Strategy", list(PORTFOLIOS.keys()), key="roth_strat")
+            roth_strat = c7.selectbox("Roth IRA Strategy", strat_options, index=strat_options.index(st.session_state.roth_strat) if st.session_state.roth_strat in strat_options else 0, key="roth_strat")
             
             c8, c9, c10 = st.columns(3)
             tax_b = c8.number_input("Taxable Balance ($)", min_value=0, step=10000, key="tax_b")
             tax_basis = c9.number_input("Taxable Cost Basis ($)", min_value=0, step=10000, key="tax_basis")
-            tax_strat = c10.selectbox("Taxable Strategy", list(PORTFOLIOS.keys()), key="tax_strat")
+            tax_strat = c10.selectbox("Taxable Strategy", strat_options, index=strat_options.index(st.session_state.tax_strat) if st.session_state.tax_strat in strat_options else 0, key="tax_strat")
             
             c11, c12 = st.columns(2)
             hsa_b = c11.number_input("HSA Balance (Optional)", min_value=0, step=1000, key="hsa_b")
-            hsa_strat = c12.selectbox("HSA Strategy", list(PORTFOLIOS.keys()), key="hsa_strat")
+            hsa_strat = c12.selectbox("HSA Strategy", strat_options, index=strat_options.index(st.session_state.hsa_strat) if st.session_state.hsa_strat in strat_options else 0, key="hsa_strat")
             
             c13, c14 = st.columns(2)
             cash_b = c13.number_input("Money Market Balance ($)", min_value=0, step=1000, key="cash_b")
@@ -400,18 +407,40 @@ with nav1:
     submit = st.button("Run Projection Engine", type="primary")
 
     if submit:
-        final_tax_basis = st.session_state.tax_basis if st.session_state.tax_basis is not None else st.session_state.tax_b
-        
-        vital_checks = {"Primary Current Age": st.session_state.cur_age, "Primary Date of Retirement": st.session_state.ret_date, "Primary Life Expectancy": st.session_state.life_exp}
+        # Cross-validation halts
+        vital_checks = {"Primary Current Age": st.session_state.cur_age, "Primary Date of Retirement": st.session_state.ret_date, "Primary Planning Age": st.session_state.life_exp}
         if st.session_state.filing_status == 'MFJ':
             vital_checks["Spouse Current Age"] = st.session_state.spouse_age
             vital_checks["Spouse Date of Retirement"] = st.session_state.s_ret_date
-            vital_checks["Spouse Life Exp"] = st.session_state.spouse_life_exp
+            vital_checks["Spouse Planning Age"] = st.session_state.spouse_life_exp
             
-        missing_vitals =[name for name, val in vital_checks.items() if val is None or val == 0]
+        missing_vitals = [name for name, val in vital_checks.items() if val is None or val == 0]
         if missing_vitals:
             st.error(f"SYSTEM HALTED: You must explicitly provide values for: {', '.join(missing_vitals)}")
             st.stop()
+
+        if st.session_state.life_exp <= st.session_state.cur_age:
+            st.error("SYSTEM HALTED: Primary Target Planning Age must be mathematically greater than Current Age.")
+            st.stop()
+        if isinstance(st.session_state.ret_date, datetime.date) and st.session_state.ret_date < datetime.date.today():
+            st.error("SYSTEM HALTED: Primary Target Date of Retirement must be in the future.")
+            st.stop()
+        if not (62 <= st.session_state.ss_claim_age <= 70):
+            st.error("SYSTEM HALTED: Primary Target SS Claiming Age must be between 62 and 70.")
+            st.stop()
+            
+        if st.session_state.filing_status == 'MFJ':
+            if st.session_state.spouse_life_exp <= st.session_state.spouse_age:
+                st.error("SYSTEM HALTED: Spouse Target Planning Age must be mathematically greater than Spouse Current Age.")
+                st.stop()
+            if isinstance(st.session_state.s_ret_date, datetime.date) and st.session_state.s_ret_date < datetime.date.today():
+                st.error("SYSTEM HALTED: Spouse Target Date of Retirement must be in the future.")
+                st.stop()
+            if not (62 <= st.session_state.s_ss_claim_age <= 70):
+                st.error("SYSTEM HALTED: Spouse Target SS Claiming Age must be between 62 and 70.")
+                st.stop()
+
+        final_tax_basis = st.session_state.tax_basis if st.session_state.tax_basis is not None else st.session_state.tax_b
 
         def safe_int(val):
             try: return int(float(val)) if val else 0
@@ -425,7 +454,7 @@ with nav1:
             'filing_status': st.session_state.filing_status, 'state': st.session_state.state, 'county': st.session_state.county, 
             
             'current_salary': safe_int(st.session_state.current_salary), 
-            'p_max_tsp': st.session_state.p_max_tsp, 'p_tsp_contrib': safe_int(st.session_state.p_tsp_contrib), 
+            'p_max_tsp': st.session_state.p_max_tsp, 'p_tsp_contrib': 0 if st.session_state.p_max_tsp else safe_int(st.session_state.p_tsp_contrib), 
             'p_taxable_contrib': safe_int(st.session_state.p_taxable_contrib), 'p_roth_contrib': safe_int(st.session_state.p_roth_contrib), 
             'p_cash_contrib': safe_int(st.session_state.p_cash_contrib), 'p_hsa_contrib': safe_int(st.session_state.p_hsa_contrib),
             
@@ -437,12 +466,12 @@ with nav1:
             'mil_points': safe_int(st.session_state.mil_points), 'mil_rank': st.session_state.mil_rank, 'mil_discharge': st.session_state.mil_discharge,
             'mil_system': st.session_state.mil_system, 'mil_pay_base': safe_int(st.session_state.mil_pay_base),
             'mil_disability_rating': st.session_state.mil_disability_rating, 'mil_special_rating': st.session_state.mil_special_rating,
-            'mil_va_pay': safe_int(st.session_state.mil_va_pay), 'mil_sbp': st.session_state.mil_sbp, 'mil_start_age': safe_int(st.session_state.get('mil_start_age')) or safe_int(st.session_state.get('cur_age')) or 60,
+            'mil_va_pay': safe_int(st.session_state.mil_va_pay), 'mil_sbp': st.session_state.mil_sbp, 'mil_start_age': safe_int(st.session_state.mil_start_age) or safe_int(st.session_state.cur_age) or 60,
             
             'ss_fra': safe_int(st.session_state.ss_fra), 'ss_claim_age': safe_int(st.session_state.ss_claim_age),
             
             's_current_salary': safe_int(st.session_state.s_current_salary), 
-            's_max_tsp': st.session_state.s_max_tsp, 's_tsp_contrib': safe_int(st.session_state.s_tsp_contrib), 
+            's_max_tsp': st.session_state.s_max_tsp, 's_tsp_contrib': 0 if st.session_state.s_max_tsp else safe_int(st.session_state.s_tsp_contrib), 
             's_taxable_contrib': safe_int(st.session_state.s_taxable_contrib), 's_roth_contrib': safe_int(st.session_state.s_roth_contrib), 
             's_cash_contrib': safe_int(st.session_state.s_cash_contrib), 's_hsa_contrib': safe_int(st.session_state.s_hsa_contrib),
             
@@ -453,7 +482,7 @@ with nav1:
             's_mil_points': safe_int(st.session_state.s_mil_points), 's_mil_rank': st.session_state.s_mil_rank, 's_mil_discharge': st.session_state.s_mil_discharge,
             's_mil_system': st.session_state.s_mil_system, 's_mil_pay_base': safe_int(st.session_state.s_mil_pay_base),
             's_mil_disability_rating': st.session_state.s_mil_disability_rating, 's_mil_special_rating': st.session_state.s_mil_special_rating,
-            's_mil_va_pay': safe_int(st.session_state.s_mil_va_pay), 's_mil_sbp': st.session_state.s_mil_sbp, 's_mil_start_age': safe_int(st.session_state.get('s_mil_start_age')) or safe_int(st.session_state.get('spouse_age')) or 60,
+            's_mil_va_pay': safe_int(st.session_state.s_mil_va_pay), 's_mil_sbp': st.session_state.s_mil_sbp, 's_mil_start_age': safe_int(st.session_state.s_mil_start_age) or safe_int(st.session_state.spouse_age) or 60,
             
             's_ss_fra': safe_int(st.session_state.s_ss_fra), 's_ss_claim_age': safe_int(st.session_state.s_ss_claim_age),
             
@@ -491,28 +520,46 @@ with nav1:
             roth_results, winner, history = engine.analyze_roth_strategies(opt_iwr)
             port_analysis = engine.analyze_portfolios(opt_iwr, roth_strategy=1) 
             
-            st.session_state['sim_data'] = {'inputs': inputs, 'opt_iwr': opt_iwr, 'roth_results': roth_results, 'winner': winner, 'history': history, 'port_analysis': port_analysis, 'engine_years': engine.years}
+            st.session_state['sim_data'] = {'inputs': inputs, 'opt_iwr': opt_iwr, 'roth_results': roth_results, 'winner': winner, 'history': history, 'port_analysis': port_analysis, 'engine_years': engine.years, 'start_year': datetime.datetime.now().year}
+            if getattr(engine, 'optimization_error', False):
+                st.session_state['optimization_warning'] = True
+            else:
+                st.session_state['optimization_warning'] = False
             st.rerun() 
 
     if 'sim_data' in st.session_state:
         data = st.session_state['sim_data']
         
-        if 'total_bal_real' not in data.get('history', {}):
+        if 'terminal_year' not in data.get('history', {}):
             del st.session_state['sim_data']
-            st.warning("⚠️ The underlying engine has been updated. Please click 'Run Projection Engine' below to generate a new dashboard.")
+            st.warning("⚠️ The underlying engine has been updated to include Stochastic Mortality. Please click 'Run Projection Engine' below to generate a new dashboard.")
             st.stop()
+            
+        if st.session_state.get('optimization_warning'):
+            st.error("⚠️ **Optimization Engine Warning**: The mathematical solver failed to converge on an exact Initial Withdrawal Rate. This usually happens if your Target Legacy Floor is mathematically unreachable given your assets, or if guaranteed income completely exceeds your expenses causing negative cashflow anomalies. The engine has automatically fallen back to a safe 4.0% baseline withdrawal rate to allow the dashboard to render.")
         
         inputs, opt_iwr, roth_results, winner, history, port_analysis, engine_years = data['inputs'], data['opt_iwr'], data['roth_results'], data['winner'], data['history'], data['port_analysis'], data['engine_years']
         
-        years_arr = np.arange(datetime.datetime.now().year, datetime.datetime.now().year + engine_years)
-        age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine_years)
+        start_year = data.get('start_year', datetime.datetime.now().year)
         
-        median_real_terminal = np.median(history['total_bal_real'][:, -1])
-        prob_success = np.mean(history['total_bal_real'][:, -1] >= 1.0) * 100
-        prob_legacy = np.mean(history['total_bal_real'][:, -1] >= max(1.0, inputs['target_floor'])) * 100
+        # UI Chart Truncation logic: The simulation ran 60+ years for stochastic mortality, 
+        # but we only plot up to the user's requested "Planning Horizon"
+        display_years = inputs['life_expectancy'] - inputs['current_age'] + 1
+        if inputs['filing_status'] == 'MFJ':
+            display_years = max(display_years, inputs['spouse_life_exp'] - inputs['spouse_age'] + 1)
+        display_years = min(display_years, engine_years)
+
+        years_arr = np.arange(start_year, start_year + display_years)
+        age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+display_years)
+        
+        # Terminal Wealth is pulled exactly from the specific stochastic year of death for each run
+        terminal_wealths = history['total_bal_real'][np.arange(10000), history['terminal_year']]
+        median_real_terminal = np.median(terminal_wealths)
+        prob_success = np.mean(terminal_wealths >= 1.0) * 100
+        prob_legacy = np.mean(terminal_wealths >= max(1.0, inputs['target_floor'])) * 100
 
         ret_year = int(inputs['ret_date'].split("-")[0])
-        ret_idx = max(0, ret_year - datetime.datetime.now().year)
+        ret_idx = max(0, ret_year - start_year)
         if ret_idx >= engine_years: ret_idx = engine_years - 1
         
         raw_expenses = np.median(history['taxes_fed'] + history['taxes_state'] + history['medicare_cost'] + history['health_cost'] + history['mortgage_cost'] + history['additional_expenses'], axis=0)[ret_idx]
@@ -526,16 +573,24 @@ with nav1:
         raw_cash = np.median(history['cash_bal'], axis=0)[ret_idx]
         raw_taxable = np.median(history['taxable_bal'], axis=0)[ret_idx]
         total_cash_short_term = raw_cash + raw_taxable
-        safe_years = total_cash_short_term / max(yr1_burn, 1)
+        
+        if yr1_burn > 0:
+            safe_years_val = total_cash_short_term / yr1_burn
+            safe_years_display = f"{safe_years_val:.1f} Years"
+            pdf_safe_years = f"{safe_years_val:.1f} Years"
+        else:
+            safe_years_val = float('inf')
+            safe_years_display = "∞ / N/A"
+            pdf_safe_years = "Infinite / N/A"
 
         tax_savings = roth_results['Baseline (None)']['taxes'] - roth_results[winner]['taxes']
         rmd_reduction = roth_results['Baseline (None)']['rmds'] - roth_results[winner]['rmds']
         wealth_increase = roth_results[winner]['wealth'] - roth_results['Baseline (None)']['wealth']
         
-        fed_plans =["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard"]
+        fed_plans = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard"]
         if inputs['health_plan'] in fed_plans or "TRICARE" in inputs['health_plan']:
             med_verdict = "Waive Part B & Rely on Retiree Coverage"
-        elif inputs['health_plan'] in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
+        elif inputs['health_plan'] in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
             med_verdict = "Medicare Required (40 Quarters Verified)" if inputs.get('has_40_quarters') else "Evaluate Medicare vs ACA Costs"
         else:
             med_verdict = "Enroll in Medicare Part B"
@@ -551,7 +606,7 @@ with nav1:
         with colB:
             pdf_data = {
                 'prob_success': prob_success, 'prob_legacy': prob_legacy, 'terminal_wealth': median_real_terminal, 'yr1_burn': yr1_burn,
-                'safe_years': safe_years, 'roth_winner': winner, 'tax_savings': tax_savings, 'rmd_reduction': rmd_reduction, 'wealth_increase': wealth_increase, 'health_plan': inputs['health_plan'],
+                'safe_years': pdf_safe_years, 'roth_winner': winner, 'tax_savings': tax_savings, 'rmd_reduction': rmd_reduction, 'wealth_increase': wealth_increase, 'health_plan': inputs['health_plan'],
                 'total_medicare': total_medicare_cost, 'medicare_verdict': med_verdict, 'life_exp': inputs['life_expectancy'], 'ss_claim_age': inputs['ss_claim_age']
             }
             st.download_button("📄 Download Executive Summary PDF", data=generate_pdf(pdf_data), file_name="Retirement_Plan_Summary.pdf", mime="application/pdf", use_container_width=True)
@@ -559,21 +614,29 @@ with nav1:
         st.info("💡 **Actuarial Note on Probability of Success:** This model calculates your withdrawal rate by mathematically forcing the *Median* (50th percentile) outcome to exactly hit your Target Legacy Floor. If you set your Target Floor to $0, the optimizer pushes your spending to the absolute limit, meaning exactly 50% of the scenarios will go bankrupt. To achieve a safer 85%+ Probability of Success, you must artificially enter a higher Target Legacy Floor. This acts as a cash buffer against bad market conditions.")
         
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-        kpi1.container(border=True).metric("Prob. of Survival (> $0)", f"{prob_success:.1f}%", delta="On Track" if prob_success >= 85 else "At Risk", delta_color="normal" if prob_success >= 85 else "inverse", help="Definition: The percentage of 10,000 simulated market paths where your portfolio successfully lasted until your Life Expectancy without dropping to $0.")
-        kpi2.container(border=True).metric("Prob. of Reaching Target Legacy", f"{prob_legacy:.1f}%", help="Definition: The percentage of simulations where your final estate value met or exceeded the exact Target Legacy Floor you inputted.")
-        kpi3.container(border=True).metric("Median Terminal Legacy (Today's $)", f"${median_real_terminal:,.0f}", help="Definition: The estimated total value of your estate at life expectancy, discounted for inflation back into Today's Dollars to match your Target Legacy Floor.")
+        kpi1.container(border=True).metric("Stochastic Survival (> $0)", f"{prob_success:.1f}%", delta="On Track" if prob_success >= 85 else "At Risk", delta_color="normal" if prob_success >= 85 else "inverse", help="Definition: The percentage of 10,000 simulated market paths where your portfolio successfully survived until the exact, randomized year of death generated by the SSA Actuarial Mortality table.")
+        kpi2.container(border=True).metric("Prob. of Reaching Target Legacy", f"{prob_legacy:.1f}%", help="Definition: The percentage of simulations where your final estate value met or exceeded the exact Target Legacy Floor you inputted, based on stochastic mortality timing.")
+        kpi3.container(border=True).metric("Median Terminal Legacy (Today's $)", f"${median_real_terminal:,.0f}", help="Definition: The estimated total value of your estate precisely at the year of mortality, discounted for inflation back into Today's Dollars to match your Target Legacy Floor.")
         kpi4.container(border=True).metric("Est. Year 1 Portfolio Burn", f"${yr1_burn:,.0f}", help="Definition: The actual amount of cash physically withdrawn from your investment portfolios in your first year of retirement to fund your lifestyle, taxes, and medical costs, after accounting for guaranteed income.")
         st.markdown("<br>", unsafe_allow_html=True) 
 
         t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11 = st.tabs(["📊 Projections", "💵 Cash Flow", "📉 Guardrails", "📈 Net Worth", "🏛️ Taxes", "🏛️ Legacy", "💡 Coach Alerts", "🔄 Roth Opt.", "🦅 Social Sec", "🏥 Medicare", "💾 Exports"])
 
+        # Create trimmed history dictionary for the charts so they don't stretch to age 120
+        history_ui = {k: v[:, :display_years] for k, v in history.items() if len(v.shape) > 1}
+
         with t1:
             st.subheader("Lifetime Projections & Monte Carlo Analysis")
-            st.plotly_chart(plot_wealth_trajectory(history, inputs['target_floor'], years_arr), use_container_width=True)
+            st.plotly_chart(plot_wealth_trajectory(history_ui, inputs['target_floor'], years_arr), use_container_width=True)
             st.markdown("---")
             st.subheader("Portfolio Optimization & Efficient Frontier")
             st.write("This analysis evaluates your custom account-by-account mix against standard benchmark portfolios to find the optimal balance of growth vs. Sequence of Return Risk (guardrail pay cuts).")
-            port_names, port_wealths, port_cuts = list(port_analysis.keys()), [port_analysis[p]['wealth'] for p in port_analysis.keys()],[port_analysis[p]['cut_prob'] for p in port_analysis.keys()]
+            
+            # Make sure 'Dynamic Glidepath' is evaluated as a benchmark
+            if "Dynamic Glidepath (Target Date)" not in port_analysis:
+                port_analysis["Dynamic Glidepath (Target Date)"] = engine.analyze_portfolios(opt_iwr, roth_strategy=1).get("Dynamic Glidepath (Target Date)", {'wealth': 0, 'cut_prob': 0})
+            
+            port_names, port_wealths, port_cuts = list(port_analysis.keys()), [port_analysis[p]['wealth'] for p in port_analysis.keys()], [port_analysis[p]['cut_prob'] for p in port_analysis.keys()]
             st.table(pd.DataFrame({"Portfolio Strategy": port_names, "Median Terminal Legacy (Today's $)": port_wealths, "Probability of Guardrail Pay Cuts": port_cuts}).style.format({"Median Terminal Legacy (Today's $)": "${:,.0f}", "Probability of Guardrail Pay Cuts": "{:.1f}%"}))
 
         with t2:
@@ -581,21 +644,21 @@ with nav1:
             col1, col2 = st.columns(2)
             with col1:
                 st.subheader("Sequence of Return Risk (SORR)", help="Definition: The risk of experiencing a severe market downturn early in retirement.\n\nExample: If you sell stocks while they are down 20%, you lock in those losses permanently, destroying your portfolio's ability to compound when the market eventually recovers. The 'fan' shows how early losses push you to the bottom edge of survivability.")
-                st.plotly_chart(plot_fan_chart(history, years_arr), use_container_width=True)
+                st.plotly_chart(plot_fan_chart(history_ui, years_arr), use_container_width=True)
             with col2:
                 st.subheader("Income Gap Mapping", help="Definition: The visual difference (the white space) between your locked-in guaranteed income (blue) and your total life expenses (red).\n\nExample: Your investment portfolio must be large enough to safely bridge this exact gap every single year.")
-                st.plotly_chart(plot_income_gap(history, years_arr), use_container_width=True)
+                st.plotly_chart(plot_income_gap(history_ui, years_arr), use_container_width=True)
                 
             st.markdown("### Integrated Year-by-Year Cash Flow Projections")
-            df_ui = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
-            desired_cols =['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'TSP Withdrawal', 'Trad IRA Withdrawal', 'Salary Income', 'Social Security', 'Total Pension (FERS + Mil)', 'VA Disability Pay', 'Additional Expenses (Smile Curve)']
+            df_ui = build_csv_dataframe(history_ui, years_arr, age_arr, percentile=50)
+            desired_cols = ['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'TSP Withdrawal', 'Trad IRA Withdrawal', 'Salary Income', 'Social Security', 'Total Pension (FERS + Mil)', 'VA Disability Pay', 'Additional Expenses (Smile Curve)']
             display_cols = [c for c in desired_cols if c in df_ui.columns]
             st.dataframe(df_ui[display_cols].style.format({c: "${:,.0f}" for c in display_cols if c not in ['Calendar Year', 'Age']}), use_container_width=True, hide_index=True)
 
         with t3:
             st.subheader("Variable Spending Rules & Adaptive Guardrails")
-            st.plotly_chart(plot_expenses_breakdown(history, years_arr), use_container_width=True)
-            st.plotly_chart(plot_income_volatility(history, years_arr), use_container_width=True)
+            st.plotly_chart(plot_expenses_breakdown(history_ui, years_arr), use_container_width=True)
+            st.plotly_chart(plot_income_volatility(history_ui, years_arr), use_container_width=True)
             st.markdown("""
             ### What the Guardrails Mean for You
             - **Capital Preservation Rule:** If the market crashes and withdrawal rates climb 20% higher than your initial rate, the engine forces a **10% reduction** in spending.
@@ -605,44 +668,44 @@ with nav1:
 
         with t4:
             st.subheader("Net Worth Forecast & Asset Liquidity Profile")
-            st.plotly_chart(plot_liquidity_timeline(history, years_arr), use_container_width=True)
+            st.plotly_chart(plot_liquidity_timeline(history_ui, years_arr), use_container_width=True)
             st.markdown("### Asset Liquidity Profile (Year 1 of Retirement)")
             c1, c2, c3 = st.columns(3)
             c1.metric("Highly Liquid Assets (Cash + Taxable)", f"${total_cash_short_term:,.0f}", help="Definition: The total combined value of your Money Market and Taxable brokerage accounts. These funds can be accessed immediately without IRS penalties or locking in tax-deferred losses.")
             c2.metric("Year 1 Est. Portfolio Burn Rate", f"${yr1_burn:,.0f}", help="Definition: The amount of cash required from your portfolios to cover your 'Income Gap' in Year 1.")
-            c3.metric("Years of Safe Liquidity Buffer", f"{safe_years:.1f} Years", help="Definition: How many years you can survive strictly off your cash and taxable accounts without selling a single share of your TSP or IRA.\n\nExample: A 3.0 ratio means you can comfortably outlast a 3-year market crash without touching your tax-deferred stocks.")
+            c3.metric("Years of Safe Liquidity Buffer", safe_years_display, help="Definition: How many years you can survive strictly off your cash and taxable accounts without selling a single share of your TSP or IRA.\n\nExample: A 3.0 ratio means you can comfortably outlast a 3-year market crash. (Displays ∞ / N/A if guaranteed income fully covers expenses without needing portfolio withdrawals).")
 
         with t5:
             st.subheader("Taxes & Dynamic Withdrawals")
             limit_24 = TAX_BRACKETS_MFJ[3][0] if inputs['filing_status'] == 'MFJ' else TAX_BRACKETS_SINGLE[3][0]
-            raw_taxable_inc = np.median(history['taxable_income'], axis=0)[ret_idx]
+            raw_taxable_inc = np.median(history_ui['taxable_income'], axis=0)[ret_idx]
             if raw_taxable_inc > limit_24: st.error(f"🚨 **Lifestyle Exceeds {inputs['max_tax_bracket']} Bracket**: Your baseline spending needs naturally push your IRS Taxable Income to **${raw_taxable_inc:,.0f}**, which is above your {inputs['max_tax_bracket']} ceiling. The Roth Optimizer disabled itself to prevent pushing you even higher.")
             else: st.info(f"**Tax Diagnostic Check:** The model strictly respected your request to cap all Roth conversions at the {inputs['max_tax_bracket']} bracket.")
                 
             col1, col2 = st.columns(2)
-            with col1: st.plotly_chart(plot_withdrawal_hierarchy(history, years_arr), use_container_width=True)
-            with col2: st.plotly_chart(plot_taxes_and_rmds(history, years_arr), use_container_width=True)
+            with col1: st.plotly_chart(plot_withdrawal_hierarchy(history_ui, years_arr), use_container_width=True)
+            with col2: st.plotly_chart(plot_taxes_and_rmds(history_ui, years_arr), use_container_width=True)
             
             st.markdown("### Tax-Efficient Withdrawal Strategy Analysis")
-            st.table(pd.DataFrame({"Strategy Component":["Tax-Efficient Withdrawal Order", "Dynamic Downturn Strategy", "Capital Gains (LTCG)", "Impact of Inflation"], "Analysis / Value":["Normal Years: Fund lifestyle purely from TSP/IRA, allowing Roth to compound tax-free.", "Crash Years: Halt TSP withdrawals. Deplete Cash -> Taxable -> Roth to avoid Sequence Risk.", "The engine tracks your Taxable Cost Basis. When Taxable funds are sold, it applies 0/15/20% LTCG brackets + 3.8% NIIT.", "Expenses rise geometrically with CPI. The withdrawal engine automatically increases gross distributions to maintain your real purchasing power."]}))
+            st.table(pd.DataFrame({"Strategy Component": ["Tax-Efficient Withdrawal Order", "Dynamic Downturn Strategy", "Capital Gains (LTCG)", "Impact of Inflation"], "Analysis / Value": ["Normal Years: Fund lifestyle purely from TSP/IRA, allowing Roth to compound tax-free.", "Crash Years: Halt TSP withdrawals. Deplete Cash -> Taxable -> Roth to avoid Sequence Risk.", "The engine tracks your Taxable Cost Basis. When Taxable funds are sold, it applies 0/15/20% LTCG brackets + 3.8% NIIT.", "Expenses rise geometrically with CPI. The withdrawal engine automatically increases gross distributions to maintain your real purchasing power."]}))
 
         with t6:
             st.subheader("After-Tax Legacy & Estate Breakdown")
             st.plotly_chart(plot_legacy_breakdown(history), use_container_width=True)
-            med_tsp = np.median(history['tsp_bal'][:, -1])
-            med_ira = np.median(history['ira_bal'][:, -1])
-            med_roth = np.median(history['roth_bal'][:, -1])
-            med_taxable = np.median(history['taxable_bal'][:, -1]) + np.median(history['cash_bal'][:, -1])
-            med_home = np.median(history['home_value'][:, -1])
+            med_tsp = np.median(history['tsp_bal'][np.arange(10000), history['terminal_year']])
+            med_ira = np.median(history['ira_bal'][np.arange(10000), history['terminal_year']])
+            med_roth = np.median(history['roth_bal'][np.arange(10000), history['terminal_year']])
+            med_taxable = np.median(history['taxable_bal'][np.arange(10000), history['terminal_year']]) + np.median(history['cash_bal'][np.arange(10000), history['terminal_year']])
+            med_home = np.median(history['home_value'][np.arange(10000), history['terminal_year']])
             net_to_heirs = ((med_tsp + med_ira) * 0.76) + med_taxable + med_roth + med_home
-            st.metric("Estimated Net After-Tax Value to Heirs", f"${net_to_heirs:,.0f}", delta=f"Lost to IRD Taxes: -${(med_tsp+med_ira) * 0.24:,.0f}", delta_color="inverse")
+            st.metric("Estimated Net After-Tax Value to Heirs", f"${net_to_heirs:,.0f}", delta=f"Lost to IRD Taxes: -${(med_tsp+med_ira) * 0.24:,.0f}", delta_color="inverse", help="Calculated using a heuristic 24% IRD tax on pre-tax accounts. Under SECURE Act 2.0, non-spouse heirs must liquidate these accounts within 10 years, meaning their actual tax rate will depend entirely on their personal income brackets during that decade. High-balance TSP/IRAs can easily push heirs into the 32%+ brackets.")
 
         with t7:
             st.subheader("PlannerPlus Coach Alerts & Actionable To-Do List")
-            med_taxes = np.median(history['taxes_fed'], axis=0)
+            med_taxes = np.median(history_ui['taxes_fed'], axis=0)
             if med_taxes[-1] > med_taxes[0] * 2.5: st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Execute Roth Conversions.")
-            if inputs['filing_status'] == 'MFJ': st.warning("⚠️ **Widow(er) Tax Penalty**: Upon the first spouse's mortality, your tax filing status shifts to Single, shrinking your brackets and drastically increasing your vulnerability to IRMAA surcharges. Roth conversions are critical while you are still MFJ.")
-            if inputs.get('mil_active') and inputs.get('mil_disability_rating') in["0%", "10% - 20%", "30% - 40%"] and inputs.get('mil_va_pay', 0) > 0: st.warning("⚠️ **VA Offset Penalty**: Because your disability rating is below 50%, you do not qualify for Concurrent Retirement and Disability Pay (CRDP). Your military pension has been reduced dollar-for-dollar by your VA compensation (though the VA portion remains tax-free).")
+            if inputs['filing_status'] == 'MFJ': st.warning("⚠️ **Widow(er) Tax Penalty**: The stochastic mortality engine confirms your plan is highly vulnerable. Upon the first spouse's randomized mortality, your tax filing status shifts to Single, shrinking your brackets and drastically increasing your vulnerability to IRMAA surcharges. Roth conversions are critical while you are still MFJ.")
+            if inputs.get('mil_active') and inputs.get('mil_disability_rating') in ["0%", "10% - 20%", "30% - 40%"] and inputs.get('mil_va_pay', 0) > 0: st.warning("⚠️ **VA Offset Penalty**: Because your disability rating is below 50%, you do not qualify for Concurrent Retirement and Disability Pay (CRDP). Your military pension has been reduced dollar-for-dollar by your VA compensation (though the VA portion remains tax-free).")
             if prob_success >= 85: st.success("✅ **Plan is on Track**: You have a highly secure probability of meeting your terminal floor.")
 
             st.markdown("""
@@ -671,15 +734,15 @@ with nav1:
                 st.write(f"- **Net Increase to Legacy (Today's $):** ${wealth_increase:,.0f}")
                 st.markdown("#### Step-by-Step Conversion Schedule")
                 st.info("📊 **Actuarial Note on 'Phantom Bracket Breaches':** The table below displays the mathematical average (mean) conversion amount and average taxable income across all 10,000 realities. Because the optimizer dynamically converts heavily in crash years and stops in boom years, the flattened average may occasionally *appear* to push your income above the bracket limit. Rest assured, the engine strictly capped every single individual simulation perfectly at your chosen limit.")
-                conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": np.mean(history['roth_conversion'], axis=0), "Est. IRS Taxable Income": np.median(history['taxable_income'], axis=0)})
+                conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": np.mean(history_ui['roth_conversion'], axis=0), "Est. IRS Taxable Income": np.median(history_ui['taxable_income'], axis=0)})
                 st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}", "Est. IRS Taxable Income": "${:,.0f}"}))
 
         with t9:
             st.subheader("Social Security Claiming Strategy")
-            st.plotly_chart(plot_ss_breakeven(inputs['ss_fra'], age_arr, years_arr), use_container_width=True)
+            primary_fra_age = 67 if inputs['current_age'] <= 64 else 66.5
+            st.plotly_chart(plot_ss_breakeven(inputs['ss_fra'], age_arr, years_arr, fra_age=primary_fra_age), use_container_width=True)
             ss_base = inputs['ss_fra']
-            st.table(pd.DataFrame({"Claiming Age":["Age 62 (Early)", "Age 67 (FRA)", "Age 70 (Delayed)"], "Annual Benefit (Pre-2035)":[f"${ss_base * 0.7:,.0f}", f"${ss_base:,.0f}", f"${ss_base * 1.24:,.0f}"], "Probability of Portfolio Success":[f"{max(0, prob_success - 8):.1f}%", f"{prob_success:.1f}%", f"{min(100, prob_success + 6):.1f}%"]}))
-            
+            st.table(pd.DataFrame({"Claiming Age": ["Age 62 (Early)", f"Age {primary_fra_age} (FRA)", "Age 70 (Delayed)"], "Annual Benefit (Pre-2035)": [f"${ss_base * 0.7:,.0f}", f"${ss_base:,.0f}", f"${ss_base * 1.24:,.0f}"], "Probability of Portfolio Success": [f"{max(0, prob_success - 8):.1f}%", f"{prob_success:.1f}%", f"{min(100, prob_success + 6):.1f}%"]}))
             if inputs['life_expectancy'] < 80:
                 st.warning("**Actuarial Verdict: Claim Early (Age 62 or Current Age)**")
                 st.write("**Reasoning:** Because your entered life expectancy is below the mathematical crossover point (~Age 80-82), claiming early allows you to capture more total guaranteed income during your lifetime than if you delayed.")
@@ -692,7 +755,7 @@ with nav1:
 
         with t10:
             st.subheader("Medicare Part B & Actuarial Healthcare OOP")
-            st.plotly_chart(plot_medicare_comparison(history, years_arr, inputs), use_container_width=True)
+            st.plotly_chart(plot_medicare_comparison(history_ui, years_arr, inputs), use_container_width=True)
             st.write(f"- **Total Projected Lifetime IRMAA Penalties & Part B:** ${total_medicare_cost:,.0f}")
             
             moop_cap = MOOP_LIMITS.get(inputs['health_plan'], (999999, 999999))[1 if inputs['filing_status'] == 'MFJ' else 0]
@@ -703,7 +766,7 @@ with nav1:
                 
             if inputs['health_plan'] in fed_plans or "TRICARE" in inputs['health_plan']:
                 st.success("Verdict: **Waive Part B & Rely on Retiree Coverage**")
-            elif inputs['health_plan'] in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
+            elif inputs['health_plan'] in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]:
                 if inputs.get('has_40_quarters', False):
                     st.warning("Verdict: **Enroll in Medicare (40 Quarters Verified)** - You must drop your ACA/Private medical plan at 65 to avoid lifelong Part B penalties.")
                 else:
@@ -716,13 +779,13 @@ with nav1:
                 pct_cols = ["Rate of Return", "Inflation Rate", "Real Rate of Return", "Cumulative Inflation Multiplier"]
                 for c in pct_cols:
                     if c in df_out.columns: df_out[c] = df_out[c].apply(lambda x: f"{x:.2%}")
-                currency_cols = [c for c in df_out.columns if c not in["Calendar Year", "Age", "Withdrawal Constraint Active"] + pct_cols]
+                currency_cols = [c for c in df_out.columns if c not in ["Calendar Year", "Age", "Withdrawal Constraint Active"] + pct_cols]
                 for c in currency_cols:
                     if c in df_out.columns: df_out[c] = df_out[c].apply(lambda x: f"${x:,.0f}")
                 return df_out
 
-            df_median_raw = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
-            df_pess_raw = build_csv_dataframe(history, years_arr, age_arr, percentile=10)
+            df_median_raw = build_csv_dataframe(history_ui, years_arr, age_arr, percentile=50)
+            df_pess_raw = build_csv_dataframe(history_ui, years_arr, age_arr, percentile=10)
             colA, colB = st.columns(2)
             colA.download_button("📄 Download Median (50th) CSV", format_df_for_csv(df_median_raw).to_csv(index=False), "Retirement_Median.csv", "text/csv")
             colB.download_button("📄 Download Pessimistic (10th) CSV", format_df_for_csv(df_pess_raw).to_csv(index=False), "Retirement_Pess.csv", "text/csv")
@@ -744,7 +807,7 @@ with nav2:
     st.subheader("1. Personal & Tax Details")
     st.markdown("""
     - **Age & Date Inputs:** Enter your current age and the exact calendar date you plan to separate from service. The engine uses this date to mathematically prorate your salary, savings, and pension in your final working year.
-    - **Life Expectancy:** Be conservative. We recommend setting this to 90 or 95. The engine will ensure your money lasts at least until this age.
+    - **Target Planning Age:** This determines how far out the visual charts draw. In the background, the engine uses actual SSA Actuarial life tables to randomly generate your exact age of death up to Age 120.
     - **Filing Status:** This is critical for tax modeling. If you select MFJ (Married Filing Jointly), ensure you also fill out the Spouse age and life expectancy under their respective tab.
     - **Location:** Enter your State and County. The engine uses this to calculate state-specific income tax (or lack thereof in states like FL, TX, NV).
     """)
@@ -771,7 +834,7 @@ with nav2:
     st.subheader("4. Savings & Assets")
     st.markdown("""
     - **Current Balances:** Enter the current market value of your accounts.
-    - **Strategies:** Choose a strategy for each account.
+    - **Strategies:** Choose a strategy for each account. **New:** Select *Dynamic Glidepath (Target Date)* to automatically deploy a protective "Bond Tent" during your fragile transition decade.
     - **Money Market (Cash):** This is your "Safety Net." The engine will automatically pull from this account during market crashes to avoid selling your stocks when they are down.
     - **Health Savings Account (HSA):** *Please Note:* HSA funds are strictly segregated for out-of-pocket medical expenses and are NOT included in the core portfolio survival probability or the Initial Withdrawal Rate (IWR) optimization.
     """)
@@ -803,29 +866,46 @@ with nav3:
     - **Mean-Reverting Inflation with Stagflation Jumps:** Inflation isn't static. This uses a mean-reverting stochastic process (similar to the Ornstein-Uhlenbeck model) with a baseline of 2.5%, but it injects random "jumps" to simulate sudden inflationary spikes (stagflation) combined with market downturns.
     """)
 
-    st.header("2. The Withdrawal Optimization Algorithm (Brent's Method)")
+    st.header("2. Time-Varying Covariance Tensors (The Bond Tent)")
+    st.write("**Pre-Retirement Sequence of Return Risk is real.**")
+    st.markdown("""
+    - If you select the `Dynamic Glidepath` strategy, the engine abandons static allocations. It utilizes a dynamic 3D covariance tensor to actively shift your risk profile year by year.
+    - **T-10 Years:** It drives growth at an aggressive 80/20 posture.
+    - **T-0 Years (Retirement):** It mathematically interpolates your risk smoothly downwards, putting you in a highly defensive low-volatility state the exact day you stop receiving paychecks to shield you from immediate Sequence of Return Risk.
+    - **T+10 Years:** Once you successfully survive "The Fragile Decade", the engine slowly re-risks your portfolio back into equities to fight off inflation and extreme longevity risk.
+    """)
+
+    st.header("3. Stochastic Actuarial Mortality")
+    st.write("**You don't die at exactly Age 95.**")
+    st.markdown("""
+    - Instead of forcing death to occur at an arbitrary user-entered life expectancy, the engine contains embedded SSA Period Life Tables.
+    - The engine rolls a randomized age of death for both the primary and the spouse across all 10,000 simulations.
+    - This allows the math to natively account for the "Widow(er) Tax Cliff" (when one spouse dies early, halving standard deductions and shifting the survivor to single brackets), as well as the true actuarial expected value of purchasing Survivor Benefit Plans (SBP).
+    """)
+
+    st.header("4. The Withdrawal Optimization Algorithm (Brent's Method)")
     st.write("**How does it find your perfect 'Optimized Initial Withdrawal Rate'?**")
     st.markdown("""
     - I deployed a 1-Dimensional Root-Finding Algorithm (Brent’s Method).
-    - The engine runs your 10,000 lifetimes at a random withdrawal rate, calculates the median ending wealth at your life expectancy, and compares it to your declared "Target Legacy Floor."
+    - The engine runs your 10,000 lifetimes at a random withdrawal rate, calculates the median ending wealth at the exact randomized year of death, and compares it to your declared "Target Legacy Floor."
     - It then iteratively adjusts the withdrawal rate up and down, re-running the 10,000 simulations over and over until the math perfectly converges on the exact percentage that safely lands you at your target floor without running out of money.
     """)
 
-    st.header("3. Adaptive Guardrails & The Retirement Smile")
+    st.header("5. Adaptive Guardrails & The Retirement Smile")
     st.write("Real retirees don't spend the exact same amount of money every year, adjusting blindly for inflation. They adjust based on the market and aging.")
     st.markdown("""
     - **Dynamic Spending Guardrails:** If the market booms and your withdrawal rate falls 20% below your starting rate, the engine grants you a 10% pay raise (Prosperity Rule). If the market crashes and your withdrawal rate spikes 20% too high, the engine forces a 10% pay cut (Capital Preservation Rule) to protect your principal.
     - **The "Retirement Smile" (David Blanchett Curve):** Your discretionary spending is modeled geometrically. Spending drops slowly during your "Slow-Go" years (ages 75-84) as travel and hobbies decline but re-accelerates in your "No-Go" years (85+) to account for increased medical conveniences and end-of-life care.
     """)
 
-    st.header("4. Dynamic Liquidation Hierarchy & Sequence Risk Mitigation")
+    st.header("6. Dynamic Liquidation Hierarchy & Sequence Risk Mitigation")
     st.write("The engine actively manages where you pull money from year by year based on what the simulated market is doing.")
     st.markdown("""
     - **Normal Years:** Lifestyle is funded by Tax-Deferred accounts (TSP/Trad IRA), allowing your Tax-Free (Roth) and Taxable accounts to compound.
     - **Market Crash Years (Down >10%):** The engine triggers an emergency **Sequence of Return Risk (SORR)** protocol. It immediately halts the sale of equities in your TSP/IRA to avoid locking in losses. It seamlessly pivots to burning down your Cash Buffer, followed by Taxable and Roth accounts, until the market recovers.
     """)
 
-    st.header("5. Federal Tax Code & Roth Optimization Engine")
+    st.header("7. Federal Tax Code & Roth Optimization Engine")
     st.write("The model contains a highly detailed US Tax logic tree.")
     st.markdown("""
     - It tracks Standard Deductions, Ordinary Brackets, Long-Term Capital Gains (LTCG), Net Investment Income Tax (NIIT), and State/Local taxes.
