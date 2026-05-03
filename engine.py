@@ -5,6 +5,27 @@ import datetime
 from config import *
 import gc
 
+# Simplified SSA Period Life Table (Unisex Actuarial Probabilities of Death: q_x)
+SSA_MORTALITY = {
+    **{a: 0.001 for a in range(0, 30)},
+    **{a: 0.0015 for a in range(30, 40)},
+    **{a: 0.0025 for a in range(40, 50)},
+    **{a: 0.005 for a in range(50, 60)},
+    60: 0.007, 61: 0.008, 62: 0.009, 63: 0.010, 64: 0.011,
+    65: 0.013, 66: 0.014, 67: 0.016, 68: 0.017, 69: 0.019,
+    70: 0.021, 71: 0.024, 72: 0.027, 73: 0.030, 74: 0.034,
+    75: 0.038, 76: 0.043, 77: 0.048, 78: 0.054, 79: 0.061,
+    80: 0.069, 81: 0.077, 82: 0.087, 83: 0.098, 84: 0.111,
+    85: 0.125, 86: 0.141, 87: 0.158, 88: 0.177, 89: 0.198,
+    90: 0.222, 91: 0.247, 92: 0.274, 93: 0.303, 94: 0.334,
+    95: 0.365, 96: 0.398, 97: 0.431, 98: 0.466, 99: 0.500,
+    100: 0.535, 101: 0.570, 102: 0.605, 103: 0.640, 104: 0.675,
+    105: 0.710, 106: 0.745, 107: 0.780, 108: 0.815, 109: 0.850,
+    110: 0.885, 111: 0.920, 112: 0.955, 113: 0.990
+}
+for a in range(114, 121):
+    SSA_MORTALITY[a] = 1.0
+
 class StochasticRetirementEngine:
     def __init__(self, inputs):
         self.inputs = inputs
@@ -27,11 +48,13 @@ class StochasticRetirementEngine:
 
     def get_yr_port_params(self, asset_key, yr, override_port=None):
         strat = override_port if override_port else self.inputs[asset_key]
-        
-        # 1. Determine Base Equity Fraction (E)
         if strat == "Dynamic Glidepath (Target Date)":
             current_sim_year = datetime.datetime.now().year + yr
             yrs_to_ret = self.ret_year - current_sim_year
+            
+            agg_r, agg_v = 0.080, 0.150
+            cons_r, cons_v = 0.045, 0.060
+            mod_r, mod_v = 0.065, 0.100
             
             if yrs_to_ret >= 10:
                 base_E = 1.0
@@ -51,7 +74,6 @@ class StochasticRetirementEngine:
             else:
                 base_E = 0.60
                 
-        # 2. Apply Age-Based Glidepath (1% drop per year post-65)
         if self.inputs.get('age_de_risking', False):
             current_age = self.inputs['current_age'] + yr
             if current_age > 65:
@@ -59,7 +81,6 @@ class StochasticRetirementEngine:
                 drop = years_past_65 * 0.01
                 base_E = max(0.20, base_E - drop)
                 
-        # 3. Piecewise Interpolation for Return & Volatility
         if base_E <= 0.60:
             pct = (base_E - 0.20) / 0.40
             ret = 0.045 + pct * (0.070 - 0.045)
@@ -336,12 +357,14 @@ class StochasticRetirementEngine:
         p_months_early = max(0, (67 - p_ss_claim) * 12)
         p_months_late = max(0, (p_ss_claim - 67) * 12)
         p_ss_modifier = 1.0 - ((min(36, p_months_early) * (5/900)) + (max(0, p_months_early - 36) * (5/1200))) + (p_months_late * (8/1200))
+        p_spousal_modifier = 1.0 - ((min(36, p_months_early) * (25/3600)) + (max(0, p_months_early - 36) * (5/1200)))
         p_base_ss = float(self.inputs.get('ss_fra', 0))
         
         s_ss_claim = self.inputs.get('s_ss_claim_age', 67)
         s_months_early = max(0, (67 - s_ss_claim) * 12)
         s_months_late = max(0, (s_ss_claim - 67) * 12)
         s_ss_modifier = 1.0 - ((min(36, s_months_early) * (5/900)) + (max(0, s_months_early - 36) * (5/1200))) + (s_months_late * (8/1200))
+        s_spousal_modifier = 1.0 - ((min(36, s_months_early) * (25/3600)) + (max(0, s_months_early - 36) * (5/1200)))
         s_base_ss = float(self.inputs.get('s_ss_fra', 0))
 
         age = self.inputs['current_age']
@@ -505,18 +528,35 @@ class StochasticRetirementEngine:
 
             p_active_ss = p_base_ss * p_ss_modifier * ss_haircut
             s_active_ss = s_base_ss * s_ss_modifier * ss_haircut
-            p_ss_val = np.where(age >= p_ss_claim, p_active_ss, 0)
-            s_ss_val = np.where(spouse_age >= s_ss_claim, s_active_ss, 0)
             
-            s_widow_limit = np.where(s_ss_claim < 67, np.maximum(s_active_ss, p_base_ss * 0.825 * ss_haircut), s_active_ss)
-            p_surv_penalty = np.clip(1.0 - ((67 - age) * (0.285 / 7.0)), 0.715, 1.0)
-            inherited_ss_from_s = s_widow_limit * p_surv_penalty
-            
-            p_widow_limit = np.where(p_ss_claim < 67, np.maximum(p_active_ss, s_base_ss * 0.825 * ss_haircut), p_active_ss)
-            s_surv_penalty = np.clip(1.0 - ((67 - spouse_age) * (0.285 / 7.0)), 0.715, 1.0)
-            inherited_ss_from_p = p_widow_limit * s_surv_penalty
+            p_spousal_ss = np.where(spouse_age >= s_ss_claim, s_base_ss * 0.5 * p_spousal_modifier * ss_haircut, 0)
+            s_spousal_ss = np.where(age >= p_ss_claim, p_base_ss * 0.5 * s_spousal_modifier * ss_haircut, 0)
 
-            yr_ss = np.where(is_mfj, p_ss_val + s_ss_val, np.where(p_alive, np.maximum(p_ss_val, inherited_ss_from_s), np.where(s_alive, np.maximum(s_ss_val, inherited_ss_from_p), 0)))
+            p_ss_val = np.where(age >= p_ss_claim, np.maximum(p_active_ss, p_spousal_ss), 0)
+            s_ss_val = np.where(spouse_age >= s_ss_claim, np.maximum(s_active_ss, s_spousal_ss), 0)
+            
+            p_survivor_base = np.maximum(p_active_ss, p_base_ss * 0.825 * ss_haircut)
+            s_survivor_base = np.maximum(s_active_ss, s_base_ss * 0.825 * ss_haircut)
+            
+            p_surv_penalty = np.clip(1.0 - ((67 - age) * (0.285 / 7.0)), 0.715, 1.0)
+            s_surv_penalty = np.clip(1.0 - ((67 - spouse_age) * (0.285 / 7.0)), 0.715, 1.0)
+            
+            inherited_ss_from_s = np.where(age >= 60, s_survivor_base * p_surv_penalty, 0)
+            inherited_ss_from_p = np.where(spouse_age >= 60, p_survivor_base * s_surv_penalty, 0)
+
+            yr_ss = np.where(
+                is_mfj, 
+                p_ss_val + s_ss_val, 
+                np.where(
+                    p_alive, 
+                    np.maximum(np.where(age >= p_ss_claim, p_ss_val, 0), inherited_ss_from_s), 
+                    np.where(
+                        s_alive, 
+                        np.maximum(np.where(spouse_age >= s_ss_claim, s_ss_val, 0), inherited_ss_from_p), 
+                        0
+                    )
+                )
+            )
 
             history['salary_income'][:, yr] = yr_salary
             history['pension_income'][:, yr] = yr_pension
@@ -776,7 +816,6 @@ class StochasticRetirementEngine:
             niit_tax = np.where(magi > (niit_threshold_val * cum_inf), realized_gains * 0.038, 0.0)
             base_tax_fed += (ltcg_tax + niit_tax)
             
-            # --- START COMPLEX STATE TAX MATRIX (PRE-CONVERSION) ---
             state_taxable_base = np.where(
                 np.isin(state_str, NO_INCOME_TAX_STATES), 
                 0.0, 
