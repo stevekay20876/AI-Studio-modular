@@ -218,7 +218,8 @@ class StochasticRetirementEngine:
             'roth_taxes_from_cash': np.zeros((self.iterations, self.years)),
             'income_gap': np.zeros((self.iterations, self.years)),
             'guaranteed_income': np.zeros((self.iterations, self.years)),
-            'tax_paid': np.zeros((self.iterations, self.years))
+            'tax_paid': np.zeros((self.iterations, self.years)),
+            'terminal_year': np.zeros(self.iterations, dtype=int)
         }
 
         p_tsp = np.full(self.iterations, float(self.inputs.get('p_tsp_bal', 0.0)))
