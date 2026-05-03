@@ -39,7 +39,7 @@ with nav1:
     st.markdown("Institution-Grade Monte Carlo Simulator | Constant Amortization Spending Model (CASAM)")
 
     curr_year = datetime.datetime.now().year
-    strat_options = list(PORTFOLIOS.keys()) + ["Dynamic Glidepath (Target Date)"]
+    strat_options = list(PORTFOLIOS.keys()) +["Dynamic Glidepath (Target Date)"]
 
     DEFAULT_STATE = {
         'cur_age': None, 'ret_date': datetime.date(curr_year + 5, 1, 1), 'life_exp': None, 'filing_status': "Single",
@@ -224,7 +224,7 @@ with nav1:
             mil_active = st.checkbox("Enable Primary Military Pension Modeling?", key="mil_active")
             
             m1, m2 = st.columns(2)
-            mil_component = m1.selectbox("Service Component", ["Active Duty", "National Guard / Reserve", "Mixed (Active + Guard/Reserve)"], key="mil_component")
+            mil_component = m1.selectbox("Service Component",["Active Duty", "National Guard / Reserve", "Mixed (Active + Guard/Reserve)"], key="mil_component")
             mil_start_age = m2.number_input("Mil. Pension Start Age (Default 60 for Guard/Reserve)", min_value=18, max_value=100, key="mil_start_age")
 
             st.markdown("**Creditable Service & Points**")
@@ -242,7 +242,7 @@ with nav1:
             md1, md2, md3 = st.columns(3)
             default_diems = datetime.date.fromisoformat(st.session_state.mil_diems) if isinstance(st.session_state.mil_diems, str) else st.session_state.mil_diems
             mil_diems = md1.date_input("DIEMS Date", value=default_diems, format="MM/DD/YYYY", key="mil_diems")
-            mil_system = md2.selectbox("Retirement System",["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System[BRS] (2.0%)"], key="mil_system")
+            mil_system = md2.selectbox("Retirement System",["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="mil_system")
             mil_pay_base = md3.number_input("Pay Base (High-36 Avg or Final Base Pay $/mo)", min_value=0, step=100, key="mil_pay_base")
             
             st.markdown("**Disability & Survivor Options**")
@@ -326,7 +326,7 @@ with nav1:
             st.session_state.s_health_cost = 0
             st.session_state.s_oop_cost = 0
 
-        p_needs_aca = st.session_state.health_plan in ["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]
+        p_needs_aca = st.session_state.health_plan in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"]
         s_needs_aca = (st.session_state.filing_status == 'MFJ') and (st.session_state.s_health_plan in["None/Self-Insure", "Affordable Care Act", "Spouse's Insurance"])
 
         if p_needs_aca or s_needs_aca:
@@ -353,6 +353,8 @@ with nav1:
 
     with st.expander("🏛️ Savings & Assets", expanded=not has_run):
         st.markdown("**Current Portfolios & Strategies**")
+        st.info("Note: Under SECURE 2.0, Roth employer plans (like Roth TSP / Roth 401k) are no longer subject to Required Minimum Distributions (RMDs) during the owner's lifetime. To perfectly align with current tax law, the engine automatically aggregates your Roth TSP balance into your lifetime Roth IRA balance.")
+        
         t_ast_p, t_ast_s = st.tabs(["Household Assets", "Spouse Assets (If MFJ)"])
         
         with t_ast_p:
@@ -389,7 +391,6 @@ with nav1:
             pay_taxes_from_cash = st.checkbox("Pay Roth Conversion Taxes from Cash Buffer?", key="pay_taxes_from_cash")
             
         with t_ast_s:
-            st.info("Enter any accounts solely in the Spouse's name here. They will be mathematically merged into the household portfolio for calculation.")
             s_label = "Spouse TSP Trad Bal. ($)" if st.session_state.s_pension_type == "FERS" else "Spouse 401(k) Trad Bal. ($)"
             s_r_label = "Spouse TSP Roth Bal. ($)" if st.session_state.s_pension_type == "FERS" else "Spouse Roth 401(k) Bal. ($)"
             
@@ -498,12 +499,14 @@ with nav1:
             'mortgage_pmt': safe_int(st.session_state.mortgage_pmt), 'mortgage_yrs': safe_int(st.session_state.mortgage_yrs),
             'home_value': safe_int(st.session_state.home_value), 'target_floor': safe_int(st.session_state.target_floor),
             
-            # MERGED BALANCES
-            'tsp_bal': safe_int(st.session_state.tsp_b) + safe_int(st.session_state.s_tsp_b), 
+            'p_tsp_bal': safe_int(st.session_state.tsp_b), 
+            's_tsp_bal': safe_int(st.session_state.s_tsp_b),
+            'p_ira_bal': safe_int(st.session_state.ira_b), 
+            's_ira_bal': safe_int(st.session_state.s_ira_b),
+            'p_roth_bal': safe_int(st.session_state.roth_b) + safe_int(st.session_state.tsp_roth_b), 
+            's_roth_bal': safe_int(st.session_state.s_roth_b) + safe_int(st.session_state.s_tsp_roth_b),
             'tsp_strat': st.session_state.tsp_strat,
-            'ira_bal': safe_int(st.session_state.ira_b) + safe_int(st.session_state.s_ira_b), 
             'ira_strat': st.session_state.ira_strat,
-            'roth_bal': safe_int(st.session_state.roth_b) + safe_int(st.session_state.tsp_roth_b) + safe_int(st.session_state.s_roth_b) + safe_int(st.session_state.s_tsp_roth_b), 
             'roth_strat': st.session_state.roth_strat,
             'taxable_bal': safe_int(st.session_state.tax_b), 'taxable_basis': safe_int(final_tax_basis), 'taxable_strat': st.session_state.tax_strat,
             'hsa_bal': safe_int(st.session_state.hsa_b), 'hsa_strat': st.session_state.hsa_strat,
@@ -612,7 +615,6 @@ with nav1:
             st.subheader("Portfolio Optimization & Efficient Frontier")
             st.write("This analysis evaluates your custom account-by-account mix against standard benchmark portfolios to find the optimal balance of growth vs. Sequence of Return Risk (guardrail pay cuts).")
             
-            # Make sure 'Dynamic Glidepath' is evaluated as a benchmark
             if "Dynamic Glidepath (Target Date)" not in port_analysis:
                 port_analysis["Dynamic Glidepath (Target Date)"] = engine.analyze_portfolios(opt_iwr, roth_strategy=1).get("Dynamic Glidepath (Target Date)", {'wealth': 0, 'cut_prob': 0})
             
@@ -633,7 +635,7 @@ with nav1:
             df_ui = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
             desired_cols =['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'TSP Withdrawal', 'Trad IRA Withdrawal', 'Salary Income', 'Social Security', 'Total Pension (FERS + Mil)', 'VA Disability Pay', 'Additional Expenses (Smile Curve)']
             display_cols =[c for c in desired_cols if c in df_ui.columns]
-            st.dataframe(df_ui[display_cols].style.format({c: "${:,.0f}" for c in display_cols if c not in ['Calendar Year', 'Age']}), use_container_width=True, hide_index=True)
+            st.dataframe(df_ui[display_cols].style.format({c: "${:,.0f}" for c in display_cols if c not in['Calendar Year', 'Age']}), use_container_width=True, hide_index=True)
 
         with t3:
             st.subheader("Variable Spending Rules & Adaptive Guardrails")
@@ -685,7 +687,7 @@ with nav1:
             med_taxes = np.median(history['taxes_fed'], axis=0)
             if med_taxes[-1] > med_taxes[0] * 2.5: st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Execute Roth Conversions.")
             if inputs['filing_status'] == 'MFJ' and inputs['spouse_life_exp'] != inputs['life_expectancy']: st.warning("⚠️ **Widow(er) Tax Penalty Active**: Because you entered differing Target Planning Ages for the primary and spouse, the engine has successfully modeled the Widow(er) Tax cliff. When the first spouse 'dies', the survivor's standard deduction halves and brackets shrink, severely increasing vulnerability to IRMAA surcharges. ")
-            if inputs.get('mil_active') and inputs.get('mil_disability_rating') in ["0%", "10% - 20%", "30% - 40%"] and inputs.get('mil_va_pay', 0) > 0: st.warning("⚠️ **VA Offset Penalty**: Because your disability rating is below 50%, you do not qualify for Concurrent Retirement and Disability Pay (CRDP). Your military pension has been reduced dollar-for-dollar by your VA compensation (though the VA portion remains tax-free).")
+            if inputs.get('mil_active') and inputs.get('mil_disability_rating') in["0%", "10% - 20%", "30% - 40%"] and inputs.get('mil_va_pay', 0) > 0: st.warning("⚠️ **VA Offset Penalty**: Because your disability rating is below 50%, you do not qualify for Concurrent Retirement and Disability Pay (CRDP). Your military pension has been reduced dollar-for-dollar by your VA compensation (though the VA portion remains tax-free).")
             if prob_success >= 85: st.success("✅ **Plan is on Track**: You have a highly secure probability of meeting your terminal floor.")
 
             st.markdown("""
@@ -759,7 +761,7 @@ with nav1:
                 pct_cols =["Rate of Return", "Inflation Rate", "Real Rate of Return", "Cumulative Inflation Multiplier"]
                 for c in pct_cols:
                     if c in df_out.columns: df_out[c] = df_out[c].apply(lambda x: f"{x:.2%}")
-                currency_cols =[c for c in df_out.columns if c not in ["Calendar Year", "Age", "Withdrawal Constraint Active"] + pct_cols]
+                currency_cols =[c for c in df_out.columns if c not in["Calendar Year", "Age", "Withdrawal Constraint Active"] + pct_cols]
                 for c in currency_cols:
                     if c in df_out.columns: df_out[c] = df_out[c].apply(lambda x: f"${x:,.0f}")
                 return df_out

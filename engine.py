@@ -5,27 +5,6 @@ import datetime
 from config import *
 import gc
 
-# Simplified SSA Period Life Table (Unisex Actuarial Probabilities of Death: q_x)
-SSA_MORTALITY = {
-    **{a: 0.001 for a in range(0, 30)},
-    **{a: 0.0015 for a in range(30, 40)},
-    **{a: 0.0025 for a in range(40, 50)},
-    **{a: 0.005 for a in range(50, 60)},
-    60: 0.007, 61: 0.008, 62: 0.009, 63: 0.010, 64: 0.011,
-    65: 0.013, 66: 0.014, 67: 0.016, 68: 0.017, 69: 0.019,
-    70: 0.021, 71: 0.024, 72: 0.027, 73: 0.030, 74: 0.034,
-    75: 0.038, 76: 0.043, 77: 0.048, 78: 0.054, 79: 0.061,
-    80: 0.069, 81: 0.077, 82: 0.087, 83: 0.098, 84: 0.111,
-    85: 0.125, 86: 0.141, 87: 0.158, 88: 0.177, 89: 0.198,
-    90: 0.222, 91: 0.247, 92: 0.274, 93: 0.303, 94: 0.334,
-    95: 0.365, 96: 0.398, 97: 0.431, 98: 0.466, 99: 0.500,
-    100: 0.535, 101: 0.570, 102: 0.605, 103: 0.640, 104: 0.675,
-    105: 0.710, 106: 0.745, 107: 0.780, 108: 0.815, 109: 0.850,
-    110: 0.885, 111: 0.920, 112: 0.955, 113: 0.990
-}
-for a in range(114, 121):
-    SSA_MORTALITY[a] = 1.0
-
 class StochasticRetirementEngine:
     def __init__(self, inputs):
         self.inputs = inputs
@@ -190,9 +169,14 @@ class StochasticRetirementEngine:
             'tax_paid': np.zeros((self.iterations, self.years))
         }
 
-        tsp = np.full(self.iterations, float(self.inputs['tsp_bal']))
-        ira = np.full(self.iterations, float(self.inputs['ira_bal']))
-        roth = np.full(self.iterations, float(self.inputs['roth_bal']))
+        # Track discrete segregated accounts internally for targeted RMD scaling
+        p_tsp = np.full(self.iterations, float(self.inputs.get('p_tsp_bal', 0.0)))
+        s_tsp = np.full(self.iterations, float(self.inputs.get('s_tsp_bal', 0.0)))
+        p_ira = np.full(self.iterations, float(self.inputs.get('p_ira_bal', 0.0)))
+        s_ira = np.full(self.iterations, float(self.inputs.get('s_ira_bal', 0.0)))
+        p_roth = np.full(self.iterations, float(self.inputs.get('p_roth_bal', 0.0)))
+        s_roth = np.full(self.iterations, float(self.inputs.get('s_roth_bal', 0.0)))
+
         taxable = np.full(self.iterations, float(self.inputs['taxable_bal']))
         hsa = np.full(self.iterations, float(self.inputs['hsa_bal']))
         cash = np.full(self.iterations, float(self.inputs['cash_bal']))
@@ -467,25 +451,25 @@ class StochasticRetirementEngine:
 
             yr_salary = np.where(p_alive, p_salary_inf * p_work_frac, 0) + np.where(s_alive, s_salary_inf * s_work_frac, 0)
             
-            tsp += np.where(p_alive, p_tsp_c * cum_inf * p_work_frac, 0) + np.where(s_alive, s_tsp_c * cum_inf * s_work_frac, 0)
+            p_tsp += np.where(p_alive, p_tsp_c * cum_inf * p_work_frac, 0)
+            s_tsp += np.where(s_alive, s_tsp_c * cum_inf * s_work_frac, 0)
+            
+            p_roth += np.where(p_alive, p_roth_c * cum_inf * p_work_frac, 0)
+            s_roth += np.where(s_alive, s_roth_c * cum_inf * s_work_frac, 0)
+            
             taxable += np.where(p_alive, p_tax_c * cum_inf * p_work_frac, 0) + np.where(s_alive, s_tax_c * cum_inf * s_work_frac, 0)
             taxable_basis += np.where(p_alive, p_tax_c * cum_inf * p_work_frac, 0) + np.where(s_alive, s_tax_c * cum_inf * s_work_frac, 0)
-            roth += np.where(p_alive, p_roth_c * cum_inf * p_work_frac, 0) + np.where(s_alive, s_roth_c * cum_inf * s_work_frac, 0)
             cash += np.where(p_alive, p_cash_c * cum_inf * p_work_frac, 0) + np.where(s_alive, s_cash_c * cum_inf * s_work_frac, 0)
             hsa += np.where(p_alive, p_hsa_c * cum_inf * p_work_frac, 0) + np.where(s_alive, s_hsa_c * cum_inf * s_work_frac, 0)
 
             p_civ_pen = np.where(p_alive, p_base_pension * p_pension_mult * p_ret_frac, np.where(s_alive, p_base_pension * p_fers_survivor_mult, 0))
-            
             p_mil_pen_active = np.maximum(0, p_base_mil_gross - (p_base_va if not p_crdp else 0) - (p_base_mil_gross * 0.065 if p_mil_sbp and s_alive.any() else 0))
             p_mil_pen = np.where(p_alive & (age >= p_mil_start_age), p_mil_pen_active, np.where(~p_alive & s_alive & p_mil_sbp, p_base_mil_gross * 0.55, 0))
-            
             yr_va_p = np.where(p_alive & (age >= p_mil_start_age), p_base_va, 0)
             
             s_civ_pen = np.where(s_alive, s_base_pension * s_pension_mult * s_ret_frac, np.where(p_alive, s_base_pension * s_fers_survivor_mult, 0))
-            
             s_mil_pen_active = np.maximum(0, s_base_mil_gross - (s_base_va if not s_crdp else 0) - (s_base_mil_gross * 0.065 if s_mil_sbp and p_alive.any() else 0))
             s_mil_pen = np.where(s_alive & (spouse_age >= s_mil_start_age), s_mil_pen_active, np.where(~s_alive & p_alive & s_mil_sbp, s_base_mil_gross * 0.55, 0))
-            
             yr_va_s = np.where(s_alive & (spouse_age >= s_mil_start_age), s_base_va, 0)
             
             yr_pension = p_civ_pen + p_mil_pen + s_civ_pen + s_mil_pen
@@ -514,13 +498,24 @@ class StochasticRetirementEngine:
             total_guaranteed = yr_pension + yr_va + yr_ss + yr_salary
             history['guaranteed_income'][:, yr] = total_guaranteed
             
-            prev_total_port = tsp + ira + roth + taxable + cash
-            tsp = np.where(household_alive, tsp * (1 + returns[:, yr, 1]), tsp)
-            ira = np.where(household_alive, ira * (1 + returns[:, yr, 2]), ira)
-            roth = np.where(household_alive, roth * (1 + returns[:, yr, 3]), roth)
+            tsp_pre = p_tsp + s_tsp
+            ira_pre = p_ira + s_ira
+            roth_pre = p_roth + s_roth
+            prev_total_port = tsp_pre + ira_pre + roth_pre + taxable + cash
+            
+            p_tsp = np.where(household_alive, p_tsp * (1 + returns[:, yr, 1]), p_tsp)
+            s_tsp = np.where(household_alive, s_tsp * (1 + returns[:, yr, 1]), s_tsp)
+            p_ira = np.where(household_alive, p_ira * (1 + returns[:, yr, 2]), p_ira)
+            s_ira = np.where(household_alive, s_ira * (1 + returns[:, yr, 2]), s_ira)
+            p_roth = np.where(household_alive, p_roth * (1 + returns[:, yr, 3]), p_roth)
+            s_roth = np.where(household_alive, s_roth * (1 + returns[:, yr, 3]), s_roth)
             taxable = np.where(household_alive, taxable * (1 + returns[:, yr, 4]), taxable)
             hsa = np.where(household_alive, hsa * (1 + returns[:, yr, 5]), hsa)
             cash = np.where(household_alive, cash * (1 + cash_ret), cash)
+            
+            tsp = p_tsp + s_tsp
+            ira = p_ira + s_ira
+            roth = p_roth + s_roth
             
             current_total_port = tsp + ira + roth + taxable + cash
             history['port_return'][:, yr] = (current_total_port - prev_total_port) / np.maximum(prev_total_port, 1)
@@ -561,8 +556,13 @@ class StochasticRetirementEngine:
                     
                     sweep_from_taxable = np.minimum(actual_sweep, taxable)
                     taxable -= sweep_from_taxable
+                    
                     sweep_from_tsp = np.minimum(actual_sweep - sweep_from_taxable, tsp)
-                    tsp -= sweep_from_tsp
+                    ratio_p_tsp = np.where(tsp > 0, p_tsp / tsp, 0.0)
+                    p_tsp -= sweep_from_tsp * ratio_p_tsp
+                    s_tsp -= sweep_from_tsp * (1.0 - ratio_p_tsp)
+                    tsp = p_tsp + s_tsp
+                    
                     cash += (sweep_from_taxable + sweep_from_tsp)
 
                 inflated_min_spend = min_spending * cum_inf
@@ -578,17 +578,52 @@ class StochasticRetirementEngine:
             history['constraint_active'][:, yr] = constraint_flag
             history['income_gap'][:, yr] = w_needed
             
+            # --- SPOUSAL INHERITANCE ROLLOVER ---
+            roll_p_to_s = (~p_alive) & s_alive & ((p_tsp + p_ira + p_roth) > 0)
+            s_tsp = np.where(roll_p_to_s, s_tsp + p_tsp, s_tsp)
+            p_tsp = np.where(roll_p_to_s, 0.0, p_tsp)
+            s_ira = np.where(roll_p_to_s, s_ira + p_ira, s_ira)
+            p_ira = np.where(roll_p_to_s, 0.0, p_ira)
+            s_roth = np.where(roll_p_to_s, s_roth + p_roth, s_roth)
+            p_roth = np.where(roll_p_to_s, 0.0, p_roth)
+            
+            roll_s_to_p = (~s_alive) & p_alive & ((s_tsp + s_ira + s_roth) > 0)
+            p_tsp = np.where(roll_s_to_p, p_tsp + s_tsp, p_tsp)
+            s_tsp = np.where(roll_s_to_p, 0.0, s_tsp)
+            p_ira = np.where(roll_s_to_p, p_ira + s_ira, p_ira)
+            s_ira = np.where(roll_s_to_p, 0.0, s_ira)
+            p_roth = np.where(roll_s_to_p, p_roth + s_roth, p_roth)
+            s_roth = np.where(roll_s_to_p, 0.0, s_roth)
+            
+            tsp = p_tsp + s_tsp
+            ira = p_ira + s_ira
+            roth = p_roth + s_roth
+            
+            # --- TARGETED RMD LOGIC ---
             rmd_divisor_p = np.array([IRS_RMD_DIVISORS.get(a, 1.9 if a > 120 else 0.0) for a in np.clip(np.full(self.iterations, age), 0, 125)])
             rmd_divisor_s = np.array([IRS_RMD_DIVISORS.get(a, 1.9 if a > 120 else 0.0) for a in np.clip(np.full(self.iterations, spouse_age), 0, 125)])
             
-            rmd_tsp = np.where(p_alive & (rmd_divisor_p > 0), tsp * (1.0 / rmd_divisor_p), 0) + np.where(~p_alive & s_alive & (rmd_divisor_s > 0), tsp * (1.0 / rmd_divisor_s), 0)
-            rmd_ira = np.where(p_alive & (rmd_divisor_p > 0), ira * (1.0 / rmd_divisor_p), 0) + np.where(~p_alive & s_alive & (rmd_divisor_s > 0), ira * (1.0 / rmd_divisor_s), 0)
+            p_retired = current_year >= self.ret_year
+            s_retired = current_year >= self.s_ret_year
             
-            rmds = np.where(household_alive, rmd_tsp + rmd_ira, 0)
+            rmd_p_tsp = np.where(p_alive & p_retired & (rmd_divisor_p > 0), p_tsp * (1.0 / rmd_divisor_p), 0.0)
+            rmd_s_tsp = np.where(s_alive & s_retired & (rmd_divisor_s > 0), s_tsp * (1.0 / rmd_divisor_s), 0.0)
+            rmd_p_ira = np.where(p_alive & (rmd_divisor_p > 0), p_ira * (1.0 / rmd_divisor_p), 0.0)
+            rmd_s_ira = np.where(s_alive & (rmd_divisor_s > 0), s_ira * (1.0 / rmd_divisor_s), 0.0)
+            
+            rmd_tsp = np.where(household_alive, rmd_p_tsp + rmd_s_tsp, 0.0)
+            rmd_ira = np.where(household_alive, rmd_p_ira + rmd_s_ira, 0.0)
+            
+            rmds = rmd_tsp + rmd_ira
             history['rmds'][:, yr] = rmds
             
-            tsp -= rmd_tsp
-            ira -= rmd_ira
+            p_tsp -= rmd_p_tsp
+            s_tsp -= rmd_s_tsp
+            p_ira -= rmd_p_ira
+            s_ira -= rmd_s_ira
+            
+            tsp = p_tsp + s_tsp
+            ira = p_ira + s_ira
             
             w_remaining = np.maximum(0, w_needed - rmds)
             excess_rmd = np.maximum(0, rmds - w_needed)
@@ -621,13 +656,19 @@ class StochasticRetirementEngine:
                 pull_tsp_1 = np.where(household_alive & normal_state, np.minimum(w_remaining, np.minimum(tsp, bracket_space)), 0)
                 w_tsp += pull_tsp_1
                 w_remaining -= pull_tsp_1
-                tsp -= pull_tsp_1
+                ratio_p_tsp = np.where(tsp > 0, p_tsp / tsp, 0.0)
+                p_tsp -= pull_tsp_1 * ratio_p_tsp
+                s_tsp -= pull_tsp_1 * (1.0 - ratio_p_tsp)
+                tsp = p_tsp + s_tsp
                 bracket_space -= pull_tsp_1
                 
                 pull_ira_1 = np.where(household_alive & normal_state, np.minimum(w_remaining, np.minimum(ira, bracket_space)), 0)
                 w_ira += pull_ira_1
                 w_remaining -= pull_ira_1
-                ira -= pull_ira_1
+                ratio_p_ira = np.where(ira > 0, p_ira / ira, 0.0)
+                p_ira -= pull_ira_1 * ratio_p_ira
+                s_ira -= pull_ira_1 * (1.0 - ratio_p_ira)
+                ira = p_ira + s_ira
                 
                 pull_cash_1 = np.where(household_alive & downturn_state, np.minimum(w_remaining, cash), 0)
                 w_cash += pull_cash_1
@@ -647,17 +688,26 @@ class StochasticRetirementEngine:
                 pull_roth_1 = np.where(household_alive, np.minimum(w_remaining, roth), 0)
                 w_roth += pull_roth_1
                 w_remaining -= pull_roth_1
-                roth -= pull_roth_1
+                ratio_p_roth = np.where(roth > 0, p_roth / roth, 0.0)
+                p_roth -= pull_roth_1 * ratio_p_roth
+                s_roth -= pull_roth_1 * (1.0 - ratio_p_roth)
+                roth = p_roth + s_roth
                 
                 pull_tsp_2 = np.where(household_alive, np.minimum(w_remaining, tsp), 0)
                 w_tsp += pull_tsp_2
                 w_remaining -= pull_tsp_2
-                tsp -= pull_tsp_2
+                ratio_p_tsp = np.where(tsp > 0, p_tsp / tsp, 0.0)
+                p_tsp -= pull_tsp_2 * ratio_p_tsp
+                s_tsp -= pull_tsp_2 * (1.0 - ratio_p_tsp)
+                tsp = p_tsp + s_tsp
                 
                 pull_ira_2 = np.where(household_alive, np.minimum(w_remaining, ira), 0)
                 w_ira += pull_ira_2
                 w_remaining -= pull_ira_2
-                ira -= pull_ira_2
+                ratio_p_ira = np.where(ira > 0, p_ira / ira, 0.0)
+                p_ira -= pull_ira_2 * ratio_p_ira
+                s_ira -= pull_ira_2 * (1.0 - ratio_p_ira)
+                ira = p_ira + s_ira
             
             actual_portfolio_withdrawal = w_tsp + w_ira + w_cash + w_taxable + w_roth + rmds - excess_rmd
             
@@ -761,10 +811,19 @@ class StochasticRetirementEngine:
                     space = np.where(is_mfj, space_mfj, space_single)
                 
                 space = np.minimum(space, np.maximum(0, limit_max_pct - taxable_income - 1))
+                
                 conv_from_ira = np.where(household_alive, np.minimum(space, ira), 0)
-                ira -= conv_from_ira
+                ratio_p_ira = np.where(ira > 0, p_ira / ira, 0.0)
+                p_ira -= conv_from_ira * ratio_p_ira
+                s_ira -= conv_from_ira * (1.0 - ratio_p_ira)
+                ira = p_ira + s_ira
+                
                 conv_from_tsp = np.where(household_alive, np.minimum(space - conv_from_ira, tsp), 0)
-                tsp -= conv_from_tsp
+                ratio_p_tsp = np.where(tsp > 0, p_tsp / tsp, 0.0)
+                p_tsp -= conv_from_tsp * ratio_p_tsp
+                s_tsp -= conv_from_tsp * (1.0 - ratio_p_tsp)
+                tsp = p_tsp + s_tsp
+                
                 conv_amt = conv_from_ira + conv_from_tsp
                 
                 pi_conv = pi_base + conv_amt
@@ -819,7 +878,10 @@ class StochasticRetirementEngine:
                 else:
                     net_to_roth = np.maximum(0, conv_amt - extra_tax_total)
                     
-                roth += np.where(household_alive, net_to_roth, 0)
+                p_roth += np.where(p_alive, net_to_roth, 0.0)
+                s_roth += np.where(~p_alive & s_alive, net_to_roth, 0.0)
+                roth = p_roth + s_roth
+                
                 total_tax_fed = np.where(household_alive, new_tax_fed + new_ltcg_tax + new_niit_tax, 0)
                 total_tax_state = np.where(household_alive, base_tax_state_local + extra_tax_state, 0)
             
