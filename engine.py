@@ -5,27 +5,6 @@ import datetime
 from config import *
 import gc
 
-# Simplified SSA Period Life Table (Unisex Actuarial Probabilities of Death: q_x)
-SSA_MORTALITY = {
-    **{a: 0.001 for a in range(0, 30)},
-    **{a: 0.0015 for a in range(30, 40)},
-    **{a: 0.0025 for a in range(40, 50)},
-    **{a: 0.005 for a in range(50, 60)},
-    60: 0.007, 61: 0.008, 62: 0.009, 63: 0.010, 64: 0.011,
-    65: 0.013, 66: 0.014, 67: 0.016, 68: 0.017, 69: 0.019,
-    70: 0.021, 71: 0.024, 72: 0.027, 73: 0.030, 74: 0.034,
-    75: 0.038, 76: 0.043, 77: 0.048, 78: 0.054, 79: 0.061,
-    80: 0.069, 81: 0.077, 82: 0.087, 83: 0.098, 84: 0.111,
-    85: 0.125, 86: 0.141, 87: 0.158, 88: 0.177, 89: 0.198,
-    90: 0.222, 91: 0.247, 92: 0.274, 93: 0.303, 94: 0.334,
-    95: 0.365, 96: 0.398, 97: 0.431, 98: 0.466, 99: 0.500,
-    100: 0.535, 101: 0.570, 102: 0.605, 103: 0.640, 104: 0.675,
-    105: 0.710, 106: 0.745, 107: 0.780, 108: 0.815, 109: 0.850,
-    110: 0.885, 111: 0.920, 112: 0.955, 113: 0.990
-}
-for a in range(114, 121):
-    SSA_MORTALITY[a] = 1.0
-
 class StochasticRetirementEngine:
     def __init__(self, inputs):
         self.inputs = inputs
@@ -862,7 +841,6 @@ class StochasticRetirementEngine:
             niit_tax = np.where(magi > (niit_threshold_val * cum_inf), realized_gains * 0.038, 0.0)
             base_tax_fed += (ltcg_tax + niit_tax)
             
-            # --- START COMPLEX STATE TAX MATRIX (PRE-CONVERSION) ---
             state_taxable_base = np.where(
                 np.isin(state_str, NO_INCOME_TAX_STATES), 
                 0.0, 
@@ -982,7 +960,6 @@ class StochasticRetirementEngine:
                 new_niit_tax = np.where(final_magi > (np.where(is_mfj, NIIT_THRESHOLD_MFJ, NIIT_THRESHOLD_SINGLE) * cum_inf), realized_gains * 0.038, 0.0)
                 extra_tax_fed = (new_tax_fed + new_ltcg_tax + new_niit_tax) - base_tax_fed
                 
-                # --- START COMPLEX STATE TAX MATRIX (POST-CONVERSION) ---
                 new_state_taxable_base = np.where(
                     np.isin(state_str, NO_INCOME_TAX_STATES), 
                     0.0, 

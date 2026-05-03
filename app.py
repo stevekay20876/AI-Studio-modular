@@ -21,7 +21,7 @@ components.html(
 
 ui_styling = """
     <style>
-    #MainMenu {visibility: hidden;} footer {display: none !important;}[data-testid="stHeader"] {visibility: hidden;} .stAppBottom {display: none !important;}
+    #MainMenu {visibility: hidden;} footer {display: none !important;} [data-testid="stHeader"] {visibility: hidden;} .stAppBottom {display: none !important;}
     .block-container { padding-top: 2rem; padding-bottom: 2rem; }[data-testid="stMetricValue"] { font-size: 2.0rem !important; font-weight: 700 !important; color: #00837B !important; }[data-testid="stDownloadButton"] button { background-color: #E6F7F6 !important; color: #00695C !important; border: 2px solid #80CBC4 !important; font-weight: 700 !important; border-radius: 8px !important; transition: all 0.2s ease; }[data-testid="stDownloadButton"] button:hover { background-color: #B2DFDB !important; border-color: #00837B !important; }[data-testid="stTabs"] { background-color: #F8FAFC; border: 2px solid #E5E7EB; border-radius: 12px; padding: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
     div[data-baseweb="tab-list"] { gap: 0px; border-bottom: 2px solid #E5E7EB; }
     button[data-baseweb="tab"] { font-size: 1.1rem !important; padding: 0.8rem 1.5rem !important; background-color: #E5E7EB !important; color: #475569 !important; border-radius: 8px 8px 0 0 !important; border: 1px solid transparent !important; margin-right: 4px !important; }
@@ -103,7 +103,7 @@ with nav1:
             profile_name = st.text_input("Name your save file:", key="save_file_name")
             safe_filename = st.session_state.save_file_name.strip()
             if not safe_filename.endswith(".json"): safe_filename += ".json"
-            st.download_button("⬇️ Save Current Profile to Computer", data=json.dumps(get_current_state(), indent=4), file_name=safe_filename, mime="application/json", use_container_width=True)
+            st.download_button("⬇️ Save Current Profile to Computer", data=json.dumps(get_current_state(), indent=4), file_name=safe_filename, mime="application/json", use_container_width=True, help="Important: Make sure you press 'Enter' or click outside of any text box you just edited before clicking Save to lock in the final keystrokes!")
 
     has_run = 'sim_data' in st.session_state
 
@@ -240,7 +240,7 @@ with nav1:
             md1, md2, md3 = st.columns(3)
             default_diems = datetime.date.fromisoformat(st.session_state.mil_diems) if isinstance(st.session_state.mil_diems, str) else st.session_state.mil_diems
             mil_diems = md1.date_input("DIEMS Date", value=default_diems, format="MM/DD/YYYY", key="mil_diems")
-            mil_system = md2.selectbox("Retirement System",["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="mil_system")
+            mil_system = md2.selectbox("Retirement System",["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System[BRS] (2.0%)"], key="mil_system")
             mil_pay_base = md3.number_input("Pay Base (High-36 Avg or Final Base Pay $/mo)", min_value=0, step=100, key="mil_pay_base")
             
             st.markdown("**Disability & Survivor Options**")
@@ -685,7 +685,7 @@ with nav1:
             if "Dynamic Glidepath (Target Date)" not in port_analysis:
                 port_analysis["Dynamic Glidepath (Target Date)"] = engine.analyze_portfolios(opt_iwr, roth_strategy=1).get("Dynamic Glidepath (Target Date)", {'wealth': 0, 'cut_prob': 0})
             
-            port_names, port_wealths, port_cuts = list(port_analysis.keys()), [port_analysis[p]['wealth'] for p in port_analysis.keys()],[port_analysis[p]['cut_prob'] for p in port_analysis.keys()]
+            port_names, port_wealths, port_cuts = list(port_analysis.keys()),[port_analysis[p]['wealth'] for p in port_analysis.keys()],[port_analysis[p]['cut_prob'] for p in port_analysis.keys()]
             st.table(pd.DataFrame({"Portfolio Strategy": port_names, "Median Terminal Legacy (Today's $)": port_wealths, "Probability of Guardrail Pay Cuts": port_cuts}).style.format({"Median Terminal Legacy (Today's $)": "${:,.0f}", "Probability of Guardrail Pay Cuts": "{:.1f}%"}))
 
         with t2:
@@ -790,7 +790,7 @@ with nav1:
                 st.write(f"- **Net Increase to Legacy (Today's $):** ${wealth_increase:,.0f}")
                 st.markdown("#### Step-by-Step Conversion Schedule")
                 st.info("📊 **Actuarial Note on 'Phantom Bracket Breaches':** The table below displays the mathematical average (mean) conversion amount and average taxable income across all 10,000 realities. Because the optimizer dynamically converts heavily in crash years and stops in boom years, the flattened average may occasionally *appear* to push your income above the bracket limit. Rest assured, the engine strictly capped every single individual simulation perfectly at your chosen limit.")
-                conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": np.mean(history['roth_conversion'], axis=0), "Est. IRS Taxable Income": np.median(history['taxable_income'], axis=0)})
+                conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": np.mean(history_ui['roth_conversion'], axis=0), "Est. IRS Taxable Income": np.median(history_ui['taxable_income'], axis=0)})
                 st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}", "Est. IRS Taxable Income": "${:,.0f}"}))
 
         with t10:
@@ -811,7 +811,7 @@ with nav1:
 
         with t11:
             st.subheader("Medicare Part B & Actuarial Healthcare OOP")
-            st.plotly_chart(plot_medicare_comparison(history, years_arr, inputs), use_container_width=True)
+            st.plotly_chart(plot_medicare_comparison(history_ui, years_arr, inputs), use_container_width=True)
             st.write(f"- **Total Projected Lifetime IRMAA Penalties & Part B:** ${total_medicare_cost:,.0f}")
             
             moop_cap = MOOP_LIMITS.get(inputs['health_plan'], (999999, 999999))[1 if inputs['filing_status'] == 'MFJ' else 0]
