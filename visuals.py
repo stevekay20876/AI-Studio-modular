@@ -192,9 +192,9 @@ def plot_legacy_breakdown(history):
     cash_term = np.median(history['cash_bal'][:, -1])
     home_term = np.median(history['home_value'][:, -1])
     
-    labels =['TSP (Tax-Deferred)', 'Trad IRA (Tax-Deferred)', 'Roth IRA (Tax-Free)', 'Taxable Investments', 'Cash/MM', 'Real Estate', 'HSA']
-    values =[max(0, tsp_term), max(0, ira_term), max(0, roth_term), max(0, taxable_term), max(0, cash_term), max(0, home_term), max(0, hsa_term)]
-    colors =['#1f77b4', '#aec7e8', '#2ca02c', '#ff7f0e', '#d62728', 'gray', '#17becf']
+    labels = ['TSP (Tax-Deferred)', 'Trad IRA (Tax-Deferred)', 'Roth IRA (Tax-Free)', 'Taxable Investments', 'Cash/MM', 'Real Estate', 'HSA']
+    values = [max(0, tsp_term), max(0, ira_term), max(0, roth_term), max(0, taxable_term), max(0, cash_term), max(0, home_term), max(0, hsa_term)]
+    colors = ['#1f77b4', '#aec7e8', '#2ca02c', '#ff7f0e', '#d62728', 'gray', '#17becf']
 
     fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=.4, marker=dict(colors=colors))])
     fig.update_layout(
@@ -207,7 +207,7 @@ def plot_roth_strategy_comparison(roth_results):
     strategies = list(roth_results.keys())
     wealths = [roth_results[s]['wealth'] for s in strategies]
     winner_idx = np.argmax(wealths)
-    colors =['gray'] * len(strategies)
+    colors = ['gray'] * len(strategies)
     colors[winner_idx] = '#00837B'
     
     fig = px.bar(x=wealths, y=strategies, orientation='h', title="Strategic Scenario Comparison (Terminal Legacy in Today's $)")
@@ -235,9 +235,9 @@ def plot_roth_tax_impact(roth_results, winner, years_arr):
     return fig
 
 def plot_ss_breakeven(ss_fra, age_arr, years_arr, fra_age=67):
-    early_stream =[(ss_fra * 0.7) * (0.79 if yr >= 2035 else 1.0) if age >= 62 else 0 for age, yr in zip(age_arr, years_arr)]
-    fra_stream =[(ss_fra * 1.0) * (0.79 if yr >= 2035 else 1.0) if age >= fra_age else 0 for age, yr in zip(age_arr, years_arr)]
-    delayed_stream =[(ss_fra * 1.24) * (0.79 if yr >= 2035 else 1.0) if age >= 70 else 0 for age, yr in zip(age_arr, years_arr)]
+    early_stream = [(ss_fra * 0.7) * (0.79 if yr >= 2035 else 1.0) if age >= 62 else 0 for age, yr in zip(age_arr, years_arr)]
+    fra_stream = [(ss_fra * 1.0) * (0.79 if yr >= 2035 else 1.0) if age >= fra_age else 0 for age, yr in zip(age_arr, years_arr)]
+    delayed_stream = [(ss_fra * 1.24) * (0.79 if yr >= 2035 else 1.0) if age >= 70 else 0 for age, yr in zip(age_arr, years_arr)]
     
     cum_early = np.cumsum(early_stream)
     cum_fra = np.cumsum(fra_stream)
@@ -272,7 +272,7 @@ def plot_medicare_comparison(history, years_arr, inputs):
     )
     return fig
 
-def plot_tornado(base_success, sens_results):
+def plot_tornado(base_legacy, sens_results):
     df = pd.DataFrame(sens_results)
     
     df['Swing'] = df['Positive Impact'].abs() + df['Negative Impact'].abs()
@@ -280,13 +280,17 @@ def plot_tornado(base_success, sens_results):
     
     fig = go.Figure()
     
+    def format_val(val):
+        if val >= 0: return f"+${val:,.0f}"
+        return f"-${abs(val):,.0f}"
+    
     fig.add_trace(go.Bar(
         y=df['Factor'],
         x=df['Negative Impact'],
         orientation='h',
         name='Downside Risk',
         marker_color='indianred',
-        text=[f"{x:+.1f}%" for x in df['Negative Impact']],
+        text=[format_val(x) for x in df['Negative Impact']],
         textposition='auto'
     ))
     
@@ -296,14 +300,14 @@ def plot_tornado(base_success, sens_results):
         orientation='h',
         name='Upside Potential',
         marker_color='mediumseagreen',
-        text=[f"{x:+.1f}%" for x in df['Positive Impact']],
+        text=[format_val(x) for x in df['Positive Impact']],
         textposition='auto'
     ))
     
     fig.update_layout(
-        title=f"Sensitivity Analysis (Baseline Success: {base_success:.1f}%)",
+        title=f"Sensitivity Analysis (Impact on Median Legacy vs Baseline: ${base_legacy:,.0f})",
         barmode='relative',
-        xaxis_title="Change in Probability of Success (%)",
+        xaxis_title="Change in Terminal Liquid Legacy ($)",
         yaxis_title="",
         template="plotly_white",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
