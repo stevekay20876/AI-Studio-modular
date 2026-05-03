@@ -5,27 +5,6 @@ import datetime
 from config import *
 import gc
 
-# Simplified SSA Period Life Table (Unisex Actuarial Probabilities of Death: q_x)
-SSA_MORTALITY = {
-    **{a: 0.001 for a in range(0, 30)},
-    **{a: 0.0015 for a in range(30, 40)},
-    **{a: 0.0025 for a in range(40, 50)},
-    **{a: 0.005 for a in range(50, 60)},
-    60: 0.007, 61: 0.008, 62: 0.009, 63: 0.010, 64: 0.011,
-    65: 0.013, 66: 0.014, 67: 0.016, 68: 0.017, 69: 0.019,
-    70: 0.021, 71: 0.024, 72: 0.027, 73: 0.030, 74: 0.034,
-    75: 0.038, 76: 0.043, 77: 0.048, 78: 0.054, 79: 0.061,
-    80: 0.069, 81: 0.077, 82: 0.087, 83: 0.098, 84: 0.111,
-    85: 0.125, 86: 0.141, 87: 0.158, 88: 0.177, 89: 0.198,
-    90: 0.222, 91: 0.247, 92: 0.274, 93: 0.303, 94: 0.334,
-    95: 0.365, 96: 0.398, 97: 0.431, 98: 0.466, 99: 0.500,
-    100: 0.535, 101: 0.570, 102: 0.605, 103: 0.640, 104: 0.675,
-    105: 0.710, 106: 0.745, 107: 0.780, 108: 0.815, 109: 0.850,
-    110: 0.885, 111: 0.920, 112: 0.955, 113: 0.990
-}
-for a in range(114, 121):
-    SSA_MORTALITY[a] = 1.0
-
 class StochasticRetirementEngine:
     def __init__(self, inputs):
         self.inputs = inputs
@@ -185,6 +164,7 @@ class StochasticRetirementEngine:
             'tsp_withdrawal': np.zeros((self.iterations, self.years)),
             'ira_withdrawal': np.zeros((self.iterations, self.years)),
             'roth_withdrawal': np.zeros((self.iterations, self.years)),
+            'hsa_withdrawal': np.zeros((self.iterations, self.years)),
             'taxable_withdrawal': np.zeros((self.iterations, self.years)),
             'cash_withdrawal': np.zeros((self.iterations, self.years)),
             'rmds': np.zeros((self.iterations, self.years)),
@@ -569,7 +549,8 @@ class StochasticRetirementEngine:
             tsp_pre = p_tsp + s_tsp
             ira_pre = p_ira + s_ira
             roth_pre = p_roth + s_roth
-            prev_total_port = tsp_pre + ira_pre + roth_pre + taxable + cash
+            hsa_pre = hsa.copy()
+            prev_total_port = tsp_pre + ira_pre + roth_pre + taxable + cash + hsa_pre
             
             p_tsp = np.where(household_alive, p_tsp * (1 + returns[:, yr, 1]), p_tsp)
             s_tsp = np.where(household_alive, s_tsp * (1 + returns[:, yr, 1]), s_tsp)
@@ -585,7 +566,7 @@ class StochasticRetirementEngine:
             ira = p_ira + s_ira
             roth = p_roth + s_roth
             
-            current_total_port = tsp + ira + roth + taxable + cash
+            current_total_port = tsp + ira + roth + taxable + cash + hsa
             history['port_return'][:, yr] = (current_total_port - prev_total_port) / np.maximum(prev_total_port, 1)
             history['real_return'][:, yr] = history['port_return'][:, yr] - inf_paths[:, yr]
             
@@ -702,6 +683,7 @@ class StochasticRetirementEngine:
             w_cash = np.zeros(self.iterations)
             w_taxable = np.zeros(self.iterations)
             w_roth = np.zeros(self.iterations)
+            pull_hsa = np.zeros(self.iterations)
             
             if current_year >= self.ret_year:
                 if yr > 0:
@@ -753,6 +735,10 @@ class StochasticRetirementEngine:
                 w_remaining -= pull_cash_2
                 cash -= pull_cash_2
                 
+                pull_hsa = np.where(household_alive, np.minimum(w_remaining, hsa), 0)
+                w_remaining -= pull_hsa
+                hsa -= pull_hsa
+                
                 pull_roth_1 = np.where(household_alive, np.minimum(w_remaining, roth), 0)
                 w_roth += pull_roth_1
                 w_remaining -= pull_roth_1
@@ -777,7 +763,7 @@ class StochasticRetirementEngine:
                 s_ira -= pull_ira_2 * (1.0 - ratio_p_ira)
                 ira = p_ira + s_ira
             
-            actual_portfolio_withdrawal = w_tsp + w_ira + w_cash + w_taxable + w_roth + rmds - excess_rmd
+            actual_portfolio_withdrawal = w_tsp + w_ira + w_cash + w_taxable + w_roth + pull_hsa + rmds - excess_rmd
             
             history['tsp_withdrawal'][:, yr] = w_tsp
             history['ira_withdrawal'][:, yr] = w_ira
@@ -816,6 +802,7 @@ class StochasticRetirementEngine:
             niit_tax = np.where(magi > (niit_threshold_val * cum_inf), realized_gains * 0.038, 0.0)
             base_tax_fed += (ltcg_tax + niit_tax)
             
+            # --- START COMPLEX STATE TAX MATRIX (PRE-CONVERSION) ---
             state_taxable_base = np.where(
                 np.isin(state_str, NO_INCOME_TAX_STATES), 
                 0.0, 
@@ -1119,11 +1106,13 @@ class StochasticRetirementEngine:
 
             history['medicare_cost'][:, yr] = np.where(p_alive, p_med_cost, 0) + np.where(s_alive, s_med_cost, 0)
 
-            w_hsa = np.minimum(hsa, inflated_oop)
-            hsa -= w_hsa
+            w_hsa_oop = np.minimum(hsa, inflated_oop)
+            hsa -= w_hsa_oop
             
-            health_cost_base = np.where(p_alive, p_health_prem, 0) + np.where(s_alive, s_health_prem, 0) + (inflated_oop - w_hsa)
+            health_cost_base = np.where(p_alive, p_health_prem, 0) + np.where(s_alive, s_health_prem, 0) + (inflated_oop - w_hsa_oop)
             history['health_cost'][:, yr] = np.where(household_alive, health_cost_base, 0)
+            
+            history['hsa_withdrawal'][:, yr] = pull_hsa + w_hsa_oop
             
             current_mortgage = np.where(household_alive, np.full(self.iterations, mortgage_pmt if yr < mortgage_yrs else 0.0), 0)
             history['mortgage_cost'][:, yr] = current_mortgage
