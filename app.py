@@ -10,7 +10,7 @@ from exports import build_csv_dataframe
 from config import MOOP_LIMITS, TAX_BRACKETS_MFJ, TAX_BRACKETS_SINGLE, PORTFOLIOS
 from pdf_report import generate_pdf
 
-from visuals import plot_wealth_trajectory, plot_liquidity_timeline, plot_cash_flow_sources, plot_expenses_breakdown, plot_withdrawal_hierarchy, plot_taxes_and_rmds, plot_roth_strategy_comparison, plot_roth_tax_impact, plot_ss_breakeven, plot_medicare_comparison, plot_income_volatility, plot_legacy_breakdown, plot_fan_chart, plot_income_gap
+from visuals import plot_wealth_trajectory, plot_liquidity_timeline, plot_cash_flow_sources, plot_expenses_breakdown, plot_withdrawal_hierarchy, plot_taxes_and_rmds, plot_roth_strategy_comparison, plot_roth_tax_impact, plot_ss_breakeven, plot_medicare_comparison, plot_income_volatility, plot_legacy_breakdown, plot_fan_chart, plot_income_gap, plot_tornado
 
 st.set_page_config(page_title="Advanced Retirement Simulator", layout="wide")
 
@@ -21,7 +21,7 @@ components.html(
 
 ui_styling = """
     <style>
-    #MainMenu {visibility: hidden;} footer {display: none !important;} [data-testid="stHeader"] {visibility: hidden;} .stAppBottom {display: none !important;}
+    #MainMenu {visibility: hidden;} footer {display: none !important;}[data-testid="stHeader"] {visibility: hidden;} .stAppBottom {display: none !important;}
     .block-container { padding-top: 2rem; padding-bottom: 2rem; }[data-testid="stMetricValue"] { font-size: 2.0rem !important; font-weight: 700 !important; color: #00837B !important; }[data-testid="stDownloadButton"] button { background-color: #E6F7F6 !important; color: #00695C !important; border: 2px solid #80CBC4 !important; font-weight: 700 !important; border-radius: 8px !important; transition: all 0.2s ease; }[data-testid="stDownloadButton"] button:hover { background-color: #B2DFDB !important; border-color: #00837B !important; }[data-testid="stTabs"] { background-color: #F8FAFC; border: 2px solid #E5E7EB; border-radius: 12px; padding: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
     div[data-baseweb="tab-list"] { gap: 0px; border-bottom: 2px solid #E5E7EB; }
     button[data-baseweb="tab"] { font-size: 1.1rem !important; padding: 0.8rem 1.5rem !important; background-color: #E5E7EB !important; color: #475569 !important; border-radius: 8px 8px 0 0 !important; border: 1px solid transparent !important; margin-right: 4px !important; }
@@ -405,7 +405,6 @@ with nav1:
     submit = st.button("Run Projection Engine", type="primary")
 
     if submit:
-        # Cross-validation halts
         vital_checks = {"Primary Current Age": st.session_state.cur_age, "Primary Date of Retirement": st.session_state.ret_date, "Primary Planning Age": st.session_state.life_exp}
         if st.session_state.filing_status == 'MFJ':
             vital_checks["Spouse Current Age"] = st.session_state.spouse_age
@@ -520,8 +519,13 @@ with nav1:
             opt_iwr = engine.optimize_iwr()
             roth_results, winner, history = engine.analyze_roth_strategies(opt_iwr)
             port_analysis = engine.analyze_portfolios(opt_iwr, roth_strategy=1) 
+            base_success, sens_results = engine.run_sensitivity_analysis(opt_iwr)
             
-            st.session_state['sim_data'] = {'inputs': inputs, 'opt_iwr': opt_iwr, 'roth_results': roth_results, 'winner': winner, 'history': history, 'port_analysis': port_analysis, 'engine_years': engine.years, 'start_year': datetime.datetime.now().year}
+            st.session_state['sim_data'] = {
+                'inputs': inputs, 'opt_iwr': opt_iwr, 'roth_results': roth_results, 'winner': winner, 
+                'history': history, 'port_analysis': port_analysis, 'base_success': base_success, 'sens_results': sens_results,
+                'engine_years': engine.years, 'start_year': datetime.datetime.now().year
+            }
             if getattr(engine, 'optimization_error', False):
                 st.session_state['optimization_warning'] = True
             else:
@@ -535,10 +539,9 @@ with nav1:
             st.error("⚠️ **Optimization Engine Warning**: The mathematical solver failed to converge on an exact Initial Withdrawal Rate. This usually happens if your Target Legacy Floor is mathematically unreachable given your assets, or if guaranteed income completely exceeds your expenses causing negative cashflow anomalies. The engine has automatically fallen back to a safe 4.0% baseline withdrawal rate to allow the dashboard to render.")
         
         inputs, opt_iwr, roth_results, winner, history, port_analysis, engine_years = data['inputs'], data['opt_iwr'], data['roth_results'], data['winner'], data['history'], data['port_analysis'], data['engine_years']
-        
+        base_success, sens_results = data.get('base_success', 0), data.get('sens_results',[])
         start_year = data.get('start_year', datetime.datetime.now().year)
         
-        # UI Chart Truncation logic
         display_years = inputs['life_expectancy'] - inputs['current_age'] + 1
         if inputs['filing_status'] == 'MFJ':
             display_years = max(display_years, inputs['spouse_life_exp'] - inputs['spouse_age'] + 1)
@@ -668,9 +671,8 @@ with nav1:
 
         st.markdown("<br>", unsafe_allow_html=True) 
 
-        t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11 = st.tabs(["📊 Projections", "💵 Cash Flow", "📉 Guardrails", "📈 Net Worth", "🏛️ Taxes", "🏛️ Legacy", "💡 Coach Alerts", "🔄 Roth Opt.", "🦅 Social Sec", "🏥 Medicare", "💾 Exports"])
+        t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12 = st.tabs(["📊 Projections", "💵 Cash Flow", "📉 Guardrails", "🌪️ Sensitivity", "📈 Net Worth", "🏛️ Taxes", "🏛️ Legacy", "💡 Coach Alerts", "🔄 Roth Opt.", "🦅 Social Sec", "🏥 Medicare", "💾 Exports"])
 
-        # Create trimmed history dictionary for the charts so they align perfectly to planning age
         history_ui = {k: v[:, :display_years] for k, v in history.items() if len(v.shape) > 1}
 
         with t1:
@@ -714,6 +716,13 @@ with nav1:
             """)
 
         with t4:
+            st.subheader("Sensitivity Analysis (Tornado Chart)")
+            st.write("This chart isolates specific variables to show exactly how much your plan's Probability of Success fluctuates if real-world conditions diverge from your baseline assumptions.")
+            if sens_results:
+                st.plotly_chart(plot_tornado(base_success, sens_results), use_container_width=True)
+            st.info("💡 **How to read this:** Green bars represent positive upside to your plan (e.g. a market boom or lower inflation). Red bars represent downside risks. The variables with the widest bars are the factors your specific retirement plan is most sensitive to.")
+
+        with t5:
             st.subheader("Net Worth Forecast & Asset Liquidity Profile")
             st.plotly_chart(plot_liquidity_timeline(history_ui, years_arr), use_container_width=True)
             st.markdown("### Asset Liquidity Profile (Year 1 of Retirement)")
@@ -722,7 +731,7 @@ with nav1:
             c2.metric("Year 1 Est. Portfolio Burn Rate", f"${yr1_burn:,.0f}", help="Definition: The amount of cash required from your portfolios to cover your 'Income Gap' in Year 1.")
             c3.metric("Years of Safe Liquidity Buffer", safe_years_display, help="Definition: How many years you can survive strictly off your cash and taxable accounts without selling a single share of your TSP or IRA.\n\nExample: A 3.0 ratio means you can comfortably outlast a 3-year market crash. (Displays ∞ / N/A if guaranteed income fully covers expenses without needing portfolio withdrawals).")
 
-        with t5:
+        with t6:
             st.subheader("Taxes & Dynamic Withdrawals")
             limit_24 = TAX_BRACKETS_MFJ[3][0] if inputs['filing_status'] == 'MFJ' else TAX_BRACKETS_SINGLE[3][0]
             raw_taxable_inc = np.median(history_ui['taxable_income'], axis=0)[ret_idx]
@@ -736,7 +745,7 @@ with nav1:
             st.markdown("### Tax-Efficient Withdrawal Strategy Analysis")
             st.table(pd.DataFrame({"Strategy Component":["Tax-Efficient Withdrawal Order", "Dynamic Downturn Strategy", "Capital Gains (LTCG)", "Impact of Inflation"], "Analysis / Value":["Normal Years: Fund lifestyle purely from TSP/IRA, allowing Roth & HSA to compound tax-free.", "Crash Years: Halt TSP withdrawals. Deplete Cash -> Taxable -> HSA -> Roth to avoid Sequence Risk.", "The engine tracks your Taxable Cost Basis. When Taxable funds are sold, it applies 0/15/20% LTCG brackets + 3.8% NIIT.", "Expenses rise geometrically with CPI. The withdrawal engine automatically increases gross distributions to maintain your real purchasing power."]}))
 
-        with t6:
+        with t7:
             st.subheader("After-Tax Legacy & Estate Breakdown")
             st.plotly_chart(plot_legacy_breakdown(history_ui), use_container_width=True)
             med_tsp = np.median(history_ui['tsp_bal'][:, -1])
@@ -747,9 +756,9 @@ with nav1:
             net_to_heirs = ((med_tsp + med_ira) * 0.76) + med_taxable + med_roth + med_home
             st.metric("Estimated Net After-Tax Value to Heirs", f"${net_to_heirs:,.0f}", delta=f"Lost to IRD Taxes: -${(med_tsp+med_ira) * 0.24:,.0f}", delta_color="inverse", help="Calculated using a heuristic 24% IRD tax on pre-tax accounts. Under SECURE Act 2.0, non-spouse heirs must liquidate these accounts within 10 years, meaning their actual tax rate will depend entirely on their personal income brackets during that decade. High-balance TSP/IRAs can easily push heirs into the 32%+ brackets.")
 
-        with t7:
+        with t8:
             st.subheader("PlannerPlus Coach Alerts & Actionable To-Do List")
-            med_taxes = np.median(history_ui['taxes_fed'], axis=0)
+            med_taxes = np.median(history['taxes_fed'], axis=0)
             if med_taxes[-1] > med_taxes[0] * 2.5: st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Execute Roth Conversions.")
             if inputs['filing_status'] == 'MFJ' and inputs['spouse_life_exp'] != inputs['life_expectancy']: st.warning("⚠️ **Widow(er) Tax Penalty Active**: Because you entered differing Target Planning Ages for the primary and spouse, the engine has successfully modeled the Widow(er) Tax cliff. When the first spouse 'dies', the survivor's standard deduction halves and brackets shrink, severely increasing vulnerability to IRMAA surcharges. ")
             if inputs.get('mil_active') and inputs.get('mil_disability_rating') in["0%", "10% - 20%", "30% - 40%"] and inputs.get('mil_va_pay', 0) > 0: st.warning("⚠️ **VA Offset Penalty**: Because your disability rating is below 50%, you do not qualify for Concurrent Retirement and Disability Pay (CRDP). Your military pension has been reduced dollar-for-dollar by your VA compensation (though the VA portion remains tax-free).")
@@ -764,7 +773,7 @@ with nav1:
             5. **Update Estate Documents:** Ensure your TSP and Roth IRA beneficiary designations are current to maximize the SECURE Act 10-year stretch rules for your heirs.
             """)
 
-        with t8:
+        with t9:
             st.subheader("Roth Conversion Optimizer")
             st.info(f"**Target Ceiling Parameter:** The Roth optimizer rigorously evaluated all tax strategies strictly capped up to your selected maximum target bracket of **{inputs['max_tax_bracket']}**.")
             
@@ -781,10 +790,10 @@ with nav1:
                 st.write(f"- **Net Increase to Legacy (Today's $):** ${wealth_increase:,.0f}")
                 st.markdown("#### Step-by-Step Conversion Schedule")
                 st.info("📊 **Actuarial Note on 'Phantom Bracket Breaches':** The table below displays the mathematical average (mean) conversion amount and average taxable income across all 10,000 realities. Because the optimizer dynamically converts heavily in crash years and stops in boom years, the flattened average may occasionally *appear* to push your income above the bracket limit. Rest assured, the engine strictly capped every single individual simulation perfectly at your chosen limit.")
-                conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": np.mean(history_ui['roth_conversion'], axis=0), "Est. IRS Taxable Income": np.median(history_ui['taxable_income'], axis=0)})
+                conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": np.mean(history['roth_conversion'], axis=0), "Est. IRS Taxable Income": np.median(history['taxable_income'], axis=0)})
                 st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}", "Est. IRS Taxable Income": "${:,.0f}"}))
 
-        with t9:
+        with t10:
             st.subheader("Social Security Claiming Strategy")
             primary_fra_age = 67 if inputs['current_age'] <= 64 else 66.5
             st.plotly_chart(plot_ss_breakeven(inputs['ss_fra'], age_arr, years_arr, fra_age=primary_fra_age), use_container_width=True)
@@ -800,9 +809,9 @@ with nav1:
                 st.success("**Actuarial Verdict: Delay Claiming until Age 70**")
                 st.write("**Reasoning:** Alongside your Federal/Military Pension, Social Security is one of the few guaranteed, inflation-adjusted, market-immune income streams you possess. Delaying to 70 maximizes this 'Longevity Insurance', drastically reducing the withdrawal pressure placed on your TSP/Roth deep into retirement.")
 
-        with t10:
+        with t11:
             st.subheader("Medicare Part B & Actuarial Healthcare OOP")
-            st.plotly_chart(plot_medicare_comparison(history_ui, years_arr, inputs), use_container_width=True)
+            st.plotly_chart(plot_medicare_comparison(history, years_arr, inputs), use_container_width=True)
             st.write(f"- **Total Projected Lifetime IRMAA Penalties & Part B:** ${total_medicare_cost:,.0f}")
             
             moop_cap = MOOP_LIMITS.get(inputs['health_plan'], (999999, 999999))[1 if inputs['filing_status'] == 'MFJ' else 0]
@@ -819,7 +828,7 @@ with nav1:
                 else:
                     st.info("Verdict: **Dynamic Transition** - Because you lack 40 quarters, the engine evaluated ACA subsidies versus paying Medicare Part A & B premiums. See chart for actual transitions.")
 
-        with t11:
+        with t12:
             st.subheader("Strict-Format CSV Data Exports")
             def format_df_for_csv(df_raw):
                 df_out = df_raw.copy()

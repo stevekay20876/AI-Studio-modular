@@ -1,6 +1,7 @@
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
+import pandas as pd
 
 def plot_wealth_trajectory(history, target_floor, years_arr, baseline_data=None):
     fig = go.Figure()
@@ -8,9 +9,7 @@ def plot_wealth_trajectory(history, target_floor, years_arr, baseline_data=None)
     if baseline_data is not None:
         base_hist = baseline_data['history']
         base_years = np.arange(baseline_data['start_year'], baseline_data['start_year'] + base_hist['total_bal_real'].shape[1])
-        fig.add_trace(go.Scatter(x=base_years, y=np.median(base_hist['total_bal_real'], axis=0), 
-                                 mode='lines', name='Baseline Median', 
-                                 line=dict(color='gray', width=2, dash='dot')))
+        fig.add_trace(go.Scatter(x=base_years, y=np.median(base_hist['total_bal_real'], axis=0), mode='lines', name='Baseline Median', line=dict(color='gray', width=2, dash='dot')))
         
     fig.add_trace(go.Scatter(x=years_arr, y=np.median(history['total_bal_real'], axis=0), mode='lines', name='Median (50th)', line=dict(color='blue', width=3)))
     fig.add_trace(go.Scatter(x=years_arr, y=np.percentile(history['total_bal_real'], 90, axis=0), mode='lines', name='Optimistic (90th)', line=dict(color='green', dash='dash')))
@@ -268,6 +267,44 @@ def plot_medicare_comparison(history, years_arr, inputs):
     
     fig.update_layout(
         title="Lifetime Healthcare Cost Comparison", 
+        template="plotly_white",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    return fig
+
+def plot_tornado(base_success, sens_results):
+    df = pd.DataFrame(sens_results)
+    
+    df['Swing'] = df['Positive Impact'].abs() + df['Negative Impact'].abs()
+    df = df.sort_values('Swing', ascending=True)
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        y=df['Factor'],
+        x=df['Negative Impact'],
+        orientation='h',
+        name='Downside Risk',
+        marker_color='indianred',
+        text=[f"{x:+.1f}%" for x in df['Negative Impact']],
+        textposition='auto'
+    ))
+    
+    fig.add_trace(go.Bar(
+        y=df['Factor'],
+        x=df['Positive Impact'],
+        orientation='h',
+        name='Upside Potential',
+        marker_color='mediumseagreen',
+        text=[f"{x:+.1f}%" for x in df['Positive Impact']],
+        textposition='auto'
+    ))
+    
+    fig.update_layout(
+        title=f"Sensitivity Analysis (Baseline Success: {base_success:.1f}%)",
+        barmode='relative',
+        xaxis_title="Change in Probability of Success (%)",
+        yaxis_title="",
         template="plotly_white",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )

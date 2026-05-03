@@ -5,6 +5,27 @@ import datetime
 from config import *
 import gc
 
+# Simplified SSA Period Life Table (Unisex Actuarial Probabilities of Death: q_x)
+SSA_MORTALITY = {
+    **{a: 0.001 for a in range(0, 30)},
+    **{a: 0.0015 for a in range(30, 40)},
+    **{a: 0.0025 for a in range(40, 50)},
+    **{a: 0.005 for a in range(50, 60)},
+    60: 0.007, 61: 0.008, 62: 0.009, 63: 0.010, 64: 0.011,
+    65: 0.013, 66: 0.014, 67: 0.016, 68: 0.017, 69: 0.019,
+    70: 0.021, 71: 0.024, 72: 0.027, 73: 0.030, 74: 0.034,
+    75: 0.038, 76: 0.043, 77: 0.048, 78: 0.054, 79: 0.061,
+    80: 0.069, 81: 0.077, 82: 0.087, 83: 0.098, 84: 0.111,
+    85: 0.125, 86: 0.141, 87: 0.158, 88: 0.177, 89: 0.198,
+    90: 0.222, 91: 0.247, 92: 0.274, 93: 0.303, 94: 0.334,
+    95: 0.365, 96: 0.398, 97: 0.431, 98: 0.466, 99: 0.500,
+    100: 0.535, 101: 0.570, 102: 0.605, 103: 0.640, 104: 0.675,
+    105: 0.710, 106: 0.745, 107: 0.780, 108: 0.815, 109: 0.850,
+    110: 0.885, 111: 0.920, 112: 0.955, 113: 0.990
+}
+for a in range(114, 121):
+    SSA_MORTALITY[a] = 1.0
+
 class StochasticRetirementEngine:
     def __init__(self, inputs):
         self.inputs = inputs
@@ -97,7 +118,7 @@ class StochasticRetirementEngine:
         ])
         return L, drifts
 
-    def generate_stochastic_paths(self, seed=None, override_port=None):
+    def generate_stochastic_paths(self, seed=None, override_port=None, sensitivity_mode=None):
         if seed is not None:
             np.random.seed(seed)
             
@@ -107,6 +128,9 @@ class StochasticRetirementEngine:
         inf_paths = np.zeros((self.iterations, self.years))
         
         inf_base = 0.021
+        if sensitivity_mode == 'inf_up': inf_base += 0.01
+        elif sensitivity_mode == 'inf_down': inf_base -= 0.01
+            
         kappa = 0.25
         jump_prob = 0.04
         dt = 1.0            
@@ -114,6 +138,10 @@ class StochasticRetirementEngine:
         
         for yr in range(self.years):
             L_yr, drifts_yr = self.get_covariance_and_drifts(yr, override_port)
+            
+            if sensitivity_mode == 'market_up': drifts_yr += 0.01
+            elif sensitivity_mode == 'market_down': drifts_yr -= 0.01
+                
             corr_shocks_yr = np.einsum('ij,kj->ki', L_yr, shocks[:, yr, :])
             
             dW = corr_shocks_yr[:, 0] * np.sqrt(dt)
@@ -140,8 +168,8 @@ class StochasticRetirementEngine:
             tax += np.maximum(0, in_bracket) * brackets[i][1]
         return tax
 
-    def run_mc(self, iwr, seed=None, roth_strategy=0, override_port=None):
-        returns, inf_paths = self.generate_stochastic_paths(seed=seed, override_port=override_port)
+    def run_mc(self, iwr, seed=None, roth_strategy=0, override_port=None, sensitivity_mode=None):
+        returns, inf_paths = self.generate_stochastic_paths(seed=seed, override_port=override_port, sensitivity_mode=sensitivity_mode)
         cash_ret = float(self.inputs.get('cash_ret', 0.04))
         
         p_death_ages = np.full(self.iterations, self.inputs['life_expectancy'])
@@ -223,6 +251,31 @@ class StochasticRetirementEngine:
         p_base_pension = float(self.inputs.get('pension_est', 0))
         s_base_pension = float(self.inputs.get('s_pension_est', 0))
         
+        p_ss_claim = self.inputs.get('ss_claim_age', 67)
+        p_months_early = max(0, (67 - p_ss_claim) * 12)
+        p_months_late = max(0, (p_ss_claim - 67) * 12)
+        p_ss_modifier = 1.0 - ((min(36, p_months_early) * (5/900)) + (max(0, p_months_early - 36) * (5/1200))) + (p_months_late * (8/1200))
+        p_spousal_modifier = 1.0 - ((min(36, p_months_early) * (25/3600)) + (max(0, p_months_early - 36) * (5/1200)))
+        p_base_ss = float(self.inputs.get('ss_fra', 0))
+        
+        s_ss_claim = self.inputs.get('s_ss_claim_age', 67)
+        s_months_early = max(0, (67 - s_ss_claim) * 12)
+        s_months_late = max(0, (s_ss_claim - 67) * 12)
+        s_ss_modifier = 1.0 - ((min(36, s_months_early) * (5/900)) + (max(0, s_months_early - 36) * (5/1200))) + (s_months_late * (8/1200))
+        s_spousal_modifier = 1.0 - ((min(36, s_months_early) * (25/3600)) + (max(0, s_months_early - 36) * (5/1200)))
+        s_base_ss = float(self.inputs.get('s_ss_fra', 0))
+        
+        if sensitivity_mode == 'income_up':
+            p_base_ss *= 1.10
+            s_base_ss *= 1.10
+            p_base_pension *= 1.10
+            s_base_pension *= 1.10
+        elif sensitivity_mode == 'income_down':
+            p_base_ss *= 0.90
+            s_base_ss *= 0.90
+            p_base_pension *= 0.90
+            s_base_pension *= 0.90
+        
         p_surv_choice = self.inputs.get('survivor_benefit', 'No Survivor Benefit')
         if self.inputs.get('pension_type', 'FERS') == "FERS":
             if p_surv_choice == 'Full Survivor Benefit':
@@ -299,6 +352,13 @@ class StochasticRetirementEngine:
                 p_mil_sbp = "Full SBP" in self.inputs['mil_sbp']
                 p_base_va = self.inputs['mil_va_pay'] * 12
                 
+                if sensitivity_mode == 'income_up':
+                    p_base_mil_gross *= 1.10
+                    p_base_va *= 1.10
+                elif sensitivity_mode == 'income_down':
+                    p_base_mil_gross *= 0.90
+                    p_base_va *= 0.90
+                
                 is_crdp_rating = self.inputs['mil_disability_rating'] in["50% - 60%", "70% - 90%", "100%"]
                 is_smc_rating = self.inputs['mil_special_rating'] in["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
                 p_crdp = is_crdp_rating or is_smc_rating
@@ -329,23 +389,16 @@ class StochasticRetirementEngine:
                 s_mil_sbp = "Full SBP" in self.inputs['s_mil_sbp']
                 s_base_va = self.inputs['s_mil_va_pay'] * 12
                 
+                if sensitivity_mode == 'income_up':
+                    s_base_mil_gross *= 1.10
+                    s_base_va *= 1.10
+                elif sensitivity_mode == 'income_down':
+                    s_base_mil_gross *= 0.90
+                    s_base_va *= 0.90
+                
                 s_is_crdp_rating = self.inputs['s_mil_disability_rating'] in["50% - 60%", "70% - 90%", "100%"]
                 s_is_smc_rating = self.inputs['s_mil_special_rating'] in["TDIU (Unemployability)", "SMC (Special Monthly Comp)"]
                 s_crdp = s_is_crdp_rating or s_is_smc_rating
-
-        p_ss_claim = self.inputs.get('ss_claim_age', 67)
-        p_months_early = max(0, (67 - p_ss_claim) * 12)
-        p_months_late = max(0, (p_ss_claim - 67) * 12)
-        p_ss_modifier = 1.0 - ((min(36, p_months_early) * (5/900)) + (max(0, p_months_early - 36) * (5/1200))) + (p_months_late * (8/1200))
-        p_spousal_modifier = 1.0 - ((min(36, p_months_early) * (25/3600)) + (max(0, p_months_early - 36) * (5/1200)))
-        p_base_ss = float(self.inputs.get('ss_fra', 0))
-        
-        s_ss_claim = self.inputs.get('s_ss_claim_age', 67)
-        s_months_early = max(0, (67 - s_ss_claim) * 12)
-        s_months_late = max(0, (s_ss_claim - 67) * 12)
-        s_ss_modifier = 1.0 - ((min(36, s_months_early) * (5/900)) + (max(0, s_months_early - 36) * (5/1200))) + (s_months_late * (8/1200))
-        s_spousal_modifier = 1.0 - ((min(36, s_months_early) * (25/3600)) + (max(0, s_months_early - 36) * (5/1200)))
-        s_base_ss = float(self.inputs.get('s_ss_fra', 0))
 
         age = self.inputs['current_age']
         spouse_age = self.inputs.get('spouse_age', age)
@@ -580,6 +633,13 @@ class StochasticRetirementEngine:
                 target_lifestyle = (current_total_port * iwr) + total_guaranteed
                 ref_draw = current_total_port * iwr 
                 
+                if sensitivity_mode == 'spend_up':
+                    target_lifestyle *= 1.10
+                    ref_draw *= 1.10
+                elif sensitivity_mode == 'spend_down':
+                    target_lifestyle *= 0.90
+                    ref_draw *= 0.90
+                
             if current_year >= self.ret_year:
                 if yr > 0 and current_year > self.ret_year:
                     port_ret_prev = history['port_return'][:, yr-1]
@@ -802,7 +862,6 @@ class StochasticRetirementEngine:
             niit_tax = np.where(magi > (niit_threshold_val * cum_inf), realized_gains * 0.038, 0.0)
             base_tax_fed += (ltcg_tax + niit_tax)
             
-            # --- START COMPLEX STATE TAX MATRIX (PRE-CONVERSION) ---
             state_taxable_base = np.where(
                 np.isin(state_str, NO_INCOME_TAX_STATES), 
                 0.0, 
@@ -922,7 +981,6 @@ class StochasticRetirementEngine:
                 new_niit_tax = np.where(final_magi > (np.where(is_mfj, NIIT_THRESHOLD_MFJ, NIIT_THRESHOLD_SINGLE) * cum_inf), realized_gains * 0.038, 0.0)
                 extra_tax_fed = (new_tax_fed + new_ltcg_tax + new_niit_tax) - base_tax_fed
                 
-                # --- START COMPLEX STATE TAX MATRIX (POST-CONVERSION) ---
                 new_state_taxable_base = np.where(
                     np.isin(state_str, NO_INCOME_TAX_STATES), 
                     0.0, 
@@ -991,13 +1049,24 @@ class StochasticRetirementEngine:
             
             base_p_health = float(self.inputs.get('p_health_cost', 0))
             base_s_health = float(self.inputs.get('s_health_cost', 0))
+            base_oop_cost_yr = base_oop_cost
+            
+            if sensitivity_mode == 'health_up':
+                base_p_health *= 1.20
+                base_s_health *= 1.20
+                base_oop_cost_yr *= 1.20
+            elif sensitivity_mode == 'health_down':
+                base_p_health *= 0.80
+                base_s_health *= 0.80
+                base_oop_cost_yr *= 0.80
+                
             MEDICARE_PART_A_BASE = 505.0
 
             age_morbidity = 1.025 ** max(0, age - self.inputs['current_age'])
             if yr > 0:
                 med_cpi_cum *= (1 + (np.maximum(0, inf_paths[:, yr]) * 1.5))
                 
-            raw_oop = base_oop_cost * med_cpi_cum * age_morbidity
+            raw_oop = base_oop_cost_yr * med_cpi_cum * age_morbidity
             
             moop_mfj = MOOP_LIMITS.get(health_plan, (999999, 999999))[1]
             moop_single = MOOP_LIMITS.get(health_plan, (999999, 999999))[0]
@@ -1190,3 +1259,36 @@ class StochasticRetirementEngine:
                 gc.collect()
                 
         return results, winner_name, winner_hist
+
+    def run_sensitivity_analysis(self, opt_iwr):
+        modes =[
+            ('Market Returns (±1%)', 'market_up', 'market_down'),
+            ('Inflation Rate (±1%)', 'inf_down', 'inf_up'), 
+            ('Discretionary Spend (±10%)', 'spend_down', 'spend_up'),
+            ('Healthcare Costs (±20%)', 'health_down', 'health_up'),
+            ('Guaranteed Income (±10%)', 'income_up', 'income_down')
+        ]
+        
+        hist_base = self.run_mc(opt_iwr, seed=42)
+        base_success = np.mean(hist_base['total_bal_real'][:, -1] >= 1.0) * 100
+        del hist_base
+        gc.collect()
+        
+        results =[]
+        for label, mode_pos, mode_neg in modes:
+            h_pos = self.run_mc(opt_iwr, seed=42, sensitivity_mode=mode_pos)
+            s_pos = np.mean(h_pos['total_bal_real'][:, -1] >= 1.0) * 100
+            
+            h_neg = self.run_mc(opt_iwr, seed=42, sensitivity_mode=mode_neg)
+            s_neg = np.mean(h_neg['total_bal_real'][:, -1] >= 1.0) * 100
+            
+            results.append({
+                'Factor': label,
+                'Positive Impact': s_pos - base_success,
+                'Negative Impact': s_neg - base_success
+            })
+            
+            del h_pos, h_neg
+            gc.collect()
+            
+        return base_success, results
