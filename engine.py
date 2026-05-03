@@ -862,6 +862,7 @@ class StochasticRetirementEngine:
             niit_tax = np.where(magi > (niit_threshold_val * cum_inf), realized_gains * 0.038, 0.0)
             base_tax_fed += (ltcg_tax + niit_tax)
             
+            # --- START COMPLEX STATE TAX MATRIX (PRE-CONVERSION) ---
             state_taxable_base = np.where(
                 np.isin(state_str, NO_INCOME_TAX_STATES), 
                 0.0, 
@@ -981,6 +982,7 @@ class StochasticRetirementEngine:
                 new_niit_tax = np.where(final_magi > (np.where(is_mfj, NIIT_THRESHOLD_MFJ, NIIT_THRESHOLD_SINGLE) * cum_inf), realized_gains * 0.038, 0.0)
                 extra_tax_fed = (new_tax_fed + new_ltcg_tax + new_niit_tax) - base_tax_fed
                 
+                # --- START COMPLEX STATE TAX MATRIX (POST-CONVERSION) ---
                 new_state_taxable_base = np.where(
                     np.isin(state_str, NO_INCOME_TAX_STATES), 
                     0.0, 
