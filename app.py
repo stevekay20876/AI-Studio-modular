@@ -112,7 +112,7 @@ with nav1:
     with st.expander("👤 Personal & Tax Details", expanded=not has_run):
         st.markdown("**Household & Tax Settings**")
         c4, c5, c6 = st.columns(3)
-        filing_status = c4.selectbox("Tax Filing Status", ["Single", "MFJ"], key="filing_status")
+        filing_status = c4.selectbox("Tax Filing Status",["Single", "MFJ"], key="filing_status")
         state_in = c5.text_input("State of Residence", key="state")
         county_in = c6.text_input("County of Residence", key="county")
         
@@ -240,7 +240,7 @@ with nav1:
             md1, md2, md3 = st.columns(3)
             default_diems = datetime.date.fromisoformat(st.session_state.mil_diems) if isinstance(st.session_state.mil_diems, str) else st.session_state.mil_diems
             mil_diems = md1.date_input("DIEMS Date", value=default_diems, format="MM/DD/YYYY", key="mil_diems")
-            mil_system = md2.selectbox("Retirement System",["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System[BRS] (2.0%)"], key="mil_system")
+            mil_system = md2.selectbox("Retirement System",["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="mil_system")
             mil_pay_base = md3.number_input("Pay Base (High-36 Avg or Final Base Pay $/mo)", min_value=0, step=100, key="mil_pay_base")
             
             st.markdown("**Disability & Survivor Options**")
@@ -285,8 +285,9 @@ with nav1:
 
     with st.expander("📉 Expenses & Goals", expanded=not has_run):
         st.markdown("**Spending Limits & Legacy Goals (In Today's Dollars)**")
+        st.info("Note: Your target legacy floor strictly applies to your **Liquid Investment Portfolio**. Your current home equity is completely preserved as a separate inheritance asset on top of whatever liquid floor you target.")
         c1, c2, c3 = st.columns(3)
-        target_floor = c1.number_input("Target Legacy Floor ($)", min_value=0, step=10000, key="target_floor")
+        target_floor = c1.number_input("Target Liquid Legacy Floor ($)", min_value=0, step=10000, key="target_floor")
         min_spending = c2.number_input("Minimum Spending Floor ($)", min_value=0, step=1000, key="min_spending")
         max_spending = c3.number_input("Maximum Spending Cap ($)", min_value=0, step=1000, key="max_spending")
         
@@ -550,9 +551,10 @@ with nav1:
         years_arr = np.arange(start_year, start_year + display_years)
         age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+display_years)
         
-        median_real_terminal = np.median(history['total_bal_real'][:, display_years - 1])
-        prob_success = np.mean(history['total_bal_real'][:, display_years - 1] >= 1.0) * 100
-        prob_legacy = np.mean(history['total_bal_real'][:, display_years - 1] >= max(1.0, inputs['target_floor'])) * 100
+        liquid_terminal = history['total_bal_real'][:, display_years - 1] - (history['home_value'][:, display_years - 1] / history['cum_inf'][:, display_years - 1])
+        prob_success = np.mean(liquid_terminal >= 1.0) * 100
+        prob_legacy = np.mean(liquid_terminal >= max(1.0, inputs['target_floor'])) * 100
+        median_liquid_terminal = np.median(liquid_terminal)
 
         ret_year = int(inputs['ret_date'].split("-")[0])
         ret_idx = max(0, ret_year - start_year)
@@ -611,13 +613,13 @@ with nav1:
                     st.rerun()
         with colC:
             pdf_data = {
-                'prob_success': prob_success, 'prob_legacy': prob_legacy, 'terminal_wealth': median_real_terminal, 'yr1_burn': yr1_burn,
+                'prob_success': prob_success, 'prob_legacy': prob_legacy, 'terminal_wealth': median_liquid_terminal, 'yr1_burn': yr1_burn,
                 'safe_years': pdf_safe_years, 'roth_winner': winner, 'tax_savings': tax_savings, 'rmd_reduction': rmd_reduction, 'wealth_increase': wealth_increase, 'health_plan': inputs['health_plan'],
                 'total_medicare': total_medicare_cost, 'medicare_verdict': med_verdict, 'life_exp': inputs['life_expectancy'], 'ss_claim_age': inputs['ss_claim_age']
             }
             st.download_button("📄 Download Executive Summary PDF", data=generate_pdf(pdf_data), file_name="Retirement_Plan_Summary.pdf", mime="application/pdf", use_container_width=True)
         
-        st.info("💡 **Actuarial Note on Probability of Success:** This model calculates your withdrawal rate by mathematically forcing the *Median* (50th percentile) outcome to exactly hit your Target Legacy Floor. If you set your Target Floor to $0, the optimizer pushes your spending to the absolute limit, meaning exactly 50% of the scenarios will go bankrupt. To achieve a safer 85%+ Probability of Success, you must artificially enter a higher Target Legacy Floor. This acts as a cash buffer against bad market conditions.")
+        st.info("💡 **Actuarial Note on Probability of Success:** This model calculates your withdrawal rate by mathematically forcing the *Median* (50th percentile) outcome of your Liquid Portfolio to exactly hit your Target Legacy Floor. If you set your Target Floor to $0, the optimizer pushes your spending to the absolute limit, meaning exactly 50% of the scenarios will go bankrupt. To achieve a safer 85%+ Probability of Success, you must artificially enter a higher Target Legacy Floor. This acts as a cash buffer against bad market conditions.")
         
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
         
@@ -632,9 +634,10 @@ with nav1:
                 base_disp_years = max(base_disp_years, base_inputs['spouse_life_exp'] - base_inputs['spouse_age'] + 1)
             base_disp_years = min(base_disp_years, base_data['engine_years'])
             
-            base_med_term = np.median(base_hist['total_bal_real'][:, base_disp_years - 1])
-            base_prob_succ = np.mean(base_hist['total_bal_real'][:, base_disp_years - 1] >= 1.0) * 100
-            base_prob_leg = np.mean(base_hist['total_bal_real'][:, base_disp_years - 1] >= max(1.0, base_inputs['target_floor'])) * 100
+            base_liquid_term = base_hist['total_bal_real'][:, base_disp_years - 1] - (base_hist['home_value'][:, base_disp_years - 1] / base_hist['cum_inf'][:, base_disp_years - 1])
+            base_med_term = np.median(base_liquid_term)
+            base_prob_succ = np.mean(base_liquid_term >= 1.0) * 100
+            base_prob_leg = np.mean(base_liquid_term >= max(1.0, base_inputs['target_floor'])) * 100
             
             base_ret_year = int(base_inputs['ret_date'].split("-")[0])
             base_ret_idx = max(0, base_ret_year - base_data.get('start_year', start_year))
@@ -650,12 +653,12 @@ with nav1:
             
             d_succ = f"{prob_success - base_prob_succ:+.1f}% vs Base"
             d_leg = f"{prob_legacy - base_prob_leg:+.1f}% vs Base"
-            d_term = f"${median_real_terminal - base_med_term:+,.0f} vs Base"
+            d_term = f"${median_liquid_terminal - base_med_term:+,.0f} vs Base"
             d_burn = f"${yr1_burn - base_yr1_burn:+,.0f} vs Base"
             
-            kpi1.container(border=True).metric("Prob. of Survival (> $0)", f"{prob_success:.1f}%", delta=d_succ, delta_color="normal", help="Definition: The percentage of 10,000 simulated market paths where your portfolio successfully survived until your Target Planning Age without running out of money.")
-            kpi2.container(border=True).metric("Prob. of Reaching Target Legacy", f"{prob_legacy:.1f}%", delta=d_leg, delta_color="normal", help="Definition: The percentage of simulations where your final estate value met or exceeded the exact Target Legacy Floor you inputted.")
-            kpi3.container(border=True).metric("Median Terminal Legacy (Today's $)", f"${median_real_terminal:,.0f}", delta=d_term, delta_color="normal", help="Definition: The estimated total value of your estate precisely at your Target Planning Age, discounted for inflation back into Today's Dollars to match your Target Legacy Floor.")
+            kpi1.container(border=True).metric("Prob. of Survival (> $0)", f"{prob_success:.1f}%", delta=d_succ, delta_color="normal", help="Definition: The percentage of 10,000 simulated market paths where your liquid portfolio successfully survived until your Target Planning Age without running out of money.")
+            kpi2.container(border=True).metric("Prob. of Reaching Target Legacy", f"{prob_legacy:.1f}%", delta=d_leg, delta_color="normal", help="Definition: The percentage of simulations where your final liquid estate value met or exceeded the exact Target Legacy Floor you inputted.")
+            kpi3.container(border=True).metric("Median Liquid Legacy (Today's $)", f"${median_liquid_terminal:,.0f}", delta=d_term, delta_color="normal", help="Definition: The estimated value of your LIQUID portfolio precisely at your Target Planning Age, discounted for inflation back into Today's Dollars to match your Target Legacy Floor. Your home value is kept completely separate.")
             kpi4.container(border=True).metric("Est. Year 1 Portfolio Burn", f"${yr1_burn:,.0f}", delta=d_burn, delta_color="inverse", help="Definition: The actual amount of cash physically withdrawn from your investment portfolios in your first year of retirement to fund your lifestyle, taxes, and medical costs, after accounting for guaranteed income.")
             
             baseline_data_ui = {
@@ -663,9 +666,9 @@ with nav1:
                 'history': {k: v[:, :base_disp_years] for k, v in base_hist.items() if len(v.shape) > 1}
             }
         else:
-            kpi1.container(border=True).metric("Prob. of Survival (> $0)", f"{prob_success:.1f}%", delta="On Track" if prob_success >= 85 else "At Risk", delta_color="normal" if prob_success >= 85 else "inverse", help="Definition: The percentage of 10,000 simulated market paths where your portfolio successfully survived until your Target Planning Age without running out of money.")
-            kpi2.container(border=True).metric("Prob. of Reaching Target Legacy", f"{prob_legacy:.1f}%", help="Definition: The percentage of simulations where your final estate value met or exceeded the exact Target Legacy Floor you inputted.")
-            kpi3.container(border=True).metric("Median Terminal Legacy (Today's $)", f"${median_real_terminal:,.0f}", help="Definition: The estimated total value of your estate precisely at your Target Planning Age, discounted for inflation back into Today's Dollars to match your Target Legacy Floor.")
+            kpi1.container(border=True).metric("Prob. of Survival (> $0)", f"{prob_success:.1f}%", delta="On Track" if prob_success >= 85 else "At Risk", delta_color="normal" if prob_success >= 85 else "inverse", help="Definition: The percentage of 10,000 simulated market paths where your liquid portfolio successfully survived until your Target Planning Age without running out of money.")
+            kpi2.container(border=True).metric("Prob. of Reaching Target Legacy", f"{prob_legacy:.1f}%", help="Definition: The percentage of simulations where your final liquid estate value met or exceeded the exact Target Legacy Floor you inputted.")
+            kpi3.container(border=True).metric("Median Liquid Legacy (Today's $)", f"${median_liquid_terminal:,.0f}", help="Definition: The estimated value of your LIQUID portfolio precisely at your Target Planning Age, discounted for inflation back into Today's Dollars to match your Target Legacy Floor. Your home value is kept completely separate.")
             kpi4.container(border=True).metric("Est. Year 1 Portfolio Burn", f"${yr1_burn:,.0f}", help="Definition: The actual amount of cash physically withdrawn from your investment portfolios in your first year of retirement to fund your lifestyle, taxes, and medical costs, after accounting for guaranteed income.")
             baseline_data_ui = None
 
@@ -676,7 +679,7 @@ with nav1:
         history_ui = {k: v[:, :display_years] for k, v in history.items() if len(v.shape) > 1}
 
         with t1:
-            st.subheader("Lifetime Projections & Monte Carlo Analysis")
+            st.subheader("Liquid Portfolio Projections & Monte Carlo Analysis")
             st.plotly_chart(plot_wealth_trajectory(history_ui, inputs['target_floor'], years_arr, baseline_data_ui), use_container_width=True)
             st.markdown("---")
             st.subheader("Portfolio Optimization & Efficient Frontier")
@@ -685,8 +688,8 @@ with nav1:
             if "Dynamic Glidepath (Target Date)" not in port_analysis:
                 port_analysis["Dynamic Glidepath (Target Date)"] = engine.analyze_portfolios(opt_iwr, roth_strategy=1).get("Dynamic Glidepath (Target Date)", {'wealth': 0, 'cut_prob': 0})
             
-            port_names, port_wealths, port_cuts = list(port_analysis.keys()),[port_analysis[p]['wealth'] for p in port_analysis.keys()],[port_analysis[p]['cut_prob'] for p in port_analysis.keys()]
-            st.table(pd.DataFrame({"Portfolio Strategy": port_names, "Median Terminal Legacy (Today's $)": port_wealths, "Probability of Guardrail Pay Cuts": port_cuts}).style.format({"Median Terminal Legacy (Today's $)": "${:,.0f}", "Probability of Guardrail Pay Cuts": "{:.1f}%"}))
+            port_names, port_wealths, port_cuts = list(port_analysis.keys()), [port_analysis[p]['wealth'] for p in port_analysis.keys()],[port_analysis[p]['cut_prob'] for p in port_analysis.keys()]
+            st.table(pd.DataFrame({"Portfolio Strategy": port_names, "Median Liquid Legacy (Today's $)": port_wealths, "Probability of Guardrail Pay Cuts": port_cuts}).style.format({"Median Liquid Legacy (Today's $)": "${:,.0f}", "Probability of Guardrail Pay Cuts": "{:.1f}%"}))
 
         with t2:
             st.subheader("Integrated Cash Flow & Simulation Execution")

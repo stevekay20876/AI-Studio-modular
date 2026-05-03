@@ -841,6 +841,7 @@ class StochasticRetirementEngine:
             niit_tax = np.where(magi > (niit_threshold_val * cum_inf), realized_gains * 0.038, 0.0)
             base_tax_fed += (ltcg_tax + niit_tax)
             
+            # --- START COMPLEX STATE TAX MATRIX (PRE-CONVERSION) ---
             state_taxable_base = np.where(
                 np.isin(state_str, NO_INCOME_TAX_STATES), 
                 0.0, 
@@ -960,6 +961,7 @@ class StochasticRetirementEngine:
                 new_niit_tax = np.where(final_magi > (np.where(is_mfj, NIIT_THRESHOLD_MFJ, NIIT_THRESHOLD_SINGLE) * cum_inf), realized_gains * 0.038, 0.0)
                 extra_tax_fed = (new_tax_fed + new_ltcg_tax + new_niit_tax) - base_tax_fed
                 
+                # --- START COMPLEX STATE TAX MATRIX (POST-CONVERSION) ---
                 new_state_taxable_base = np.where(
                     np.isin(state_str, NO_INCOME_TAX_STATES), 
                     0.0, 
@@ -1192,7 +1194,8 @@ class StochasticRetirementEngine:
 
     def objective_function(self, iwr_test):
         history = self.run_mc(iwr_test, seed=42, roth_strategy=0)
-        median_real_path = np.median(history['total_bal_real'][:, -1])
+        liquid_real_path = history['total_bal_real'][:, -1] - (history['home_value'][:, -1] / history['cum_inf'][:, -1])
+        median_real_path = np.median(liquid_real_path)
         target_floor = self.inputs.get('target_floor', 0.0)
         return median_real_path - target_floor
 
@@ -1208,13 +1211,15 @@ class StochasticRetirementEngine:
     def analyze_portfolios(self, opt_iwr, roth_strategy=0):
         results = {}
         hist_custom = self.run_mc(opt_iwr, seed=42, roth_strategy=roth_strategy, override_port=None)
-        results["Your Custom Mix"] = {'wealth': np.median(hist_custom['total_bal_real'][:, -1]), 'cut_prob': np.mean(np.any(hist_custom['constraint_active'] == 1, axis=1)) * 100}
+        liquid_custom = hist_custom['total_bal_real'][:, -1] - (hist_custom['home_value'][:, -1] / hist_custom['cum_inf'][:, -1])
+        results["Your Custom Mix"] = {'wealth': np.median(liquid_custom), 'cut_prob': np.mean(np.any(hist_custom['constraint_active'] == 1, axis=1)) * 100}
         del hist_custom
         gc.collect()
         
         for port in["Conservative (20% Stock / 80% Bond)", "Moderate (60% Stock / 40% Bond)", "Aggressive (100% Stock)", "Dynamic Glidepath (Target Date)"]:
             hist = self.run_mc(opt_iwr, seed=42, roth_strategy=roth_strategy, override_port=port)
-            results[port] = {'wealth': np.median(hist['total_bal_real'][:, -1]), 'cut_prob': np.mean(np.any(hist['constraint_active'] == 1, axis=1)) * 100}
+            liquid_port = hist['total_bal_real'][:, -1] - (hist['home_value'][:, -1] / hist['cum_inf'][:, -1])
+            results[port] = {'wealth': np.median(liquid_port), 'cut_prob': np.mean(np.any(hist['constraint_active'] == 1, axis=1)) * 100}
             del hist
             gc.collect()
             
@@ -1228,7 +1233,8 @@ class StochasticRetirementEngine:
         
         for s_idx, s_name in strats:
             hist = self.run_mc(opt_iwr, seed=42, roth_strategy=s_idx)
-            wealth = np.median(hist['total_bal_real'][:, -1])
+            liquid_wealth = hist['total_bal_real'][:, -1] - (hist['home_value'][:, -1] / hist['cum_inf'][:, -1])
+            wealth = np.median(liquid_wealth)
             results[s_name] = {'wealth': wealth, 'taxes': np.sum(np.median(hist['taxes_fed'], axis=0)), 'rmds': np.sum(np.median(hist['rmds'], axis=0)), 'tax_path': np.median(hist['taxes_fed'], axis=0), 'conv_path': np.median(hist['roth_conversion'], axis=0), 'taxable_inc_path': np.median(hist['taxable_income'], axis=0)}
             
             if wealth > best_wealth:
@@ -1249,17 +1255,20 @@ class StochasticRetirementEngine:
         ]
         
         hist_base = self.run_mc(opt_iwr, seed=42)
-        base_success = np.mean(hist_base['total_bal_real'][:, -1] >= 1.0) * 100
+        liquid_base = hist_base['total_bal_real'][:, -1] - (hist_base['home_value'][:, -1] / hist_base['cum_inf'][:, -1])
+        base_success = np.mean(liquid_base >= 1.0) * 100
         del hist_base
         gc.collect()
         
         results =[]
         for label, mode_pos, mode_neg in modes:
             h_pos = self.run_mc(opt_iwr, seed=42, sensitivity_mode=mode_pos)
-            s_pos = np.mean(h_pos['total_bal_real'][:, -1] >= 1.0) * 100
+            liquid_pos = h_pos['total_bal_real'][:, -1] - (h_pos['home_value'][:, -1] / h_pos['cum_inf'][:, -1])
+            s_pos = np.mean(liquid_pos >= 1.0) * 100
             
             h_neg = self.run_mc(opt_iwr, seed=42, sensitivity_mode=mode_neg)
-            s_neg = np.mean(h_neg['total_bal_real'][:, -1] >= 1.0) * 100
+            liquid_neg = h_neg['total_bal_real'][:, -1] - (h_neg['home_value'][:, -1] / h_neg['cum_inf'][:, -1])
+            s_neg = np.mean(liquid_neg >= 1.0) * 100
             
             results.append({
                 'Factor': label,
