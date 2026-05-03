@@ -200,7 +200,7 @@ with nav1:
             
             st.markdown("**Spouse Civilian Pension**")
             csp1, csp2, csp3 = st.columns(3)
-            s_pension_type = csp1.selectbox("Spouse Pension Type",["FERS", "Other"], key="s_pension_type")
+            s_pension_type = csp1.selectbox("Spouse Pension Type", ["FERS", "Other"], key="s_pension_type")
             s_pension_est = csp2.number_input("Spouse Full Pension Est. ($)", min_value=0, step=1000, key="s_pension_est")
             
             if st.session_state.s_pension_type == "FERS":
@@ -538,12 +538,18 @@ with nav1:
         
         start_year = data.get('start_year', datetime.datetime.now().year)
         
-        years_arr = np.arange(start_year, start_year + engine_years)
-        age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+engine_years)
+        # UI Chart Truncation logic
+        display_years = inputs['life_expectancy'] - inputs['current_age'] + 1
+        if inputs['filing_status'] == 'MFJ':
+            display_years = max(display_years, inputs['spouse_life_exp'] - inputs['spouse_age'] + 1)
+        display_years = min(display_years, engine_years)
+
+        years_arr = np.arange(start_year, start_year + display_years)
+        age_arr = np.arange(inputs['current_age']+1, inputs['current_age']+1+display_years)
         
-        median_real_terminal = np.median(history['total_bal_real'][:, -1])
-        prob_success = np.mean(history['total_bal_real'][:, -1] >= 1.0) * 100
-        prob_legacy = np.mean(history['total_bal_real'][:, -1] >= max(1.0, inputs['target_floor'])) * 100
+        median_real_terminal = np.median(history['total_bal_real'][:, display_years - 1])
+        prob_success = np.mean(history['total_bal_real'][:, display_years - 1] >= 1.0) * 100
+        prob_legacy = np.mean(history['total_bal_real'][:, display_years - 1] >= max(1.0, inputs['target_floor'])) * 100
 
         ret_year = int(inputs['ret_date'].split("-")[0])
         ret_idx = max(0, ret_year - start_year)
@@ -582,15 +588,25 @@ with nav1:
         else:
             med_verdict = "Enroll in Medicare Part B"
             
-        total_medicare_cost = np.sum(np.median(history['medicare_cost'], axis=0))
+        total_medicare_cost = np.sum(np.median(history['medicare_cost'][:, :display_years], axis=0))
         
         moop_idx = 1 if inputs['filing_status'] == 'MFJ' else 0
         moop_cap = MOOP_LIMITS.get(inputs['health_plan'], (999999, 999999))[moop_idx]
 
         st.markdown("---")
-        colA, colB = st.columns([0.8, 0.2])
-        with colA: st.subheader("Plan Insights & Executive Summary")
+        colA, colB, colC = st.columns([0.5, 0.25, 0.25])
+        with colA: 
+            st.subheader("Plan Insights & Executive Summary")
         with colB:
+            if 'baseline_data' not in st.session_state:
+                if st.button("📌 Save as Comparison Baseline", use_container_width=True, help="Locks in this exact mathematical scenario. Once saved, change your inputs above and re-run the engine to see side-by-side KPI deltas and visual chart overlays!"):
+                    st.session_state['baseline_data'] = data
+                    st.rerun()
+            else:
+                if st.button("❌ Clear Baseline Overlay", use_container_width=True):
+                    del st.session_state['baseline_data']
+                    st.rerun()
+        with colC:
             pdf_data = {
                 'prob_success': prob_success, 'prob_legacy': prob_legacy, 'terminal_wealth': median_real_terminal, 'yr1_burn': yr1_burn,
                 'safe_years': pdf_safe_years, 'roth_winner': winner, 'tax_savings': tax_savings, 'rmd_reduction': rmd_reduction, 'wealth_increase': wealth_increase, 'health_plan': inputs['health_plan'],
@@ -601,17 +617,65 @@ with nav1:
         st.info("💡 **Actuarial Note on Probability of Success:** This model calculates your withdrawal rate by mathematically forcing the *Median* (50th percentile) outcome to exactly hit your Target Legacy Floor. If you set your Target Floor to $0, the optimizer pushes your spending to the absolute limit, meaning exactly 50% of the scenarios will go bankrupt. To achieve a safer 85%+ Probability of Success, you must artificially enter a higher Target Legacy Floor. This acts as a cash buffer against bad market conditions.")
         
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-        kpi1.container(border=True).metric("Prob. of Survival (> $0)", f"{prob_success:.1f}%", delta="On Track" if prob_success >= 85 else "At Risk", delta_color="normal" if prob_success >= 85 else "inverse", help="Definition: The percentage of 10,000 simulated market paths where your portfolio successfully survived until your Target Planning Age without running out of money.")
-        kpi2.container(border=True).metric("Prob. of Reaching Target Legacy", f"{prob_legacy:.1f}%", help="Definition: The percentage of simulations where your final estate value met or exceeded the exact Target Legacy Floor you inputted.")
-        kpi3.container(border=True).metric("Median Terminal Legacy (Today's $)", f"${median_real_terminal:,.0f}", help="Definition: The estimated total value of your estate precisely at your Target Planning Age, discounted for inflation back into Today's Dollars to match your Target Legacy Floor.")
-        kpi4.container(border=True).metric("Est. Year 1 Portfolio Burn", f"${yr1_burn:,.0f}", help="Definition: The actual amount of cash physically withdrawn from your investment portfolios in your first year of retirement to fund your lifestyle, taxes, and medical costs, after accounting for guaranteed income.")
+        
+        baseline_data_ui = None
+        if 'baseline_data' in st.session_state:
+            base_data = st.session_state['baseline_data']
+            base_hist = base_data['history']
+            base_inputs = base_data['inputs']
+            
+            base_disp_years = base_inputs['life_expectancy'] - base_inputs['current_age'] + 1
+            if base_inputs['filing_status'] == 'MFJ':
+                base_disp_years = max(base_disp_years, base_inputs['spouse_life_exp'] - base_inputs['spouse_age'] + 1)
+            base_disp_years = min(base_disp_years, base_data['engine_years'])
+            
+            base_med_term = np.median(base_hist['total_bal_real'][:, base_disp_years - 1])
+            base_prob_succ = np.mean(base_hist['total_bal_real'][:, base_disp_years - 1] >= 1.0) * 100
+            base_prob_leg = np.mean(base_hist['total_bal_real'][:, base_disp_years - 1] >= max(1.0, base_inputs['target_floor'])) * 100
+            
+            base_ret_year = int(base_inputs['ret_date'].split("-")[0])
+            base_ret_idx = max(0, base_ret_year - base_data.get('start_year', start_year))
+            base_ret_idx = min(base_ret_idx, base_data['engine_years'] - 1)
+            
+            b_exp = np.median(base_hist['taxes_fed'] + base_hist['taxes_state'] + base_hist['medicare_cost'] + base_hist['health_cost'] + base_hist['mortgage_cost'] + base_hist['additional_expenses'], axis=0)[base_ret_idx]
+            b_spend = np.median(base_hist['net_spendable'], axis=0)[base_ret_idx]
+            b_ss = np.median(base_hist['ss_income'], axis=0)[base_ret_idx]
+            b_pen = np.median(base_hist['pension_income'], axis=0)[base_ret_idx]
+            b_sal = np.median(base_hist['salary_income'], axis=0)[base_ret_idx]
+            b_va = np.median(base_hist['va_income'], axis=0)[base_ret_idx] if 'va_income' in base_hist else 0
+            base_yr1_burn = b_exp + b_spend - b_ss - b_pen - b_sal - b_va
+            
+            d_succ = f"{prob_success - base_prob_succ:+.1f}% vs Base"
+            d_leg = f"{prob_legacy - base_prob_leg:+.1f}% vs Base"
+            d_term = f"${median_real_terminal - base_med_term:+,.0f} vs Base"
+            d_burn = f"${yr1_burn - base_yr1_burn:+,.0f} vs Base"
+            
+            kpi1.container(border=True).metric("Prob. of Survival (> $0)", f"{prob_success:.1f}%", delta=d_succ, delta_color="normal", help="Definition: The percentage of 10,000 simulated market paths where your portfolio successfully survived until your Target Planning Age without running out of money.")
+            kpi2.container(border=True).metric("Prob. of Reaching Target Legacy", f"{prob_legacy:.1f}%", delta=d_leg, delta_color="normal", help="Definition: The percentage of simulations where your final estate value met or exceeded the exact Target Legacy Floor you inputted.")
+            kpi3.container(border=True).metric("Median Terminal Legacy (Today's $)", f"${median_real_terminal:,.0f}", delta=d_term, delta_color="normal", help="Definition: The estimated total value of your estate precisely at your Target Planning Age, discounted for inflation back into Today's Dollars to match your Target Legacy Floor.")
+            kpi4.container(border=True).metric("Est. Year 1 Portfolio Burn", f"${yr1_burn:,.0f}", delta=d_burn, delta_color="inverse", help="Definition: The actual amount of cash physically withdrawn from your investment portfolios in your first year of retirement to fund your lifestyle, taxes, and medical costs, after accounting for guaranteed income.")
+            
+            baseline_data_ui = {
+                'start_year': base_data.get('start_year', start_year),
+                'history': {k: v[:, :base_disp_years] for k, v in base_hist.items() if len(v.shape) > 1}
+            }
+        else:
+            kpi1.container(border=True).metric("Prob. of Survival (> $0)", f"{prob_success:.1f}%", delta="On Track" if prob_success >= 85 else "At Risk", delta_color="normal" if prob_success >= 85 else "inverse", help="Definition: The percentage of 10,000 simulated market paths where your portfolio successfully survived until your Target Planning Age without running out of money.")
+            kpi2.container(border=True).metric("Prob. of Reaching Target Legacy", f"{prob_legacy:.1f}%", help="Definition: The percentage of simulations where your final estate value met or exceeded the exact Target Legacy Floor you inputted.")
+            kpi3.container(border=True).metric("Median Terminal Legacy (Today's $)", f"${median_real_terminal:,.0f}", help="Definition: The estimated total value of your estate precisely at your Target Planning Age, discounted for inflation back into Today's Dollars to match your Target Legacy Floor.")
+            kpi4.container(border=True).metric("Est. Year 1 Portfolio Burn", f"${yr1_burn:,.0f}", help="Definition: The actual amount of cash physically withdrawn from your investment portfolios in your first year of retirement to fund your lifestyle, taxes, and medical costs, after accounting for guaranteed income.")
+            baseline_data_ui = None
+
         st.markdown("<br>", unsafe_allow_html=True) 
 
         t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11 = st.tabs(["📊 Projections", "💵 Cash Flow", "📉 Guardrails", "📈 Net Worth", "🏛️ Taxes", "🏛️ Legacy", "💡 Coach Alerts", "🔄 Roth Opt.", "🦅 Social Sec", "🏥 Medicare", "💾 Exports"])
 
+        # Create trimmed history dictionary for the charts so they align perfectly to planning age
+        history_ui = {k: v[:, :display_years] for k, v in history.items() if len(v.shape) > 1}
+
         with t1:
             st.subheader("Lifetime Projections & Monte Carlo Analysis")
-            st.plotly_chart(plot_wealth_trajectory(history, inputs['target_floor'], years_arr), use_container_width=True)
+            st.plotly_chart(plot_wealth_trajectory(history_ui, inputs['target_floor'], years_arr, baseline_data_ui), use_container_width=True)
             st.markdown("---")
             st.subheader("Portfolio Optimization & Efficient Frontier")
             st.write("This analysis evaluates your custom account-by-account mix against standard benchmark portfolios to find the optimal balance of growth vs. Sequence of Return Risk (guardrail pay cuts).")
@@ -627,21 +691,21 @@ with nav1:
             col1, col2 = st.columns(2)
             with col1:
                 st.subheader("Sequence of Return Risk (SORR)", help="Definition: The risk of experiencing a severe market downturn early in retirement.\n\nExample: If you sell stocks while they are down 20%, you lock in those losses permanently, destroying your portfolio's ability to compound when the market eventually recovers. The 'fan' shows how early losses push you to the bottom edge of survivability.")
-                st.plotly_chart(plot_fan_chart(history, years_arr), use_container_width=True)
+                st.plotly_chart(plot_fan_chart(history_ui, years_arr), use_container_width=True)
             with col2:
                 st.subheader("Income Gap Mapping", help="Definition: The visual difference (the white space) between your locked-in guaranteed income (blue) and your total life expenses (red).\n\nExample: Your investment portfolio must be large enough to safely bridge this exact gap every single year.")
-                st.plotly_chart(plot_income_gap(history, years_arr), use_container_width=True)
+                st.plotly_chart(plot_income_gap(history_ui, years_arr, baseline_data_ui), use_container_width=True)
                 
             st.markdown("### Integrated Year-by-Year Cash Flow Projections")
-            df_ui = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
+            df_ui = build_csv_dataframe(history_ui, years_arr, age_arr, percentile=50)
             desired_cols =['Calendar Year', 'Age', 'Total Income', 'IRS Taxable Income', 'Total Expenses', 'Net Spendable Annual', 'TSP Withdrawal', 'Trad IRA Withdrawal', 'Salary Income', 'Social Security', 'Total Pension (FERS + Mil)', 'VA Disability Pay', 'Additional Expenses (Smile Curve)']
             display_cols =[c for c in desired_cols if c in df_ui.columns]
             st.dataframe(df_ui[display_cols].style.format({c: "${:,.0f}" for c in display_cols if c not in['Calendar Year', 'Age']}), use_container_width=True, hide_index=True)
 
         with t3:
             st.subheader("Variable Spending Rules & Adaptive Guardrails")
-            st.plotly_chart(plot_expenses_breakdown(history, years_arr), use_container_width=True)
-            st.plotly_chart(plot_income_volatility(history, years_arr), use_container_width=True)
+            st.plotly_chart(plot_expenses_breakdown(history_ui, years_arr), use_container_width=True)
+            st.plotly_chart(plot_income_volatility(history_ui, years_arr), use_container_width=True)
             st.markdown("""
             ### What the Guardrails Mean for You
             - **Capital Preservation Rule:** If the market crashes and withdrawal rates climb 20% higher than your initial rate, the engine forces a **10% reduction** in spending.
@@ -651,7 +715,7 @@ with nav1:
 
         with t4:
             st.subheader("Net Worth Forecast & Asset Liquidity Profile")
-            st.plotly_chart(plot_liquidity_timeline(history, years_arr), use_container_width=True)
+            st.plotly_chart(plot_liquidity_timeline(history_ui, years_arr), use_container_width=True)
             st.markdown("### Asset Liquidity Profile (Year 1 of Retirement)")
             c1, c2, c3 = st.columns(3)
             c1.metric("Highly Liquid Assets (Cash + Taxable)", f"${total_cash_short_term:,.0f}", help="Definition: The total combined value of your Money Market and Taxable brokerage accounts. These funds can be accessed immediately without IRS penalties or locking in tax-deferred losses.")
@@ -661,31 +725,31 @@ with nav1:
         with t5:
             st.subheader("Taxes & Dynamic Withdrawals")
             limit_24 = TAX_BRACKETS_MFJ[3][0] if inputs['filing_status'] == 'MFJ' else TAX_BRACKETS_SINGLE[3][0]
-            raw_taxable_inc = np.median(history['taxable_income'], axis=0)[ret_idx]
+            raw_taxable_inc = np.median(history_ui['taxable_income'], axis=0)[ret_idx]
             if raw_taxable_inc > limit_24: st.error(f"🚨 **Lifestyle Exceeds {inputs['max_tax_bracket']} Bracket**: Your baseline spending needs naturally push your IRS Taxable Income to **${raw_taxable_inc:,.0f}**, which is above your {inputs['max_tax_bracket']} ceiling. The Roth Optimizer disabled itself to prevent pushing you even higher.")
             else: st.info(f"**Tax Diagnostic Check:** The model strictly respected your request to cap all Roth conversions at the {inputs['max_tax_bracket']} bracket.")
                 
             col1, col2 = st.columns(2)
-            with col1: st.plotly_chart(plot_withdrawal_hierarchy(history, years_arr), use_container_width=True)
-            with col2: st.plotly_chart(plot_taxes_and_rmds(history, years_arr), use_container_width=True)
+            with col1: st.plotly_chart(plot_withdrawal_hierarchy(history_ui, years_arr), use_container_width=True)
+            with col2: st.plotly_chart(plot_taxes_and_rmds(history_ui, years_arr, baseline_data_ui), use_container_width=True)
             
             st.markdown("### Tax-Efficient Withdrawal Strategy Analysis")
             st.table(pd.DataFrame({"Strategy Component":["Tax-Efficient Withdrawal Order", "Dynamic Downturn Strategy", "Capital Gains (LTCG)", "Impact of Inflation"], "Analysis / Value":["Normal Years: Fund lifestyle purely from TSP/IRA, allowing Roth & HSA to compound tax-free.", "Crash Years: Halt TSP withdrawals. Deplete Cash -> Taxable -> HSA -> Roth to avoid Sequence Risk.", "The engine tracks your Taxable Cost Basis. When Taxable funds are sold, it applies 0/15/20% LTCG brackets + 3.8% NIIT.", "Expenses rise geometrically with CPI. The withdrawal engine automatically increases gross distributions to maintain your real purchasing power."]}))
 
         with t6:
             st.subheader("After-Tax Legacy & Estate Breakdown")
-            st.plotly_chart(plot_legacy_breakdown(history), use_container_width=True)
-            med_tsp = np.median(history['tsp_bal'][:, -1])
-            med_ira = np.median(history['ira_bal'][:, -1])
-            med_roth = np.median(history['roth_bal'][:, -1])
-            med_taxable = np.median(history['taxable_bal'][:, -1]) + np.median(history['cash_bal'][:, -1])
-            med_home = np.median(history['home_value'][:, -1])
+            st.plotly_chart(plot_legacy_breakdown(history_ui), use_container_width=True)
+            med_tsp = np.median(history_ui['tsp_bal'][:, -1])
+            med_ira = np.median(history_ui['ira_bal'][:, -1])
+            med_roth = np.median(history_ui['roth_bal'][:, -1])
+            med_taxable = np.median(history_ui['taxable_bal'][:, -1]) + np.median(history_ui['cash_bal'][:, -1])
+            med_home = np.median(history_ui['home_value'][:, -1])
             net_to_heirs = ((med_tsp + med_ira) * 0.76) + med_taxable + med_roth + med_home
             st.metric("Estimated Net After-Tax Value to Heirs", f"${net_to_heirs:,.0f}", delta=f"Lost to IRD Taxes: -${(med_tsp+med_ira) * 0.24:,.0f}", delta_color="inverse", help="Calculated using a heuristic 24% IRD tax on pre-tax accounts. Under SECURE Act 2.0, non-spouse heirs must liquidate these accounts within 10 years, meaning their actual tax rate will depend entirely on their personal income brackets during that decade. High-balance TSP/IRAs can easily push heirs into the 32%+ brackets.")
 
         with t7:
             st.subheader("PlannerPlus Coach Alerts & Actionable To-Do List")
-            med_taxes = np.median(history['taxes_fed'], axis=0)
+            med_taxes = np.median(history_ui['taxes_fed'], axis=0)
             if med_taxes[-1] > med_taxes[0] * 2.5: st.warning("⚠️ **RMD Tax Spike Alert**: Your projected tax liability more than doubles after age 75. Execute Roth Conversions.")
             if inputs['filing_status'] == 'MFJ' and inputs['spouse_life_exp'] != inputs['life_expectancy']: st.warning("⚠️ **Widow(er) Tax Penalty Active**: Because you entered differing Target Planning Ages for the primary and spouse, the engine has successfully modeled the Widow(er) Tax cliff. When the first spouse 'dies', the survivor's standard deduction halves and brackets shrink, severely increasing vulnerability to IRMAA surcharges. ")
             if inputs.get('mil_active') and inputs.get('mil_disability_rating') in["0%", "10% - 20%", "30% - 40%"] and inputs.get('mil_va_pay', 0) > 0: st.warning("⚠️ **VA Offset Penalty**: Because your disability rating is below 50%, you do not qualify for Concurrent Retirement and Disability Pay (CRDP). Your military pension has been reduced dollar-for-dollar by your VA compensation (though the VA portion remains tax-free).")
@@ -717,7 +781,7 @@ with nav1:
                 st.write(f"- **Net Increase to Legacy (Today's $):** ${wealth_increase:,.0f}")
                 st.markdown("#### Step-by-Step Conversion Schedule")
                 st.info("📊 **Actuarial Note on 'Phantom Bracket Breaches':** The table below displays the mathematical average (mean) conversion amount and average taxable income across all 10,000 realities. Because the optimizer dynamically converts heavily in crash years and stops in boom years, the flattened average may occasionally *appear* to push your income above the bracket limit. Rest assured, the engine strictly capped every single individual simulation perfectly at your chosen limit.")
-                conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": np.mean(history['roth_conversion'], axis=0), "Est. IRS Taxable Income": np.median(history['taxable_income'], axis=0)})
+                conv_df = pd.DataFrame({"Year": years_arr, "Age": age_arr, "Target Conversion Amount": np.mean(history_ui['roth_conversion'], axis=0), "Est. IRS Taxable Income": np.median(history_ui['taxable_income'], axis=0)})
                 st.table(conv_df[conv_df['Target Conversion Amount'] > 0].style.format({"Target Conversion Amount": "${:,.0f}", "Est. IRS Taxable Income": "${:,.0f}"}))
 
         with t9:
@@ -738,7 +802,7 @@ with nav1:
 
         with t10:
             st.subheader("Medicare Part B & Actuarial Healthcare OOP")
-            st.plotly_chart(plot_medicare_comparison(history, years_arr, inputs), use_container_width=True)
+            st.plotly_chart(plot_medicare_comparison(history_ui, years_arr, inputs), use_container_width=True)
             st.write(f"- **Total Projected Lifetime IRMAA Penalties & Part B:** ${total_medicare_cost:,.0f}")
             
             moop_cap = MOOP_LIMITS.get(inputs['health_plan'], (999999, 999999))[1 if inputs['filing_status'] == 'MFJ' else 0]
@@ -767,8 +831,8 @@ with nav1:
                     if c in df_out.columns: df_out[c] = df_out[c].apply(lambda x: f"${x:,.0f}")
                 return df_out
 
-            df_median_raw = build_csv_dataframe(history, years_arr, age_arr, percentile=50)
-            df_pess_raw = build_csv_dataframe(history, years_arr, age_arr, percentile=10)
+            df_median_raw = build_csv_dataframe(history_ui, years_arr, age_arr, percentile=50)
+            df_pess_raw = build_csv_dataframe(history_ui, years_arr, age_arr, percentile=10)
             colA, colB = st.columns(2)
             colA.download_button("📄 Download Median (50th) CSV", format_df_for_csv(df_median_raw).to_csv(index=False), "Retirement_Median.csv", "text/csv")
             colB.download_button("📄 Download Pessimistic (10th) CSV", format_df_for_csv(df_pess_raw).to_csv(index=False), "Retirement_Pess.csv", "text/csv")
@@ -830,8 +894,9 @@ with nav2:
     st.header("Reviewing Your Results")
     st.markdown("""
     1. **Probability of Success:** You want this number to be 85% or higher. If it is lower, you may need to reduce your spending goals or work a few years longer.
-    2. **The "Coach Alerts" Tab:** Read this first. It provides a prioritized "To-Do List" based on your specific risks.
-    3. **The Roth Optimizer Tab:** This shows you exactly how much money to convert from your TSP/IRA to a Roth IRA each year to pay the lowest amount of lifetime tax possible.
+    2. **The "What-If" Baseline Compare Tool:** Once you successfully run a simulation, click the **📌 Save as Comparison Baseline** button under the Executive Summary. This securely locks that specific future into memory. You can then navigate back up, change your retirement age, decrease your spending, or adjust your portfolios, and click *Run Projection Engine* again. The dashboard will instantly overlay the new reality directly on top of the saved baseline so you can visually and mathematically measure the impact of your decisions. 
+    3. **The "Coach Alerts" Tab:** Read this first. It provides a prioritized "To-Do List" based on your specific risks.
+    4. **The Roth Optimizer Tab:** This shows you exactly how much money to convert from your TSP/IRA to a Roth IRA each year to pay the lowest amount of lifetime tax possible.
     """)
 
 # ==========================================
