@@ -160,7 +160,7 @@ with nav1:
                 c2.caption("🚨 **Error:** Target retirement date is in the past.")
                 
             life_exp = c3.number_input("Primary Target Planning Age", min_value=50, max_value=120, key="life_exp")
-            if life_exp <= cur_age and cur_age > 0:
+            if life_exp is not None and cur_age is not None and life_exp <= cur_age:
                 c3.caption("🚨 **Error:** Planning age must be > Current Age.")
             
         with t_pers_s:
@@ -174,7 +174,7 @@ with nav1:
                     c_sp2.caption("🚨 **Error:** Target retirement date is in the past.")
                     
                 s_life_exp = c_sp3.number_input("Spouse Target Planning Age", min_value=50, max_value=120, key="spouse_life_exp")
-                if s_life_exp <= s_cur_age and s_cur_age > 0:
+                if s_life_exp is not None and s_cur_age is not None and s_life_exp <= s_cur_age:
                     c_sp3.caption("🚨 **Error:** Planning age must be > Current Age.")
             else:
                 st.info("Select 'MFJ' (Married Filing Jointly) above to enable Spouse inputs.")
