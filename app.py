@@ -498,8 +498,23 @@ with nav1:
     # MAIN UI RENDER BLOCK
     # ---------------------------------------------------------
     
-    st.markdown("### Build Your Profile")
-    st.radio("Interface Mode:", ["Guided Wizard", "Expert Form (All Fields)"], horizontal=True, key="ui_mode", label_visibility="collapsed")
+   st.markdown("### Build Your Profile")
+    
+    if 'ui_mode' not in st.session_state: 
+        st.session_state.ui_mode = "Guided Wizard"
+
+    def update_ui_mode():
+        st.session_state.ui_mode = st.session_state._ui_mode_selector
+
+    st.radio(
+        "Interface Mode:", 
+        ["Guided Wizard", "Expert Form (All Fields)"], 
+        index=0 if st.session_state.ui_mode == "Guided Wizard" else 1,
+        horizontal=True, 
+        key="_ui_mode_selector",
+        on_change=update_ui_mode,
+        label_visibility="collapsed"
+    )
     st.markdown("<br>", unsafe_allow_html=True)
     
     submit = False
