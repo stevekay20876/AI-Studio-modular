@@ -75,16 +75,13 @@ with nav1:
     }
 
     # --- WIZARD STATE PERSISTENCE LOGIC ---
-    # 1. Create a permanent shadow copy of the state
     if 'master_state' not in st.session_state:
         st.session_state.master_state = DEFAULT_STATE.copy()
 
-    # 2. Capture any existing widget values BEFORE Streamlit deletes them
     for k in DEFAULT_STATE.keys():
         if k in st.session_state:
             st.session_state.master_state[k] = st.session_state[k]
 
-    # 3. Re-inject the saved values back into session_state so widgets populate correctly
     for k, v in st.session_state.master_state.items():
         st.session_state[k] = v
     # --------------------------------------
@@ -118,16 +115,22 @@ with nav1:
                                 st.session_state[key] = value
                                 st.session_state.master_state[key] = value
                         st.session_state.loaded_file = uploaded_profile.name
-                        # Automatically switch to Expert Mode so returning users see all their data
                         st.session_state.ui_mode = "Expert Form (All Fields)"
                         st.success("Profile Loaded Successfully!")
                         st.rerun() 
                     except Exception as e:
                         st.error("Error loading profile.")
         with col_save:
-            profile_name = st.text_input("Name your save file:", key="save_file_name")
-            safe_filename = st.session_state.save_file_name.strip()
+            # Replaced rigid key binding with dynamic variable capture to fix filename bugs
+            profile_name = st.text_input("Name your save file:", value=st.session_state.get('save_file_name', 'client_profile'))
+            if profile_name != st.session_state.get('save_file_name'):
+                st.session_state['save_file_name'] = profile_name
+                st.session_state.master_state['save_file_name'] = profile_name
+                
+            safe_filename = profile_name.strip()
+            if not safe_filename: safe_filename = "client_profile"
             if not safe_filename.endswith(".json"): safe_filename += ".json"
+            
             st.download_button("⬇️ Save Current Profile to Computer", data=json.dumps(get_current_state(), indent=4), file_name=safe_filename, mime="application/json", use_container_width=True, help="Important: Make sure you press 'Enter' or click outside of any text box you just edited before clicking Save to lock in the final keystrokes!")
 
     has_run = 'sim_data' in st.session_state
@@ -617,6 +620,8 @@ with nav1:
                 st.session_state['optimization_warning'] = True
             else:
                 st.session_state['optimization_warning'] = False
+                
+            st.session_state.ui_mode = "Expert Form (All Fields)"
             st.rerun() 
 
     if 'sim_data' in st.session_state:
