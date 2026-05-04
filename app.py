@@ -121,7 +121,6 @@ with nav1:
                     except Exception as e:
                         st.error("Error loading profile.")
         with col_save:
-            # Replaced rigid key binding with dynamic variable capture to fix filename bugs
             profile_name = st.text_input("Name your save file:", value=st.session_state.get('save_file_name', 'client_profile'))
             if profile_name != st.session_state.get('save_file_name'):
                 st.session_state['save_file_name'] = profile_name
@@ -136,7 +135,7 @@ with nav1:
     has_run = 'sim_data' in st.session_state
 
     # ---------------------------------------------------------
-    # UI RENDERING FUNCTIONS (To prevent DuplicateWidgetIDs)
+    # UI RENDERING FUNCTIONS
     # ---------------------------------------------------------
 
     def render_personal():
@@ -153,18 +152,30 @@ with nav1:
         
         with t_pers_p:
             c1, c2, c3 = st.columns(3)
-            c1.number_input("Primary Current Age", min_value=18, max_value=100, key="cur_age")
+            cur_age = c1.number_input("Primary Current Age", min_value=18, max_value=100, key="cur_age")
+            
             default_ret = st.session_state.ret_date if isinstance(st.session_state.ret_date, datetime.date) else datetime.date.fromisoformat(st.session_state.ret_date)
-            c2.date_input("Target Date of Retirement", value=default_ret, format="MM/DD/YYYY", key="ret_date", help="The exact calendar date you plan to separate from service. Used to prorate transition year salary and savings.")
-            c3.number_input("Primary Target Planning Age", min_value=50, max_value=120, key="life_exp")
+            ret_date = c2.date_input("Target Date of Retirement", value=default_ret, format="MM/DD/YYYY", key="ret_date", help="The exact calendar date you plan to separate from service. Used to prorate transition year salary and savings.")
+            if isinstance(ret_date, datetime.date) and ret_date < datetime.date.today():
+                c2.caption("🚨 **Error:** Target retirement date is in the past.")
+                
+            life_exp = c3.number_input("Primary Target Planning Age", min_value=50, max_value=120, key="life_exp")
+            if life_exp <= cur_age and cur_age > 0:
+                c3.caption("🚨 **Error:** Planning age must be > Current Age.")
             
         with t_pers_s:
             if st.session_state.filing_status == "MFJ":
                 c_sp1, c_sp2, c_sp3 = st.columns(3)
-                c_sp1.number_input("Spouse Current Age", min_value=18, max_value=100, key="spouse_age")
+                s_cur_age = c_sp1.number_input("Spouse Current Age", min_value=18, max_value=100, key="spouse_age")
+                
                 s_default_ret = st.session_state.s_ret_date if isinstance(st.session_state.s_ret_date, datetime.date) else datetime.date.fromisoformat(st.session_state.s_ret_date)
-                c_sp2.date_input("Spouse Date of Retirement", value=s_default_ret, format="MM/DD/YYYY", key="s_ret_date")
-                c_sp3.number_input("Spouse Target Planning Age", min_value=50, max_value=120, key="spouse_life_exp")
+                s_ret_date = c_sp2.date_input("Spouse Date of Retirement", value=s_default_ret, format="MM/DD/YYYY", key="s_ret_date")
+                if isinstance(s_ret_date, datetime.date) and s_ret_date < datetime.date.today():
+                    c_sp2.caption("🚨 **Error:** Target retirement date is in the past.")
+                    
+                s_life_exp = c_sp3.number_input("Spouse Target Planning Age", min_value=50, max_value=120, key="spouse_life_exp")
+                if s_life_exp <= s_cur_age and s_cur_age > 0:
+                    c_sp3.caption("🚨 **Error:** Planning age must be > Current Age.")
             else:
                 st.info("Select 'MFJ' (Married Filing Jointly) above to enable Spouse inputs.")
 
@@ -173,15 +184,20 @@ with nav1:
         with t_inc_p:
             st.markdown("**Primary Pre-Retirement Salary & Phased Transition**")
             c1, c2, c3 = st.columns(3)
-            c1.number_input("Current Annual Salary ($)", min_value=0, step=1000, key="current_salary")
+            current_salary = c1.number_input("Current Annual Salary ($/yr)", min_value=0, step=1000, key="current_salary")
+            if 0 < current_salary < 15000: c1.caption("⚠️ **Check:** <$15k is unusually low. Did you enter monthly pay instead of annual?")
+                
             c2.checkbox("Enable FERS Phased Retirement?", key="phased_ret_active")
             c3.number_input("Phased Retirement Start Age", min_value=50, max_value=70, key="phased_ret_age")
             
             st.markdown("**Primary Annual Savings (Until Retirement)**")
             c_sav1, c_sav2, c_sav3 = st.columns(3)
             p_max_tsp = c_sav1.checkbox("Maximize IRS allowable TSP/401(k)?", key="p_max_tsp")
-            if p_max_tsp: c_sav1.info("IRS Max active: Automatically scales by age ($24,500 to $35,750).")
-            else: c_sav1.number_input("TSP/401(k) Pre-Tax Savings ($/yr)", min_value=0, step=1000, key="p_tsp_contrib")
+            if p_max_tsp: 
+                c_sav1.info("IRS Max active: Automatically scales by age ($24,500 to $35,750).")
+            else: 
+                p_tsp_contrib = c_sav1.number_input("TSP/401(k) Pre-Tax Savings ($/yr)", min_value=0, step=1000, key="p_tsp_contrib")
+                if p_tsp_contrib > 35750: c_sav1.caption("⚠️ **Check:** Exceeds IRS annual limits. Check 'Maximize' box instead.")
             
             c_sav2.number_input("Roth IRA Savings ($/yr)", min_value=0, step=1000, key="p_roth_contrib")
             c_sav3.number_input("Taxable Acct Savings ($/yr)", min_value=0, step=1000, key="p_taxable_contrib")
@@ -192,8 +208,13 @@ with nav1:
             
             st.markdown("**Primary Civilian Pension**")
             cp1, cp2, cp3 = st.columns(3)
-            cp1.selectbox("Pension Type", ["FERS", "Other"], key="pension_type")
-            cp2.number_input("Full (Unreduced) Pension Est. ($)", min_value=0, step=1000, key="pension_est")
+            pension_type = cp1.selectbox("Pension Type", ["FERS", "Other"], key="pension_type")
+            pension_est = cp2.number_input("Full (Unreduced) Pension Est. ($/yr)", min_value=0, step=1000, key="pension_est")
+            
+            if pension_type == "FERS" and pension_est > 100000:
+                cp2.caption("⚠️ **Check:** >$100k is unusually high for FERS. Did you accidentally enter your High-3 salary?")
+            elif 0 < pension_est < 5000:
+                cp2.caption("⚠️ **Check:** <$5k is unusually low. Did you enter your monthly payout instead of annual?")
             
             if st.session_state.pension_type == "FERS":
                 surv_options = ["Full Survivor Benefit", "Partial Survivor Benefit", "No Survivor Benefit"]
@@ -203,21 +224,34 @@ with nav1:
 
             st.markdown("**Primary Social Security Guaranteed Income**")
             c7, c8 = st.columns(2)
-            c7.number_input("Social Security at FRA ($/yr)", min_value=0, step=1000, key="ss_fra")
+            ss_fra = c7.number_input("Social Security at FRA ($/yr)", min_value=0, step=1000, key="ss_fra")
+            
+            if ss_fra == 0:
+                c7.caption("💡 **Note:** $0 entered. Social Security will not be modeled.")
+            elif 0 < ss_fra < 8000:
+                c7.caption("⚠️ **Check:** <$8k is unusually low. Did you enter your monthly benefit instead of annual?")
+            elif ss_fra > 60000:
+                c7.caption("⚠️ **Check:** >$60k exceeds max limits. Ensure this isn't your combined household benefit.")
+                
             c8.number_input("Target SS Claiming Age", min_value=62, max_value=70, key="ss_claim_age")
             
         with t_inc_s:
             st.markdown("**Spouse Pre-Retirement Salary & Phased Transition**")
             cs1, cs2, cs3 = st.columns(3)
-            cs1.number_input("Spouse Current Annual Salary ($)", min_value=0, step=1000, key="s_current_salary")
+            s_current_salary = cs1.number_input("Spouse Current Annual Salary ($/yr)", min_value=0, step=1000, key="s_current_salary")
+            if 0 < s_current_salary < 15000: cs1.caption("⚠️ **Check:** <$15k is unusually low. Did you enter monthly pay instead of annual?")
+                
             cs2.checkbox("Enable Spouse Phased Retirement?", key="s_phased_ret_active")
             cs3.number_input("Spouse Phased Ret. Start Age", min_value=50, max_value=70, key="s_phased_ret_age")
             
             st.markdown("**Spouse Annual Savings (Until Retirement)**")
             cs_sav1, cs_sav2, cs_sav3 = st.columns(3)
             s_max_tsp = cs_sav1.checkbox("Spouse: Maximize IRS allowable TSP/401(k)?", key="s_max_tsp")
-            if s_max_tsp: cs_sav1.info("IRS Max active.")
-            else: cs_sav1.number_input("Spouse TSP/401k Pre-Tax Savings ($/yr)", min_value=0, step=1000, key="s_tsp_contrib")
+            if s_max_tsp: 
+                cs_sav1.info("IRS Max active.")
+            else: 
+                s_tsp_contrib = cs_sav1.number_input("Spouse TSP/401k Pre-Tax Savings ($/yr)", min_value=0, step=1000, key="s_tsp_contrib")
+                if s_tsp_contrib > 35750: cs_sav1.caption("⚠️ **Check:** Exceeds IRS limits.")
             
             cs_sav2.number_input("Spouse Roth IRA Savings ($/yr)", min_value=0, step=1000, key="s_roth_contrib")
             cs_sav3.number_input("Spouse Taxable Savings ($/yr)", min_value=0, step=1000, key="s_taxable_contrib")
@@ -228,8 +262,13 @@ with nav1:
             
             st.markdown("**Spouse Civilian Pension**")
             csp1, csp2, csp3 = st.columns(3)
-            csp1.selectbox("Spouse Pension Type", ["FERS", "Other"], key="s_pension_type")
-            csp2.number_input("Spouse Full Pension Est. ($)", min_value=0, step=1000, key="s_pension_est")
+            s_pension_type = csp1.selectbox("Spouse Pension Type", ["FERS", "Other"], key="s_pension_type")
+            s_pension_est = csp2.number_input("Spouse Full Pension Est. ($/yr)", min_value=0, step=1000, key="s_pension_est")
+            
+            if s_pension_type == "FERS" and s_pension_est > 100000:
+                csp2.caption("⚠️ **Check:** >$100k is unusually high for FERS. Did you accidentally enter High-3 salary?")
+            elif 0 < s_pension_est < 5000:
+                csp2.caption("⚠️ **Check:** <$5k is unusually low. Did you enter monthly payout instead of annual?")
             
             if st.session_state.s_pension_type == "FERS":
                 s_surv_options = ["No Survivor Benefit", "Partial Survivor Benefit", "Full Survivor Benefit"]
@@ -239,7 +278,15 @@ with nav1:
 
             st.markdown("**Spouse Social Security Guaranteed Income**")
             cs7, cs8 = st.columns(2)
-            cs7.number_input("Spouse Social Security at FRA ($/yr)", min_value=0, step=1000, key="s_ss_fra")
+            s_ss_fra = cs7.number_input("Spouse Social Security at FRA ($/yr)", min_value=0, step=1000, key="s_ss_fra")
+            
+            if s_ss_fra == 0:
+                cs7.caption("💡 **Note:** $0 entered. Social Security will not be modeled.")
+            elif 0 < s_ss_fra < 8000:
+                cs7.caption("⚠️ **Check:** <$8k is unusually low. Did you enter your monthly benefit instead of annual?")
+            elif s_ss_fra > 60000:
+                cs7.caption("⚠️ **Check:** >$60k exceeds max limits. Ensure this isn't your combined household benefit.")
+                
             cs8.number_input("Spouse Target SS Claiming Age", min_value=62, max_value=70, key="s_ss_claim_age")
 
     def render_assets():
@@ -300,19 +347,24 @@ with nav1:
         st.markdown("**Spending Limits & Legacy Goals (In Today's Dollars)**")
         st.info("Note: Your target legacy floor strictly applies to your **Liquid Investment Portfolio**. Your current home equity is completely preserved as a separate inheritance asset on top of whatever liquid floor you target.")
         c1, c2, c3 = st.columns(3)
-        c1.number_input("Target Liquid Legacy Floor ($)", min_value=0, step=10000, key="target_floor")
-        c2.number_input("Minimum Spending Floor ($)", min_value=0, step=1000, key="min_spending")
-        c3.number_input("Maximum Spending Cap ($)", min_value=0, step=1000, key="max_spending")
+        target_floor = c1.number_input("Target Liquid Legacy Floor ($)", min_value=0, step=10000, key="target_floor")
+        if target_floor == 0: c1.caption("💡 **Note:** $0 entered. Engine will spend down to your last penny.")
+            
+        c2.number_input("Minimum Spending Floor ($/yr)", min_value=0, step=1000, key="min_spending")
+        c3.number_input("Maximum Spending Cap ($/yr)", min_value=0, step=1000, key="max_spending")
         
         c4, c5 = st.columns(2)
-        c4.number_input("Additional Expenses ($)", min_value=0, step=1000, key="add_exp")
+        c4.number_input("Additional Expenses ($/yr)", min_value=0, step=1000, key="add_exp")
         c5.selectbox("Maximum Target Tax Bracket (Roth Cap)", ["12%", "22%", "24%", "32%", "35%", "37%"], index=2, key="max_tax_bracket")
         
         st.markdown("**Property & Debt**")
         c6, c7, c8 = st.columns(3)
         c6.number_input("Current Home Value ($)", min_value=0, step=10000, key="home_value")
-        c7.number_input("Annual Mortgage Payment ($)", min_value=0, step=1000, key="mortgage_pmt")
-        c8.number_input("Mortgage Years Remaining", min_value=0, key="mortgage_yrs")
+        mortgage_pmt = c7.number_input("Annual Mortgage Payment ($/yr)", min_value=0, step=1000, key="mortgage_pmt")
+        mortgage_yrs = c8.number_input("Mortgage Years Remaining", min_value=0, key="mortgage_yrs")
+        
+        if mortgage_pmt > 0 and mortgage_yrs == 0:
+            c8.caption("🚨 **Error:** You entered a mortgage payment but 0 years remaining.")
         
         st.markdown("**Healthcare**")
         health_options = ["FEHB FEPBlue Basic", "FEPBlue Standard", "FEPBlue Focus", "GEHA High", "GEHA Standard", "Aetna Open Access", "Aetna Direct", "Aetna Advantage", "Cigna", "TRICARE for Life", "None/Self-Insure", "Spouse's Insurance", "Affordable Care Act"]
@@ -322,18 +374,21 @@ with nav1:
             with t_hc_p:
                 c9, c10, c11 = st.columns(3)
                 c9.selectbox("Household Retiree Health Coverage", health_options, key="health_plan")
-                c10.number_input("Household Annual Health Premium ($)", min_value=0, step=100, key="health_cost")
-                c11.number_input("Household Typical Out-of-Pocket ($)", min_value=0, step=100, key="oop_cost")
+                h_cost = c10.number_input("Household Annual Health Premium ($/yr)", min_value=0, step=100, key="health_cost")
+                if 0 < h_cost < 1000: c10.caption("⚠️ **Check:** <$1,000 is unusually low. Did you enter monthly premium instead of annual?")
+                c11.number_input("Household Typical Out-of-Pocket ($/yr)", min_value=0, step=100, key="oop_cost")
             with t_hc_s:
                 cs9, cs10, cs11 = st.columns(3)
                 cs9.selectbox("Spouse Retiree Health Coverage", health_options, key="s_health_plan")
-                cs10.number_input("Spouse Annual Health Premium ($)", min_value=0, step=100, key="s_health_cost")
-                cs11.number_input("Spouse Typical Out-of-Pocket ($)", min_value=0, step=100, key="s_oop_cost")
+                s_h_cost = cs10.number_input("Spouse Annual Health Premium ($/yr)", min_value=0, step=100, key="s_health_cost")
+                if 0 < s_h_cost < 1000: cs10.caption("⚠️ **Check:** <$1,000 is unusually low. Did you enter monthly premium instead of annual?")
+                cs11.number_input("Spouse Typical Out-of-Pocket ($/yr)", min_value=0, step=100, key="s_oop_cost")
         else:
             c9, c10, c11 = st.columns(3)
             c9.selectbox("Retiree Health Coverage", health_options, key="health_plan")
-            c10.number_input("Annual Health Premium ($)", min_value=0, step=100, key="health_cost")
-            c11.number_input("Typical Out-of-Pocket Medical ($)", min_value=0, step=100, key="oop_cost")
+            h_cost = c10.number_input("Annual Health Premium ($/yr)", min_value=0, step=100, key="health_cost")
+            if 0 < h_cost < 1000: c10.caption("⚠️ **Check:** <$1,000 is unusually low. Did you enter monthly premium instead of annual?")
+            c11.number_input("Typical Out-of-Pocket Medical ($/yr)", min_value=0, step=100, key="oop_cost")
             st.session_state.s_health_plan = "None/Self-Insure"
             st.session_state.s_health_cost = 0
             st.session_state.s_oop_cost = 0
@@ -375,7 +430,9 @@ with nav1:
 
             st.markdown("**Creditable Service & Points**")
             mc1, mc2, mc3, mc4 = st.columns(4)
-            mc1.number_input("Active Years", min_value=0, max_value=40, key="mil_years")
+            mil_years = mc1.number_input("Active Years", min_value=0, max_value=40, key="mil_years")
+            if mil_years > 40: mc1.caption("🚨 **Error:** Active years cannot exceed 40.")
+                
             mc2.number_input("Active Months", min_value=0, max_value=11, key="mil_months")
             mc3.number_input("Active Days", min_value=0, max_value=30, key="mil_days")
             mc4.number_input("Total Career Points", min_value=0, key="mil_points")
@@ -389,7 +446,9 @@ with nav1:
             default_diems = datetime.date.fromisoformat(st.session_state.mil_diems) if isinstance(st.session_state.mil_diems, str) else st.session_state.mil_diems
             md1.date_input("DIEMS Date", value=default_diems, format="MM/DD/YYYY", key="mil_diems")
             md2.selectbox("Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="mil_system")
-            md3.number_input("Pay Base (High-36 Avg or Final Base Pay $/mo)", min_value=0, step=100, key="mil_pay_base")
+            
+            mil_pay = md3.number_input("Pay Base (High-36 Avg or Final Base Pay $/mo)", min_value=0, step=100, key="mil_pay_base")
+            if mil_pay > 25000: md3.caption("⚠️ **Check:** >$25k/mo is exceptionally high. Did you enter annual pay instead of monthly?")
             
             st.markdown("**Disability & Survivor Options**")
             mv1, mv2, mv3 = st.columns(3)
@@ -408,7 +467,9 @@ with nav1:
 
             st.markdown("**Spouse Creditable Service & Points**")
             smc1, smc2, smc3, smc4 = st.columns(4)
-            smc1.number_input("Spouse Active Years", min_value=0, max_value=40, key="s_mil_years")
+            s_mil_years = smc1.number_input("Spouse Active Years", min_value=0, max_value=40, key="s_mil_years")
+            if s_mil_years > 40: smc1.caption("🚨 **Error:** Active years cannot exceed 40.")
+                
             smc2.number_input("Spouse Active Months", min_value=0, max_value=11, key="s_mil_months")
             smc3.number_input("Spouse Active Days", min_value=0, max_value=30, key="s_mil_days")
             smc4.number_input("Spouse Total Career Points", min_value=0, key="s_mil_points")
@@ -422,7 +483,9 @@ with nav1:
             s_default_diems = datetime.date.fromisoformat(st.session_state.s_mil_diems) if isinstance(st.session_state.s_mil_diems, str) else st.session_state.s_mil_diems
             smd1.date_input("Spouse DIEMS Date", value=s_default_diems, format="MM/DD/YYYY", key="s_mil_diems")
             smd2.selectbox("Spouse Retirement System", ["Final Pay (2.5%)", "High-36 (2.5%)", "REDUX (2.5% - 1% per yr under 30)", "Blended Retirement System [BRS] (2.0%)"], key="s_mil_system")
-            smd3.number_input("Spouse Pay Base ($/mo)", min_value=0, step=100, key="s_mil_pay_base")
+            
+            s_mil_pay = smd3.number_input("Spouse Pay Base ($/mo)", min_value=0, step=100, key="s_mil_pay_base")
+            if s_mil_pay > 25000: smd3.caption("⚠️ **Check:** >$25k/mo is exceptionally high. Did you enter annual pay instead of monthly?")
             
             st.markdown("**Spouse Disability & Survivor Options**")
             smv1, smv2, smv3 = st.columns(3)
