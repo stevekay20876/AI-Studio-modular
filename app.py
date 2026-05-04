@@ -498,7 +498,7 @@ with nav1:
     # MAIN UI RENDER BLOCK
     # ---------------------------------------------------------
     
-   st.markdown("### Build Your Profile")
+    st.markdown("### Build Your Profile")
     
     if 'ui_mode' not in st.session_state: 
         st.session_state.ui_mode = "Guided Wizard"
