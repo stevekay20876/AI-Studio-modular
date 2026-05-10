@@ -1,6 +1,1 @@
 streamlit
-numpy
-pandas
-scipy
-plotly
-fpdf2
